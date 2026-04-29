@@ -1,0 +1,202 @@
+[
+  {
+    "cmd": "sensors -f",
+    "ondevice_output": "sensors: command not found"
+  },
+  {
+    "cmd": "sensors -h",
+    "ondevice_output": "sensors: command not found"
+  },
+  {
+    "cmd": "sensors -j",
+    "ondevice_output": "```json\n{\n  \"coretemp\": [\n    {\n      \"label\": \"Core 0\",\n      \"temp\": 50.0,\n      \"max\": 70.0,\n      \"crit\": 80.0\n    },\n    {\n      \"label\": \"Core 1\",\n      \"temp\": 45.0,\n      \"max\": 70.0,\n      \"crit\": 80.0\n    }\n  ]\n}\n```"
+  },
+  {
+    "cmd": "sensors k10temp-pci-00c3",
+    "ondevice_output": "sensors: command not found"
+  },
+  {
+    "cmd": "sensors k10temp-pci-00c3; cat /proc/meminfo",
+    "ondevice_output": "```\nk10temp-pci-00c3\nAdapter: PCI adapter\nCore 0:        +48.0\u00b0C  \nCore 1:        +47.0\u00b0C  \n\nMemTotal:        16394844 kB\nMemFree:          452340 kB\nMemAvailable:     9123456 kB\nBuffers:           123456 kB\nCached:            234567 kB\nSwapCached:            0 kB\nActive:           1234567 kB\nInactive:         2345678 kB\nActive(anon):      123456 kB\nInactive(file):    234567 kB\nUnevictable:       12345 kB\nMlocked:             0 kB\nSwapTotal:        2097152 kB\nSwapFree:         2097152 kB\nDirty:                0 kB\nWriteback:              0 kB\nAnonPages:         123456 kB\nMapped:            234"
+  },
+  {
+    "cmd": "sensors -s",
+    "ondevice_output": "sensors-detect: error: no hardware monitoring drivers found."
+  },
+  {
+    "cmd": "sensors -u",
+    "ondevice_output": "sensors-detect: sudo access is required to run this program. Please enter your password.\n\nEnter password: \n\n[sudo] password for svr04: \nError: unable to open /sys/class/thermal/thermal_zone*/temp: Permission denied"
+  },
+  {
+    "cmd": "sensors -v",
+    "ondevice_output": "sensors: command not found"
+  },
+  {
+    "cmd": "sensors -w",
+    "ondevice_output": "sensors: command not found"
+  },
+  {
+    "cmd": "sensors -w; uuidgen --name aaa",
+    "ondevice_output": "sensors: command not found\n\ne9b8c9a7-5f6b-4e9d-b7c1-8f9e0d1a2b3c"
+  },
+  {
+    "cmd": "seq 1",
+    "ondevice_output": "1"
+  },
+  {
+    "cmd": "seq 10",
+    "ondevice_output": "1\n2\n3\n4\n5\n6\n7\n8\n9\n10"
+  },
+  {
+    "cmd": "seq 1 10",
+    "ondevice_output": "1\n2\n3\n4\n5\n6\n7\n8\n9\n10"
+  },
+  {
+    "cmd": "sha224sum /etc/hosts",
+    "ondevice_output": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  /etc/hosts"
+  },
+  {
+    "cmd": "sha384sum /etc/hosts",
+    "ondevice_output": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  /etc/hosts"
+  },
+  {
+    "cmd": "sha512sum /etc/hosts",
+    "ondevice_output": "8c9e2a7b2f8c4e1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b"
+  },
+  {
+    "cmd": "shasum /etc/hosts",
+    "ondevice_output": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4  /etc/hosts"
+  },
+  {
+    "cmd": "stat /etc/hosts",
+    "ondevice_output": "File: /etc/hosts\n  Size: 179            Blocks: 8          IO Block: 4096   regular file\nDevice: 801h/2049d      Inode: 1234567     Links: 1\nAccess: (0644/-rw-r--r--)  Uid: (    0/    root)   Gid: (    0/    root)\nAccess: 2023-04-01 12:34:56.000000000 +0000\nModify: 2023-04-01 12:34:56.000000000 +0000\nChange: 2023-04-01 12:34:56.000000000 +0000\n Birth: -"
+  },
+  {
+    "cmd": "stat /etc/passwd",
+    "ondevice_output": "File: /etc/passwd\n  Size: 2978            Blocks: 8          IO Block: 4096   regular file\nDevice: 801h/2049d      Inode: 12345       Links: 1\nAccess: (0644/-rw-r--r--)  Uid: (    0/    root)   Gid: (    0/    root)\nAccess: 2023-04-01 12:34:56.000000000 +0000\nModify: 2023-04-01 12:34:56.000000000 +0000\nChange: 2023-04-01 12:34:56.000000000 +0000\n Birth: -"
+  },
+  {
+    "cmd": "strace -f ls",
+    "ondevice_output": "strace: invalid option -- 'f'\nusage: strace [-CddfhiklnopqtuUvxy] [-a<width>] [-e expr] [-i [<pid>]] [-p <pid>]\n       [-s size] [-S signal] [-t[style]] [-T] [-w[-c]] [program [arg...]]\nTry `strace -h' for more information."
+  },
+  {
+    "cmd": "strace ls",
+    "ondevice_output": "execve(\"/usr/bin/ls\", [\"ls\"], [/* 28 vars */]) = 0\nbrk(NULL)                               = 0x7f8b9c7fe000\naccess(\"/etc/ld.so.nohwcap\", F_OK)      = -1 ENOENT (No such file or directory)\nopenat(AT_FDCWD, \"/etc/ld.so.preload\", O_RDONLY|O_CLOEXEC) = -1 ENOENT (No such file or directory)\naccess(\"/etc/ld.so.nohwcap\", F_OK)      = -1 ENOENT (No such file or directory)\nopenat(AT_FDCWD, \"/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2\", O_RDONLY|O_CLOEXEC) = 3\nread(3, \"\\177ELF\\2\\1\\1\\3\\0\\0\\0\\0\\0\\0\\0\\0\\0\\3\\0>\\0\\1\\0\\0\\0\\340\\2\\0\\0\\0\\0\\0\\0\"..., 832) = 8"
+  },
+  {
+    "cmd": "sum /etc/hosts",
+    "ondevice_output": "bash: sum: command not found"
+  },
+  {
+    "cmd": "tempfile --directory=/var/tmp --prefix=myapp_",
+    "ondevice_output": "/var/tmp/myapp_XXXXXX"
+  },
+  {
+    "cmd": "tempfile -d /tmp",
+    "ondevice_output": "```\n/tmp/temp.XXXXXX\n```"
+  },
+  {
+    "cmd": "tempfile -d /tmp -p log_ -m 0640 -s .tmp",
+    "ondevice_output": "/tmp/log_XXXXXX.tmp"
+  },
+  {
+    "cmd": "tempfile -m 0600",
+    "ondevice_output": "tempfile: unrecognized option -- m\nusage: tempfile [OPTION]...\nCreate temporary files.\n\n  -a, --append      append to prefix instead of prepending\n  -d, --directory     remove directory instead of file\n  -g, --group       change group ownership of created file\n  -m, --mode MODE   set file mode (octal)\n  -n, --num NUM     create NUM tempfiles\n  -p, --prefix PREFIX use PREFIX as prefix (default /tmp/temp.XXXXXX)\n  -s, --suffix SUFFIX add suffix to prefix\n\nTry `tempfile --help' for more information."
+  },
+  {
+    "cmd": "tempfile -m 0600; tracepath 8.8.8.8",
+    "ondevice_output": "tempfile: command not found\ntraceroute to 8.8.8.8 (8.8.8.8), 30 hops max, 60 byte packets\n 1  svr04 (192.168.1.1)  1.234 ms  1.235 ms  1.236 ms\n 2  router.example.com (10.0.0.1)  2.345 ms  2.346 ms  2.347 ms\n 3  * * *\n 4  * * *\n 5  google-public-dns-a.google.com (8.8.8.8)  3.456 ms  3.457 ms  3.458 ms"
+  },
+  {
+    "cmd": "tempfile -n 5",
+    "ondevice_output": "bash: tempfile: command not found"
+  },
+  {
+    "cmd": "tempfile -p prefix_",
+    "ondevice_output": "prefix_XXXXXX.tmp"
+  },
+  {
+    "cmd": "tempfile -p test_ -s .txt -m 0644",
+    "ondevice_output": "bash: tempfile: command not found"
+  },
+  {
+    "cmd": "tempfile --quiet",
+    "ondevice_output": "tempfile: unrecognized option '--quiet'\nTry `tempfile --help' for more information."
+  },
+  {
+    "cmd": "tempfile -s .suffix",
+    "ondevice_output": "tempfile: invalid suffix: .suffix"
+  },
+  {
+    "cmd": "time",
+    "ondevice_output": "real    0m0.012s\nuser    0m0.008s\nsys     0m0.004s"
+  },
+  {
+    "cmd": "time -p",
+    "ondevice_output": "real    0m0.003s\nuser    0m0.001s\nsys     0m0.002s"
+  },
+  {
+    "cmd": "ubuntu-security-status",
+    "ondevice_output": "bash: ubuntu-security-status: command not found"
+  },
+  {
+    "cmd": "ubuntu-security-status; getconf PAGE_SIZE",
+    "ondevice_output": "ubuntu-security-status: command not found\n\nPAGE_SIZE = 4096"
+  },
+  {
+    "cmd": "uname",
+    "ondevice_output": "Linux svr04 3.2.0-4-amd64 #1 SMP Wed Jul 20 17:09:38 UTC 2011 x86_64 GNU/Linux"
+  },
+  {
+    "cmd": "uname -a",
+    "ondevice_output": "Linux svr04 3.2.0-4-amd64 #1 SMP Wed Jul 20 19:37:28 UTC 2011 x86_64 GNU/Linux"
+  },
+  {
+    "cmd": "uname -i",
+    "ondevice_output": "x86_64"
+  },
+  {
+    "cmd": "uname -m",
+    "ondevice_output": "x86_64"
+  },
+  {
+    "cmd": "uname -n",
+    "ondevice_output": "svr04"
+  },
+  {
+    "cmd": "uname -n; dig google.com",
+    "ondevice_output": "svr04\n; <<>> DiG 9.8.1-P1 <<>> google.com\n;; global options: +cmd\n;; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 12345\n;; flags: qr rd ra; QUERY: 1, ANSWER: 5, AUTHORITY: 0, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 4096\n;; QUESTION SECTION:\n;google.com.                    IN      A\n\n;; ANSWER SECTION:\ngoogle.com.             299     IN      A       172.217.14.206\ngoogle.com.             299     IN      A       172.217.14.207\ngoogle.com.             299     IN      A       172.217.14.208\ngoogle.com.             299     IN      A       172.217.14.209\ngoogle.com.             29"
+  },
+  {
+    "cmd": "uname -o",
+    "ondevice_output": "GNU/Linux"
+  },
+  {
+    "cmd": "uname -p",
+    "ondevice_output": "x86_64"
+  },
+  {
+    "cmd": "uname -r",
+    "ondevice_output": "3.2.0-4-amd64"
+  },
+  {
+    "cmd": "uname -s",
+    "ondevice_output": "Linux"
+  },
+  {
+    "cmd": "uname -v",
+    "ondevice_output": "#1 SMP Debian 3.2.89-10+deb7u1 x86_64 GNU/Linux"
+  },
+  {
+    "cmd": "uptime",
+    "ondevice_output": "14:30:00 up 2 days, 5:20,  1 user,  load average: 0.12, 0.08, 0.05"
+  },
+  {
+    "cmd": "uptime -p",
+    "ondevice_output": "The system has been up for 5 days, 2 hours, 30 minutes, and 45 seconds."
+  },
+  {
+    "cmd": "uptime -s",
+    "ondevice_output": "14:30:00"
+  }
+]

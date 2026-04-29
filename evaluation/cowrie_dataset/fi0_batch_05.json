@@ -1,0 +1,202 @@
+[
+  {
+    "cmd": "networkctl label",
+    "response": "-bash: networkctl: command not found"
+  },
+  {
+    "cmd": "networkctl list",
+    "response": "-bash: networkctl: command not found"
+  },
+  {
+    "cmd": "networkctl lldp",
+    "response": "-bash: networkctl: command not found"
+  },
+  {
+    "cmd": "networkctl status",
+    "response": "-bash: networkctl: command not found"
+  },
+  {
+    "cmd": "networkctl status -a",
+    "response": "-bash: networkctl: command not found"
+  },
+  {
+    "cmd": "nmctl -t",
+    "response": "-bash: nmctl: command not found"
+  },
+  {
+    "cmd": "nmctl -t -c no g",
+    "response": "-bash: nmctl: command not found"
+  },
+  {
+    "cmd": "nmctl -t g",
+    "response": "-bash: nmctl: command not found"
+  },
+  {
+    "cmd": "nmctl -t g; getconf PAGE_SIZE",
+    "response": "-bash: nmctl: command not found\n\u001b[4l32"
+  },
+  {
+    "cmd": "nproc",
+    "response": "\u001b[4l2"
+  },
+  {
+    "cmd": "nslookup google.com",
+    "response": "-bash: nslookup: command not found"
+  },
+  {
+    "cmd": "nstat",
+    "response": "\u001b[4l-bash: /usr/bin/nstat: cannot execute binary file: Exec format error"
+  },
+  {
+    "cmd": "nstat -j",
+    "response": "\u001b[4l-bash: /usr/bin/nstat: cannot execute binary file: Exec format error"
+  },
+  {
+    "cmd": "nstat -p",
+    "response": "\u001b[4l-bash: /usr/bin/nstat: cannot execute binary file: Exec format error"
+  },
+  {
+    "cmd": "numactl -abs",
+    "response": "-bash: numactl: command not found"
+  },
+  {
+    "cmd": "numactl -abs; memusage init",
+    "response": "-bash: numactl: command not found\n-bash: memusage: command not found"
+  },
+  {
+    "cmd": "numactl -as",
+    "response": "-bash: numactl: command not found"
+  },
+  {
+    "cmd": "numactl -s",
+    "response": "-bash: numactl: command not found"
+  },
+  {
+    "cmd": "numastat",
+    "response": "-bash: numastat: command not found"
+  },
+  {
+    "cmd": "numastat -c",
+    "response": "-bash: numastat: command not found"
+  },
+  {
+    "cmd": "numastat -cm",
+    "response": "-bash: numastat: command not found"
+  },
+  {
+    "cmd": "numastat -m",
+    "response": "-bash: numastat: command not found"
+  },
+  {
+    "cmd": "numastat -m; getconf HOSTNAME",
+    "response": "-bash: numastat: command not found\n\u001b[4l32"
+  },
+  {
+    "cmd": "numastat -v",
+    "response": "-bash: numastat: command not found"
+  },
+  {
+    "cmd": "numastat -vcm",
+    "response": "-bash: numastat: command not found"
+  },
+  {
+    "cmd": "nvidia-detector",
+    "response": "-bash: nvidia-detector: command not found"
+  },
+  {
+    "cmd": "oomctl",
+    "response": "-bash: oomctl: command not found"
+  },
+  {
+    "cmd": "oomctl dump",
+    "response": "-bash: oomctl: command not found"
+  },
+  {
+    "cmd": "oomctl dump; laptop-detect -v",
+    "response": "-bash: oomctl: command not found\n\u001b[4l-bash: /usr/sbin/laptop-detect: cannot execute binary file: Exec format error"
+  },
+  {
+    "cmd": "openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -nodes -subj \"/CN=example.org/\"",
+    "response": "-bash: openssl: command not found"
+  },
+  {
+    "cmd": "p11-kit  list-modules",
+    "response": "-bash: p11-kit: command not found"
+  },
+  {
+    "cmd": "p11-kit  print-config",
+    "response": "-bash: p11-kit: command not found"
+  },
+  {
+    "cmd": "pactl list",
+    "response": "-bash: pactl: command not found"
+  },
+  {
+    "cmd": "pactl stat",
+    "response": "-bash: pactl: command not found"
+  },
+  {
+    "cmd": "pa-info",
+    "response": "-bash: pa-info: command not found"
+  },
+  {
+    "cmd": "pcap-config --libs",
+    "response": "-bash: pcap-config: command not found"
+  },
+  {
+    "cmd": "pcre2-config --cflags",
+    "response": "-bash: pcre2-config: command not found"
+  },
+  {
+    "cmd": "pcre2-config --cflags-posix",
+    "response": "-bash: pcre2-config: command not found"
+  },
+  {
+    "cmd": "pcre2-config --exec-prefix",
+    "response": "-bash: pcre2-config: command not found"
+  },
+  {
+    "cmd": "pcre2-config --libs16",
+    "response": "-bash: pcre2-config: command not found"
+  },
+  {
+    "cmd": "pcre2-config --libs32",
+    "response": "-bash: pcre2-config: command not found"
+  },
+  {
+    "cmd": "pcre2-config --libs8",
+    "response": "-bash: pcre2-config: command not found"
+  },
+  {
+    "cmd": "pcre2-config --libs-posix",
+    "response": "-bash: pcre2-config: command not found"
+  },
+  {
+    "cmd": "pcre2-config --prefix",
+    "response": "-bash: pcre2-config: command not found"
+  },
+  {
+    "cmd": "pcre2-config --version",
+    "response": "-bash: pcre2-config: command not found"
+  },
+  {
+    "cmd": "pidstat",
+    "response": "-bash: pidstat: command not found"
+  },
+  {
+    "cmd": "pidstat 1 1",
+    "response": "-bash: pidstat: command not found"
+  },
+  {
+    "cmd": "pidstat -d",
+    "response": "-bash: pidstat: command not found"
+  },
+  {
+    "cmd": "pidstat -d; uname -n",
+    "response": "-bash: pidstat: command not found\n\u001b[4l-I"
+  },
+  {
+    "cmd": "pidstat -l",
+    "response": "-bash: pidstat: command not found"
+  }
+]

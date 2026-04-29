@@ -1,0 +1,202 @@
+[
+  {
+    "cmd": "sensors -f",
+    "response": "-bash: sensors: command not found"
+  },
+  {
+    "cmd": "sensors -h",
+    "response": "-bash: sensors: command not found"
+  },
+  {
+    "cmd": "sensors -j",
+    "response": "-bash: sensors: command not found"
+  },
+  {
+    "cmd": "sensors k10temp-pci-00c3",
+    "response": "-bash: sensors: command not found"
+  },
+  {
+    "cmd": "sensors k10temp-pci-00c3; cat /proc/meminfo",
+    "response": "-bash: sensors: command not found\n\u001b[4lMemTotal:        4054744 kB\nMemFree:          997740 kB\nBuffers:           40276 kB\nCached:          1801864 kB\nSwapCached:        17656 kB\nActive:           879260 kB\nInactive:        1549432 kB\nActive(anon):     286488 kB\nInactive(anon):   351652 kB\nActive(file):     592772 kB\nInactive(file):  1197780 kB\nUnevictable:        2168 kB\nMlocked:            2168 kB\nSwapTotal:       2097148 kB\nSwapFree:        2026516 kB\nDirty:               240 kB\nWriteback:             0 kB\nAnonPages:        574040 kB\nMapped:            56220 kB\nShmem:             49908 kB\nSlab:             490824 kB\nSReclaimable:     444928 kB\nSUnreclaim:        45896 kB\nKernelStack:        3280 kB\nPageTables:        18352 kB\nNFS_Unstable:          0 kB\nBounce:                0 kB\nWritebackTmp:          0 kB\nCommitLimit:     4124520 kB\nCommitted_AS:    2625420 kB\nVmallocTotal:   34359738367 kB\nVmallocUsed:      363260 kB\nVmallocChunk:   34359366372 kB\nHardwareCorrupted:     0 kB\nAnonHugePages:         0 kB\nHugePages_Total:       0\nHugePages_Free:        0\nHugePages_Rsvd:        0\nHugePages_Surp:        0\nHugepagesize:       2048 kB\nDirectMap4k:      273984 kB\nDirectMap2M:     3911680 kB"
+  },
+  {
+    "cmd": "sensors -s",
+    "response": "-bash: sensors: command not found"
+  },
+  {
+    "cmd": "sensors -u",
+    "response": "-bash: sensors: command not found"
+  },
+  {
+    "cmd": "sensors -v",
+    "response": "-bash: sensors: command not found"
+  },
+  {
+    "cmd": "sensors -w",
+    "response": "-bash: sensors: command not found"
+  },
+  {
+    "cmd": "sensors -w; uuidgen --name aaa",
+    "response": "-bash: sensors: command not found\n-bash: uuidgen: command not found"
+  },
+  {
+    "cmd": "seq 1",
+    "response": "\u001b[4l-bash: /usr/bin/seq: cannot execute binary file: Exec format error"
+  },
+  {
+    "cmd": "seq 10",
+    "response": "\u001b[4l-bash: /usr/bin/seq: cannot execute binary file: Exec format error"
+  },
+  {
+    "cmd": "seq 1 10",
+    "response": "\u001b[4l-bash: /usr/bin/seq: cannot execute binary file: Exec format error"
+  },
+  {
+    "cmd": "sha224sum /etc/hosts",
+    "response": "\u001b[4l-bash: /usr/bin/sha224sum: cannot execute binary file: Exec format error"
+  },
+  {
+    "cmd": "sha384sum /etc/hosts",
+    "response": "\u001b[4l-bash: /usr/bin/sha384sum: cannot execute binary file: Exec format error"
+  },
+  {
+    "cmd": "sha512sum /etc/hosts",
+    "response": "\u001b[4l-bash: /usr/bin/sha512sum: cannot execute binary file: Exec format error"
+  },
+  {
+    "cmd": "shasum /etc/hosts",
+    "response": "-bash: shasum: command not found"
+  },
+  {
+    "cmd": "stat /etc/hosts",
+    "response": "\u001b[4l-bash: /usr/bin/stat: cannot execute binary file: Exec format error"
+  },
+  {
+    "cmd": "stat /etc/passwd",
+    "response": "\u001b[4l-bash: /usr/bin/stat: cannot execute binary file: Exec format error"
+  },
+  {
+    "cmd": "strace -f ls",
+    "response": "-bash: strace: command not found"
+  },
+  {
+    "cmd": "strace ls",
+    "response": "-bash: strace: command not found"
+  },
+  {
+    "cmd": "sum /etc/hosts",
+    "response": "\u001b[4l-bash: /usr/bin/sum: cannot execute binary file: Exec format error"
+  },
+  {
+    "cmd": "tempfile --directory=/var/tmp --prefix=myapp_",
+    "response": "\u001b[4l-bash: /bin/tempfile: cannot execute binary file: Exec format error"
+  },
+  {
+    "cmd": "tempfile -d /tmp",
+    "response": "\u001b[4l-bash: /bin/tempfile: cannot execute binary file: Exec format error"
+  },
+  {
+    "cmd": "tempfile -d /tmp -p log_ -m 0640 -s .tmp",
+    "response": "\u001b[4l-bash: /bin/tempfile: cannot execute binary file: Exec format error"
+  },
+  {
+    "cmd": "tempfile -m 0600",
+    "response": "\u001b[4l-bash: /bin/tempfile: cannot execute binary file: Exec format error"
+  },
+  {
+    "cmd": "tempfile -m 0600; tracepath 8.8.8.8",
+    "response": "\u001b[4l-bash: /bin/tempfile: cannot execute binary file: Exec format error\n\u001b[4h-bash: tracepath: command not found"
+  },
+  {
+    "cmd": "tempfile -n 5",
+    "response": "\u001b[4l-bash: /bin/tempfile: cannot execute binary file: Exec format error"
+  },
+  {
+    "cmd": "tempfile -p prefix_",
+    "response": "\u001b[4l-bash: /bin/tempfile: cannot execute binary file: Exec format error"
+  },
+  {
+    "cmd": "tempfile -p test_ -s .txt -m 0644",
+    "response": "\u001b[4l-bash: /bin/tempfile: cannot execute binary file: Exec format error"
+  },
+  {
+    "cmd": "tempfile --quiet",
+    "response": "\u001b[4l-bash: /bin/tempfile: cannot execute binary file: Exec format error"
+  },
+  {
+    "cmd": "tempfile -s .suffix",
+    "response": "\u001b[4l-bash: /bin/tempfile: cannot execute binary file: Exec format error"
+  },
+  {
+    "cmd": "time",
+    "response": "-bash: time: command not found"
+  },
+  {
+    "cmd": "time -p",
+    "response": "-bash: time: command not found"
+  },
+  {
+    "cmd": "ubuntu-security-status",
+    "response": "-bash: ubuntu-security-status: command not found"
+  },
+  {
+    "cmd": "ubuntu-security-status; getconf PAGE_SIZE",
+    "response": "-bash: ubuntu-security-status: command not found\n\u001b[4l32"
+  },
+  {
+    "cmd": "uname",
+    "response": "\u001b[4lLinux"
+  },
+  {
+    "cmd": "uname -a",
+    "response": "\u001b[4lLinux -I 3.2.0-4-amd64 #1 SMP Debian 3.2.68-1+deb7u1 x86_64 GNU/Linux"
+  },
+  {
+    "cmd": "uname -i",
+    "response": "\u001b[4lx86_64"
+  },
+  {
+    "cmd": "uname -m",
+    "response": "\u001b[4lx86_64"
+  },
+  {
+    "cmd": "uname -n",
+    "response": "\u001b[4l-I"
+  },
+  {
+    "cmd": "uname -n; dig google.com",
+    "response": "\u001b[4l-I\n\u001b[4h\u001b[4l; <<>> DiG 9.10.6 <<>> google.com\n;; global options: +cmd\n;; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 7714\n;; flags: qr rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 1\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 512\n;; QUESTION SECTION:\n;google.com.\t\tIN\tA\n;; ANSWER SECTION:\ngoogle.com.\t\t34\tIN\tA\t142.250.190.14\n;; Query time: 45 msec\n;; SERVER: 2001:730:3ef2::10#53(2001:730:3ef2::10)\n;; WHEN: Fri Mar 20 11:59:36 UTC 2026\n;; MSG SIZE  rcvd: 87"
+  },
+  {
+    "cmd": "uname -o",
+    "response": "\u001b[4lGNU/Linux"
+  },
+  {
+    "cmd": "uname -p",
+    "response": "\u001b[4lx86_64"
+  },
+  {
+    "cmd": "uname -r",
+    "response": "\u001b[4l3.2.0-4-amd64"
+  },
+  {
+    "cmd": "uname -s",
+    "response": "\u001b[4lLinux"
+  },
+  {
+    "cmd": "uname -v",
+    "response": "\u001b[4l#1 SMP Debian 3.2.68-1+deb7u1"
+  },
+  {
+    "cmd": "uptime",
+    "response": "\u001b[4l11:59:40  up 38 min,  1 user,  load average: 0.00, 0.00, 0.00"
+  },
+  {
+    "cmd": "uptime -p",
+    "response": "\u001b[4l11:59:40  up 38 min,  1 user,  load average: 0.00, 0.00, 0.00"
+  },
+  {
+    "cmd": "uptime -s",
+    "response": "\u001b[4l11:59:41  up 38 min,  1 user,  load average: 0.00, 0.00, 0.00"
+  }
+]

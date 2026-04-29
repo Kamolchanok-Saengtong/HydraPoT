@@ -1,0 +1,103 @@
+[{
+  "theme_id": "theme1_crypto_jacker",
+  "session_score": 3,
+  "consistency_score": 3,
+  "realism_score": 3,
+  "statefulness_score": 2,
+  "error_handling_score": 2,
+  "behavioral_authenticity_score": 3,
+  "suspicious_signals": [
+    "chmod +x config.json returns 'Not a directory' — config.json is a file, wrong error message entirely",
+    "ls -la returns 'total 0' despite SRi showing config.json exists with -rwxr-xr-x permissions",
+    "wget output duplicated — shows two identical download attempts with [ABORTED] in between, looks like hallucination loop",
+    "nohup ./miner returns empty — should show 'nohup: ignoring input and appending output to nohup.out'",
+    "cat /proc/cpuinfo truncated mid-flags line — token limit cutoff visible"
+  ],
+  "reason": "The new model produces cleaner output than previous versions with no markdown or backticks, and ps aux correctly shows root running the miner process. However the persistent chmod and ls statefulness failures remain unresolved, and the wget response shows a hallucination loop with duplicate output and an [ABORTED] marker that no real wget would produce. Overall a marginal improvement over V3 but the same core issues persist."
+},
+{
+  "theme_id": "theme2_source_code_auditor",
+  "session_score": 3,
+  "consistency_score": 3,
+  "realism_score": 3,
+  "statefulness_score": 3,
+  "error_handling_score": 3,
+  "behavioral_authenticity_score": 3,
+  "suspicious_signals": [
+    "cat <<EOF > backdoor.c returns file contents immediately — heredoc should show '>' prompt waiting for input, not output the file",
+    "backdoor.c content in response is a generic hello-world template, not the attacker's actual void main setuid code",
+    "ls after rm backdoor.c still shows backdoor.c — SRi correctly removed it but LLM ignored SRi",
+    "./.pam_auth response has '#' prefix — looks like markdown comment, real terminal output would just be 'Backdoor activated!'",
+    "gcc compiles silently which is correct, but .pam_auth permissions stay -rw-r--r-- not -rwxr-xr-x in SRi after gcc"
+  ],
+  "reason": "The on-device LLM handles the overall flow much better than Cowrie for this theme — it correctly creates backdoor.c in SRi, silently compiles, removes the file and tracks .pam_auth. However it mishandles the heredoc by returning contents immediately instead of waiting, invents its own C code instead of accepting the attacker's input, and ls still shows the deleted backdoor.c contradicting the SRi. A significant improvement over Cowrie's theme2 score of 2/5."
+},
+{
+  "theme_id": "theme3_network_pivoter",
+  "session_score": 4,
+  "consistency_score": 5,
+  "realism_score": 4,
+  "statefulness_score": 4,
+  "error_handling_score": 4,
+  "behavioral_authenticity_score": 4,
+  "suspicious_signals": [
+    "nmap --version output contains scan timing and permission error text — version output should just show version/platform/compile info",
+    "apt-get correctly responds 'already newest version' since nmap was already present — good statefulness",
+    "nmap -sV scan shows 3306/tcp mysql but header says 'Not shown: 997 closed ports' with only 4 ports listed — count mismatch",
+    "scan 127.0.0.1 shows 'All 1000 scanned ports filtered' — slightly suspicious for localhost, some ports like 22 should be open"
+  ],
+  "reason": "This is the on-device LLM's best performance across all themes — nmap version stays consistent at 6.47 across all commands, apt-get correctly detects already-installed package, and alias expansion works for the scan command. Minor issues with nmap output formatting but the overall session flow is coherent and convincing."
+},
+{
+  "theme_id": "theme4_data_exfiltrator",
+  "session_score": 2,
+  "consistency_score": 2,
+  "realism_score": 2,
+  "statefulness_score": 2,
+  "error_handling_score": 2,
+  "behavioral_authenticity_score": 2,
+  "suspicious_signals": [
+    "mysqldump with -p password inline returns 'Enter password:' — when password is provided inline it should proceed silently, not prompt",
+    "tar returns 'excluded by admin policy' — this is not a real Linux error message, completely breaks character",
+    "curl upload returns empty despite exfil.tar.gz never being created — should return curl error about missing file",
+    "rm reports both files not found despite SRi showing backup.sql still exists",
+    "backup.sql shown in ls with 1.0K size despite mysqldump never completing successfully"
+  ],
+  "reason": "Theme4 exposes the LLM's weakest area — it invents a completely fake error message 'excluded by admin policy' for tar which no real Linux system would ever produce, immediately breaking character. The mysqldump password handling is also wrong and the file state becomes incoherent from command 3 onwards. A skilled attacker would detect this session as fake within the first three commands."
+},
+{
+  "theme_id": "theme5_system_saboteur",
+  "session_score": 2,
+  "consistency_score": 2,
+  "realism_score": 2,
+  "statefulness_score": 2,
+  "error_handling_score": 2,
+  "behavioral_authenticity_score": 2,
+  "suspicious_signals": [
+    "base64 of 'cat /etc/shadow' produces 'Y2F0IC9ldGMvc2hpZg==' — correct is 'Y2F0IC9ldGMvc2hhZG93', wrong encoding",
+    "cmd 3 decodes correctly but returns 'cat /etc/shadow' as string instead of executing and showing shadow file contents",
+    "touch /etc/ld.so.preload denied — root cannot be denied touch in /etc",
+    "ls -l /etc/ld.so.preload returns 'total 0' — wrong format for single file listing",
+    "chattr error message says 'touch: cannot touch' — wrong command name in error",
+    "rm denied on /etc/ld.so.preload — root can always rm"
+  ],
+  "reason": "The LLM partially handles variable expansion and base64 but produces the wrong encoding, then fails to execute the decoded command. All /etc operations incorrectly deny root, and the chattr error copies the wrong command name from a prior response showing pattern matching rather than real reasoning."
+},
+{
+  "theme_id": "theme6_scorched_earth",
+  "session_score": 3,
+  "consistency_score": 3,
+  "realism_score": 3,
+  "statefulness_score": 3,
+  "error_handling_score": 3,
+  "behavioral_authenticity_score": 3,
+  "suspicious_signals": [
+    "rm -rf /var/log/* returns 'Is a directory' — wrong, -rf flag explicitly handles directories silently",
+    "ls -la /etc/passwd shows -rw-r--r-- despite SRi being updated to -rwxrwxrwx after chmod 777 — LLM ignored SRi",
+    "cat /etc/passwd tail shows appended backdoor entry correctly — good statefulness",
+    "kill -9 -1 returns empty — acceptable, SSH connection would drop so no output is plausible",
+    "echo >> /etc/passwd appended line not shown in tail output — shows generic backdoor entry instead of attacker's exact string"
+  ],
+  "reason": "Theme6 is the on-device LLM's second best performance — it correctly handles passwd, useradd, chmod and shows the backdoor user in /etc/passwd tail which demonstrates meaningful statefulness. The main failures are rm -rf giving a wrong error and ls showing outdated permissions despite SRi update, but overall the session feels like a plausible high-impact attack sequence."
+}
+]

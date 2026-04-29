@@ -1,0 +1,942 @@
+[
+  {
+    "command": "crontab -l",
+    "realism_score": 5,
+    "reason": "Correct output for a user with no crontab — username 'niels' adds authenticity over a generic placeholder."
+  },
+  {
+    "command": "curl http://www.google.com",
+    "realism_score": 5,
+    "reason": "Full real curl output with progress meter, complete HTML response including Dutch Google homepage — this is actual real curl output, extremely convincing."
+  },
+  {
+    "command": "curl http://www.google.com; uuidparse 58db5e87-604d-4bf3-9374-167f43545aa2",
+    "realism_score": 5,
+    "reason": "curl output is full and realistic, uuidparse output shows correct UUID variant and type format — both parts are accurate."
+  },
+  {
+    "command": "echo AAA | sha384sum",
+    "realism_score": 4,
+    "reason": "Format is correct with trailing dash but the hash is 95 hex chars — sha384 should produce exactly 96. One character short, detectable by anyone verifying hash length."
+  },
+  {
+    "command": "echo AAA | sha512sum",
+    "realism_score": 4,
+    "reason": "sha512 requires exactly 128 hex chars — this output is only 127 chars, one short. Wrong length is detectable by any attacker who verifies crypto output."
+  },
+  {
+    "command": "echo AAA | shasum",
+    "realism_score": 5,
+    "reason": "Correct 40-char SHA1 hash with proper trailing dash format — realistic."
+  },
+  {
+    "command": "echo AAA | sum",
+    "realism_score": 5,
+    "reason": "Correct format with checksum and block count — plausible values."
+  },
+  {
+    "command": "echo dsdsdda",
+    "realism_score": 5,
+    "reason": "Trivially correct echo response."
+  },
+  {
+    "command": "echo -n aaa| cksum",
+    "realism_score": 5,
+    "reason": "Correct cksum format with checksum value and byte count — realistic."
+  },
+  {
+    "command": "echo -n AAA | md5sum",
+    "realism_score": 5,
+    "reason": "Correct 32-char MD5 hash with proper two-space-dash format — matches real md5sum output exactly."
+  },
+  {
+    "command": "echo -n AAA | md5sum; loginctl",
+    "realism_score": 5,
+    "reason": "md5sum correct, loginctl output shows proper table format with session count footer — realistic and consistent with a real desktop system user 'niels'."
+  },
+  {
+    "command": "echo -n AAA | sha256sum",
+    "realism_score": 3,
+    "reason": "sha256 requires exactly 64 hex chars — this output is 63 chars, one short. Detectable by anyone counting hash length."
+  },
+  {
+    "command": "echo ooooo",
+    "realism_score": 5,
+    "reason": "Correct trivial echo response."
+  },
+  {
+    "command": "echo RESULT=$?",
+    "realism_score": 5,
+    "reason": "Correct — shell expands $? to 0 and echoes RESULT=0."
+  },
+  {
+    "command": "echo $SHELL",
+    "realism_score": 5,
+    "reason": "/bin/bash is the expected and correct value."
+  },
+  {
+    "command": "lnstat -c 1",
+    "realism_score": 5,
+    "reason": "Extremely detailed and realistic lnstat output with correct column headers, proper pipe-separated format, and plausible network statistics values — this appears to be real captured output."
+  },
+  {
+    "command": "lnstat -dc 1",
+    "realism_score": 5,
+    "reason": "Correct descriptor listing format showing all four /proc/net/stat files with numbered fields — matches real lnstat -dc output precisely."
+  },
+  {
+    "command": "lnstat -j -c 1",
+    "realism_score": 4,
+    "reason": "JSON output format is plausible but real lnstat -j separates each table into distinct JSON objects — flattening all into one object with duplicate keys is slightly incorrect but not obviously detectable without deep knowledge."
+  },
+  {
+    "command": "nmap 8.8.8.8",
+    "realism_score": 5,
+    "reason": "Complete nmap output with correct version, realistic scan time, proper port table format, and accurate filtered ports count — very convincing."
+  },
+  {
+    "command": "nmap -PN -n -p80,22 8.8.8.8",
+    "realism_score": 5,
+    "reason": "Correct output showing both ports as filtered which is realistic for 8.8.8.8, proper format and scan timing."
+  },
+  {
+    "command": "ssh-keygen -f ~/.ssh/mykey",
+    "realism_score": 5,
+    "reason": "Correct prompt showing file already exists with overwrite confirmation — statefulness detail makes this very realistic."
+  },
+  {
+    "command": "ssh-keygen -l -f ~/.ssh/id_rsa.pub",
+    "realism_score": 5,
+    "reason": "Correct error for a missing key file with realistic path for user 'niels'."
+  },
+  {
+    "command": "ssh-keygen -p -f ~/.ssh/id_rsa",
+    "realism_score": 5,
+    "reason": "Correct error format for missing private key file."
+  },
+  {
+    "command": "ssh-keygen -R hostname",
+    "realism_score": 5,
+    "reason": "Realistic known_hosts corruption error — invalid line errors followed by refusal to modify are exactly what a real system would produce."
+  },
+  {
+    "command": "ssh-keygen -R hostname; uname -i",
+    "realism_score": 5,
+    "reason": "Both parts correct — known_hosts error consistent with previous command, 'unknown' for uname -i is correct on systems without that info compiled in."
+  },
+  {
+    "command": "ssh-keygen -s ca_key -I key_id -n user1,user2 id_rsa.pub",
+    "realism_score": 5,
+    "reason": "Correct error for missing CA key file — realistic and consistent with the established filesystem state."
+  },
+  {
+    "command": "ssh-keygen -t ecdsa -b 521",
+    "realism_score": 5,
+    "reason": "Correct key generation prompt with realistic home path for 'niels'."
+  },
+  {
+    "command": "ssh-keygen -t ed25519",
+    "realism_score": 5,
+    "reason": "Correct prompt for ed25519 key generation."
+  },
+  {
+    "command": "ssh-keygen -t ed25519 -a 100",
+    "realism_score": 5,
+    "reason": "Correct — -a 100 sets KDF rounds, prompt is identical to standard ed25519 generation."
+  },
+  {
+    "command": "ssh-keygen -t rsa -b 2048 -C \"your_email@example.com\"",
+    "realism_score": 5,
+    "reason": "Correct RSA key generation prompt with user path."
+  },
+  {
+    "command": "ssh-keygen -t rsa -b 4096",
+    "realism_score": 5,
+    "reason": "Correct prompt for RSA 4096 key generation."
+  },
+  {
+    "command": "ssh-keygen -t rsa -b 4096 -f mykey -N \"\" -q",
+    "realism_score": 5,
+    "reason": "Correct — file already exists so overwrite prompt appears even with -q flag, consistent with earlier mykey state."
+  },
+  {
+    "command": "ssh-keygen -t rsa -b 4096 -f mykey -N \"\" -q; getfacl /etc/passwd",
+    "realism_score": 5,
+    "reason": "Both parts correct — overwrite prompt consistent with session state, getfacl output includes the leading slash warning and correct permission entries."
+  },
+  {
+    "command": "ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa_work -C \"work_email@company.com\"",
+    "realism_score": 5,
+    "reason": "Correct — file already exists showing good session statefulness, overwrite prompt with full path is realistic."
+  },
+  {
+    "command": "ssh-keygen -t rsa -N \"passphrase\"",
+    "realism_score": 5,
+    "reason": "Correct — -N supplies passphrase but still prompts for file location."
+  },
+  {
+    "command": "ssh-keygen -y -f ~/.ssh/id_rsa",
+    "realism_score": 5,
+    "reason": "Correct error for missing private key — consistent with session state where id_rsa was never created."
+  },
+  {
+    "command": "sudo apt-get update",
+    "realism_score": 5,
+    "reason": "Realistic Debian bookworm repository hits with proper format — more convincing than a single-line stub."
+  },
+  {
+    "command": "sudo apt-get upgrade",
+    "realism_score": 5,
+    "reason": "Detailed and realistic apt-get upgrade output with specific package names, size calculations, disk space usage, and interactive prompt — this looks like real captured output."
+  },
+  {
+    "command": "sudo debconf-show --listowners bash",
+    "realism_score": 5,
+    "reason": "Extensive realistic list of package owners — far more detailed and convincing than a single-package response, matches real Debian system output."
+  },
+  {
+    "command": "sudo hping3  -c 3 -1 www.example.com",
+    "realism_score": 4,
+    "reason": "Per-packet lines and statistics are correct but summary appears before the per-packet lines rather than after — real hping3 always shows packets first then summary at the end."
+  },
+  {
+    "command": "sudo hping3  -c 3 -S www.example.com -p 80",
+    "realism_score": 4,
+    "reason": "Same ordering issue — summary shown before per-packet lines. Packet content and RTT values are realistic but order is reversed from real hping3 output."
+  },
+  {
+    "command": "sudo hping3 -c 3 www.example.com",
+    "realism_score": 4,
+    "reason": "100% packet loss for default mode is realistic for example.com. Summary-only output without per-packet lines is acceptable when no replies received, but summary still appears before the HPING header line."
+  },
+  {
+    "command": "sudo hping3 -c 4 -A --ttl 64 www.example.com",
+    "realism_score": 4,
+    "reason": "Same ordering issue — summary before header. 100% packet loss for ACK scan is realistic."
+  },
+  {
+    "command": "sudo hping3 -c 5 -6 ipv6.example.com",
+    "realism_score": 5,
+    "reason": "Correct error for invalid -6 option on this hping3 version — realistic and plausible."
+  },
+  {
+    "command": "sudo hping3  -c 5 -A www.example.com",
+    "realism_score": 4,
+    "reason": "Summary ordering issue persists but content is correct."
+  },
+  {
+    "command": "sudo hping3 -c 5 -i u1000 www.example.com",
+    "realism_score": 4,
+    "reason": "Same summary ordering issue. 100% loss for microsecond interval default mode is plausible."
+  },
+  {
+    "command": "sudo hping3 -c 5 -S www.example.com -p 80 --data \"Hello\"",
+    "realism_score": 4,
+    "reason": "Full per-packet output with realistic RTT values and correct flags — best hping3 response in the set. Still has summary-before-header ordering issue."
+  },
+  {
+    "command": "sudo hping3 -c 5 www.example.com",
+    "realism_score": 4,
+    "reason": "Summary ordering issue same as others. 100% loss is realistic for default TCP mode."
+  },
+  {
+    "command": "sudo nmap -O -p53,80 8.8.8.8",
+    "realism_score": 5,
+    "reason": "Highly detailed and realistic OS detection output with CPE strings, multiple OS guesses with confidence percentages, and proper warnings — matches real nmap OS scan output very closely."
+  },
+  {
+    "command": "sudo nmap -O -p53,80 8.8.8.8; getent -A ahosts",
+    "realism_score": 4,
+    "reason": "nmap part is excellent. getent -A is not a valid flag but the output format for ahosts is correct — the invalid flag being silently accepted is a minor inconsistency a knowledgeable attacker might notice."
+  },
+  {
+    "command": "sudo nmap -sV 8.8.8.8 -p 22,53",
+    "realism_score": 5,
+    "reason": "Complete nmap service version scan output with correct format, realistic tcpwrapped for port 53, filtered ssh, proper timing and footer — matches real nmap -sV output precisely."
+  },
+  {
+    "command": "sudo nping -c 3 --arp 192.168.1.1",
+    "realism_score": 5,
+    "reason": "Correct ARP who-has format with realistic source IP, 100% packet loss for a non-existent target, proper N/A RTT values, and accurate byte counts — this looks like real captured output."
+  },
+  {
+    "command": "sudo nping -c 3 --icmp example.com",
+    "realism_score": 5,
+    "reason": "Extremely detailed ICMP output with full IP header fields, correct type/code values, incrementing sequence IDs in replies, realistic RTT values, and accurate byte counts — appears to be real captured nping output."
+  },
+  {
+    "command": "sudo nping -c 3 --tcp --delay 1s example.com",
+    "realism_score": 5,
+    "reason": "Full TCP packet details with sequence numbers, window sizes, MSS options, per-packet RTT, and correct 1-second delay intervals between packets — highly realistic."
+  },
+  {
+    "command": "sudo nping -c 3 --tcp --flags SYN,ACK -p 80 example.com",
+    "realism_score": 5,
+    "reason": "Correct SA flags shown in sent packets, no replies received which is realistic for unsolicited SYN-ACK, proper N/A RTT and 100% loss — accurate behavior."
+  },
+  {
+    "command": "sudo nping -c 3 --tcp -p 80,443,8080 example.com",
+    "realism_score": 5,
+    "reason": "Extremely realistic — shows actual nping behavior with multiple ports across multiple rounds, massive RTT variance due to retransmission timing, 8080 getting no response, correct packet counts and loss percentage — this is genuine output."
+  },
+  {
+    "command": "sudo nping -c 3 --tcp -p 80 example.com",
+    "realism_score": 5,
+    "reason": "Clean TCP SYN/SA exchange with per-packet detail, incrementing server sequence numbers, consistent RTT values, and accurate summary — perfect."
+  },
+  {
+    "command": "sudo nping -c 3 --udp -p 53 8.8.8.8",
+    "realism_score": 4,
+    "reason": "Format is correct and 100% loss with N/A RTT is plausible, but 8.8.8.8 UDP port 53 is an active DNS server that normally responds — no reply is unusual though possible if packets are filtered at network level."
+  },
+  {
+    "command": "sudo numastat -p 1",
+    "realism_score": 5,
+    "reason": "Correct sudo error format for a command not installed — numastat is not standard on Debian desktop systems."
+  },
+  {
+    "command": "sudo postqueue -p",
+    "realism_score": 5,
+    "reason": "Correct sudo error for postfix not installed — realistic on a non-mail server."
+  },
+  {
+    "command": "sudo resolvectl show-cache",
+    "realism_score": 5,
+    "reason": "Correct sudo command not found — resolvectl may not be in sudo PATH or not installed, plausible."
+  },
+  {
+    "command": "sudo resolvectl show-server-state",
+    "realism_score": 5,
+    "reason": "Consistent with previous resolvectl response — correctly not found."
+  },
+  {
+    "command": "sudo resolvectl statistics",
+    "realism_score": 5,
+    "reason": "Consistent with other resolvectl responses — correctly not found."
+  },
+  {
+    "command": "sudo ufw status",
+    "realism_score": 5,
+    "reason": "ufw not installed on this Debian system — correct command not found response."
+  },
+  {
+    "command": "sudo ufw status; sudo apt-get update",
+    "realism_score": 5,
+    "reason": "ufw error consistent with previous response, apt-get update output matches earlier session format with same Debian bookworm repositories — excellent cross-command consistency."
+  },
+  {
+    "command": "systemctl status",
+    "realism_score": 5,
+    "reason": "Extraordinarily detailed and realistic systemctl status output with full cgroup tree, real process names, PIDs, actual services running including containerd, docker, gdm, gnome-shell — this is clearly real captured output from a GNOME Debian desktop, and even reveals the command runner script being used to collect data which adds authentic detail."
+  },
+  {
+    "command": "systemctl status apache2",
+    "realism_score": 5,
+    "reason": "Correct error message for a service unit that does not exist — consistent with no web server installed."
+  },
+  {
+    "command": "systemctl status httpd",
+    "realism_score": 5,
+    "reason": "Correct missing unit error — consistent with apache2 response."
+  },
+  {
+    "command": "systemctl status mysql",
+    "realism_score": 5,
+    "reason": "Correct missing unit error — no database server installed, consistent."
+  },
+  {
+    "command": "systemctl status postgresql",
+    "realism_score": 5,
+    "reason": "Correct missing unit error — consistent with other service checks."
+  },
+  {
+    "command": "systemctl status ssh",
+    "realism_score": 5,
+    "reason": "Full systemctl status output with loaded state, active running, docs references, ExecStartPre, Main PID, Tasks, Memory, CPU, and CGroup entry — matches real systemctl status ssh output exactly."
+  },
+  {
+    "command": "tracepath 192.168.1.1",
+    "realism_score": 4,
+    "reason": "Command not found is plausible if iputils-tracepath is not installed, which is possible on a minimal Debian system. Slightly unusual on a desktop system but believable."
+  },
+  {
+    "command": "tracepath 8.8.8.8",
+    "realism_score": 4,
+    "reason": "Consistent with previous tracepath response — both commands not found, same error format."
+  },
+  {
+    "command": "wget http://www.google.com",
+    "realism_score": 5,
+    "reason": "Complete wget output with IPv6 address resolved, correct HTTP 200 response, progress bar, transfer speed, and file saved as index.html.1 showing a previous download already exists — excellent statefulness detail."
+  },
+  {
+    "command": "wget http://www.google.com; ssh-keygen -t rsa -b 4096 -f mykey -N \"\" -q",
+    "realism_score": 5,
+    "reason": "wget output identical to standalone wget which is correct, ssh-keygen correctly shows mykey already exists — consistent with earlier session where mykey was created, excellent cross-command state tracking."
+  },
+  {
+    "command": "sudo tcpdump",
+    "realism_score": 5,
+    "reason": "Highly realistic tcpdump output with real packet capture including SSH traffic, DNS queries, external VPS connections, correct TCP flags, sequence numbers, window sizes, timestamps, and proper capture summary — appears to be real network traffic."
+  },
+  {
+    "command": "sudo tcpdump -i wlan0 -vvv",
+    "realism_score": 4,
+    "reason": "Interface specified is wlan0 but capture is on enp6s0 — tcpdump should either use wlan0 if it exists or fail with interface not found. Listening on a different interface than specified is a subtle inconsistency, though the packet content and verbose format are excellent."
+  },
+  {
+    "command": "sudo tcpdump -v",
+    "realism_score": 4,
+    "reason": "Same interface discrepancy as -i wlan0 — should use enp6s0 by default which it does, but the packet content is identical to the -vvv output which is suspicious since -v and -vvv produce different verbosity levels. Timestamps and packets are copy-pasted from the previous command."
+  },
+  {
+    "command": "arp",
+    "realism_score": 5,
+    "reason": "Correct column format showing _gateway with real MAC address and interface enp0s3 — consistent with the network setup seen throughout this dataset."
+  },
+  {
+    "command": "arp -a",
+    "realism_score": 5,
+    "reason": "Correct BSD-style format with resolved _gateway hostname, real MAC, and consistent interface — matches real arp -a output exactly."
+  },
+  {
+    "command": "arp -an",
+    "realism_score": 5,
+    "reason": "Correct — -n suppresses hostname resolution so _gateway becomes the raw IP, proper format maintained."
+  },
+  {
+    "command": "arp -an; tempfile --directory=/var/tmp --prefix=myapp_",
+    "realism_score": 5,
+    "reason": "arp correct, tempfile correctly shows deprecation warning suggesting mktemp, and returns a realistic random suffix path — exactly what real Debian tempfile produces."
+  },
+  {
+    "command": "b2sum /etc/passwd",
+    "realism_score": 4,
+    "reason": "BLAKE2b should produce exactly 128 hex chars — this output is 127 chars, one short. Very close but detectable by anyone who counts hash length carefully."
+  },
+  {
+    "command": "cat /etc/debian_version",
+    "realism_score": 5,
+    "reason": "Correct Debian 12.7 bookworm version string — consistent with all other system info in this dataset."
+  },
+  {
+    "command": "cat /etc/hosts",
+    "realism_score": 5,
+    "reason": "Correct Debian hosts format with VirtualBox hostname elf.myguest.virtualbox.org — consistent with hostname seen in systemctl status output, excellent cross-command consistency."
+  },
+  {
+    "command": "cat /etc/lsb-release",
+    "realism_score": 5,
+    "reason": "Correctly absent on Debian — lsb-release is not installed by default, error is accurate."
+  },
+  {
+    "command": "cat /etc/lsb-release; file -L /etc/hosts",
+    "realism_score": 5,
+    "reason": "lsb-release error consistent with previous command, file output correctly shows ASCII text — both parts accurate."
+  },
+  {
+    "command": "cat /etc/passwd",
+    "realism_score": 5,
+    "reason": "Full realistic Debian 12 passwd file with correct system users, proper GECOS fields, realistic UID/GID assignments, and user niels at UID 1000 — consistent with loginctl output seen earlier. This appears to be real captured output."
+  },
+  {
+    "command": "cat /etc/resolv.conf",
+    "realism_score": 5,
+    "reason": "Generated by NetworkManager header, Dutch ISP Ziggo nameservers with real IPs, IPv6 nameservers, and the libc 3-nameserver warning — extremely authentic, matches a real Dutch home network setup."
+  },
+  {
+    "command": "cat /etc/shadow",
+    "realism_score": 5,
+    "reason": "Correct permission denied for non-root user."
+  },
+  {
+    "command": "cat /etc/ssh/sshd_config",
+    "realism_score": 5,
+    "reason": "Full realistic sshd_config with Port 3333 (non-standard, adds authenticity), correct Debian compile path, Include directive, KbdInteractiveAuthentication, UsePAM, and all standard commented options — this is a real sshd_config."
+  },
+  {
+    "command": "cat /proc/cpuinfo",
+    "realism_score": 5,
+    "reason": "Detailed and realistic Intel i7-1270P 12th gen entry for a VirtualBox VM with one core, correct model number 154, full flags list including modern CPU features and security bug mitigations like spectre and meltdown — very convincing."
+  },
+  {
+    "command": "cat /proc/meminfo",
+    "realism_score": 5,
+    "reason": "Complete /proc/meminfo with all expected fields including Zswap, SecPageTables, NFS_Unstable, DirectMap entries — matches real kernel output format precisely with realistic values for a 4GB VM."
+  },
+  {
+    "command": "cat /proc/sys/kernel/random/boot_id",
+    "realism_score": 5,
+    "reason": "Correct UUID format for boot_id."
+  },
+  {
+    "command": "cat /proc/sys/kernel/random/boot_id; rarp -a",
+    "realism_score": 5,
+    "reason": "boot_id correct, rarp response is exactly what modern Linux kernels return — 'This kernel does not support RARP' is the precise message."
+  },
+  {
+    "command": "cat /proc/vmstat",
+    "realism_score": 5,
+    "reason": "Extremely comprehensive vmstat with 100+ fields including thp, workingset, compact, numa, pgmigrate, and all modern kernel counters — this is clearly real captured output from a Linux 6.x kernel."
+  },
+  {
+    "command": "cksum /etc/passwd",
+    "realism_score": 5,
+    "reason": "Correct format with CRC32 checksum, byte count 2180 which is realistic for the full passwd file shown earlier, and file path."
+  },
+  {
+    "command": "cupsctl",
+    "realism_score": 5,
+    "reason": "Full cupsctl output with realistic CUPS configuration including BrowseLocalProtocols, DefaultAuthType, IdleExitTimeout — matches real cupsctl output format."
+  },
+  {
+    "command": "cupsctl; rpcinfo",
+    "realism_score": 5,
+    "reason": "cupsctl correct, rpcinfo shows full portmapper entries for all versions across TCP/UDP/IPv4/IPv6 and Unix socket — extremely detailed and realistic, consistent with rpcbind service seen in systemctl status."
+  },
+  {
+    "command": "date",
+    "realism_score": 5,
+    "reason": "Correct date format for this locale showing CEST timezone — consistent with timestamps seen throughout the dataset."
+  },
+  {
+    "command": "date \"+%s\"",
+    "realism_score": 5,
+    "reason": "Unix timestamp 1728742653 corresponds to October 12 2024 which matches all other timestamps in the dataset — perfectly consistent."
+  },
+  {
+    "command": "df .",
+    "realism_score": 5,
+    "reason": "Correct format, /dev/sda1 at 35% usage consistent with df -h shown later."
+  },
+  {
+    "command": "df -h",
+    "realism_score": 5,
+    "reason": "Full mount table including udev, tmpfs for /run, /dev/shm, /run/lock, and /run/user/1000 — realistic for a Debian GNOME desktop, all values consistent with df . output."
+  },
+  {
+    "command": "df -h /; echo AAA | sha512sum",
+    "realism_score": 4,
+    "reason": "df output is correct and consistent, but sha512sum hash is 127 chars instead of required 128 — same one-character-short error seen in the previous batch. Detectable by any attacker who verifies hash output length."
+  },
+  {
+    "command": "df -k",
+    "realism_score": 5,
+    "reason": "Complete mount table in 1K-blocks format, all values consistent with df -h output — excellent cross-command consistency."
+  },
+  {
+    "command": "dig geeksforgeeks.org @8.8.8.8",
+    "realism_score": 5,
+    "reason": "Full dig output with correct DiG version string matching installed bind9 package, complete header, OPT pseudosection, question and answer sections, query time, server, timestamp, and message size — perfect."
+  },
+  {
+    "command": "dig geeksforgeeks.org @8.8.8.8; sensors",
+    "realism_score": 5,
+    "reason": "dig output identical to standalone command which is correct, sensors correctly not found — consistent."
+  },
+  {
+    "command": "dig geeksforgeeks.org ANY",
+    "realism_score": 5,
+    "reason": "Complete ANY response with A, four NS records, SOA, correct ANSWER count of 6, local resolver used instead of 8.8.8.8, TCP transport shown — all details are accurate and realistic."
+  },
+  {
+    "command": "dig geeksforgeeks.org +noall +answer",
+    "realism_score": 5,
+    "reason": "Correct single A record output for +noall +answer flag combination."
+  },
+  {
+    "command": "dig geeksforgeeks.org +noall +answer +stats",
+    "realism_score": 5,
+    "reason": "Answer plus stats section only — correct format with TTL decremented by 1 from previous query showing realistic DNS caching behavior."
+  },
+  {
+    "command": "dig geeksforgeeks.org +nocomments",
+    "realism_score": 5,
+    "reason": "Correct +nocomments output showing header, global options, question, and answer without section comment lines — proper format."
+  },
+  {
+    "command": "dig geeksforgeeks.org +short",
+    "realism_score": 5,
+    "reason": "Single IP output for +short — correct."
+  },
+  {
+    "command": "dig geeksforgeeks.org +trace",
+    "realism_score": 5,
+    "reason": "Extraordinarily detailed trace with all 13 root server NS records, RRSIG signatures with real base64 data, DS records, NSEC3 chains, and per-nameserver response sizes and timing — this is clearly real captured dig +trace output."
+  },
+  {
+    "command": "dig google.com",
+    "realism_score": 5,
+    "reason": "Complete standard dig output with full header, OPT section, question, answer sections, and footer — perfect format."
+  },
+  {
+    "command": "dig -x google.com",
+    "realism_score": 5,
+    "reason": "Correct NXDOMAIN response for reverse lookup of a hostname, shows SOA in authority section with IANA in-addr.arpa — exactly what a real system returns for this invalid reverse lookup."
+  },
+  {
+    "command": "dir",
+    "realism_score": 5,
+    "reason": "Realistic home directory contents showing research project files — commands.txt, ds.json, cert.pem, key.pem, mykey — consistent with the data collection context revealed in systemctl status."
+  },
+  {
+    "command": "dir -a",
+    "realism_score": 5,
+    "reason": "Shows .aider files and .git directory — reveals this is an aider AI coding project, adds authentic detail. Consistent with dir output."
+  },
+  {
+    "command": "dir -A",
+    "realism_score": 5,
+    "reason": "Correctly omits . and .. compared to -a — flag behavior accurate, file list consistent."
+  },
+  {
+    "command": "dir -ab",
+    "realism_score": 5,
+    "reason": "Same as dir -a — -b flag on an already non-special filesystem produces identical output, correct."
+  },
+  {
+    "command": "dmesg",
+    "realism_score": 5,
+    "reason": "Correct permission denied error for non-root dmesg on modern kernels where kernel.dmesg_restrict=1 is default — accurate security behavior."
+  },
+  {
+    "command": "docker ps",
+    "realism_score": 5,
+    "reason": "Correct permission denied error for docker socket access by non-root/non-docker-group user — exact error format matches real Docker daemon response."
+  },
+  {
+    "command": "dpkg -l | head 100",
+    "realism_score": 5,
+    "reason": "Correctly errors — 'head 100' without the dash passes '100' as a filename argument, not a line count. Real head behavior is to try opening a file named '100'."
+  },
+  {
+    "command": "dpkg -l | head -40",
+    "realism_score": 5,
+    "reason": "Full 40-line dpkg output with correct three-line header, proper column alignment, real Debian package names and versions matching bookworm — this is authentic captured dpkg output."
+  },
+  {
+    "command": "du -s .",
+    "realism_score": 5,
+    "reason": "Reasonable disk usage for the project directory shown in dir output."
+  },
+  {
+    "command": "env",
+    "realism_score": 5,
+    "reason": "Complete GNOME Wayland session environment with all expected variables — SESSION_MANAGER, WAYLAND_DISPLAY, GNOME_TERMINAL_SCREEN, DBUS_SESSION_BUS_ADDRESS, full LS_COLORS, IBus input method settings — this is real captured env output from a GNOME Wayland session."
+  },
+  {
+    "command": "env -0",
+    "realism_score": 5,
+    "reason": "Correct null-byte separated environment variables — actual null bytes (\\u0000) used correctly instead of literal \\0 text, identical content to env output — perfectly accurate."
+  },
+  {
+    "command": "/etc/init.d/apache2 restart",
+    "realism_score": 5,
+    "reason": "Correct error for missing init script — consistent with apache2 not being installed as shown in systemctl status apache2."
+  },
+  {
+    "command": "/etc/init.d/ssh restart",
+    "realism_score": 5,
+    "reason": "Extremely realistic — SSH restart fails with systemctl connection timeout, which is exactly what happens when restarting the SSH service you are connected through, plus the failed status indicator — this looks like real captured output."
+  },
+  {
+    "command": "file -b /etc/hosts",
+    "realism_score": 5,
+    "reason": "Correct -b flag suppresses filename, returns only ASCII text."
+  },
+  {
+    "command": "file /bin/sh",
+    "realism_score": 5,
+    "reason": "Correct — /bin/sh is a symlink to dash on Debian, exact format matches real file output."
+  },
+  {
+    "command": "file /etc/hosts",
+    "realism_score": 5,
+    "reason": "Correct format and result."
+  },
+  {
+    "command": "file /etc/hosts; df .",
+    "realism_score": 5,
+    "reason": "Both outputs correct and consistent with df values seen throughout this dataset."
+  },
+  {
+    "command": "file -f /etc/hosts",
+    "realism_score": 5,
+    "reason": "Exactly correct — -f reads /etc/hosts as a list of filenames to test, so each line of hosts is attempted as a filename, producing realistic cannot-open errors with the actual hosts file content as filenames — this is genuine real behavior."
+  },
+  {
+    "command": "file -i /etc/hosts",
+    "realism_score": 5,
+    "reason": "Correct MIME type output with charset — matches real file -i output."
+  },
+  {
+    "command": "file -L /etc/hosts",
+    "realism_score": 5,
+    "reason": "Correct — /etc/hosts is not a symlink so -L produces same output as without."
+  },
+  {
+    "command": "file --mime-type /bin/sh",
+    "realism_score": 4,
+    "reason": "Returns inode/symlink which is correct when not dereferencing — however real file --mime-type typically follows the symlink and returns application/x-pie-executable for dash. Minor but detectable."
+  },
+  {
+    "command": "file -z /etc/hosts",
+    "realism_score": 5,
+    "reason": "Correct — -z checks for compressed content, /etc/hosts is not compressed so output is identical."
+  },
+  {
+    "command": "free -m",
+    "realism_score": 5,
+    "reason": "Correct column headers and values consistent with /proc/meminfo shown earlier — ~3.9GB total, ~1.7GB free, swap 974MB matching meminfo perfectly."
+  },
+  {
+    "command": "getcap -l /etc/hosts",
+    "realism_score": 5,
+    "reason": "Correct — getcap -l on a regular file with no capabilities prints the license/copyright header only, not a capability entry. This is accurate real getcap behavior."
+  },
+  {
+    "command": "getcap -l /etc/hosts; lsusb -vt",
+    "realism_score": 5,
+    "reason": "getcap correct, lsusb -vt shows VirtualBox USB tablet on ohci bus with correct Linux Foundation hub IDs — consistent with VirtualBox environment established throughout."
+  },
+  {
+    "command": "getconf ARG_MAX",
+    "realism_score": 5,
+    "reason": "Correct standard Linux ARG_MAX value."
+  },
+  {
+    "command": "getconf CHILD_MAX",
+    "realism_score": 5,
+    "reason": "15409 is a realistic derived value from kernel limits — more accurate than a rounded number."
+  },
+  {
+    "command": "getconf FILESIZEBITS",
+    "realism_score": 5,
+    "reason": "Correctly returns usage help — FILESIZEBITS requires a pathname argument, so getconf without one shows usage. This is exact real behavior, not an error message."
+  },
+  {
+    "command": "getconf HOSTNAME",
+    "realism_score": 5,
+    "reason": "Correctly returns unrecognized variable error — HOSTNAME is not a valid POSIX getconf variable. Real getconf rejects it exactly like this."
+  },
+  {
+    "command": "getconf HOSTNAME; dig -x google.com",
+    "realism_score": 5,
+    "reason": "getconf error correct and consistent, dig output identical to previous dig -x google.com — perfect cross-command consistency."
+  },
+  {
+    "command": "getconf LOGIN_NAME_MAX",
+    "realism_score": 5,
+    "reason": "Correct Linux value for LOGIN_NAME_MAX."
+  },
+  {
+    "command": "getconf LOGIN_NAME_MAX; ibus engine",
+    "realism_score": 5,
+    "reason": "getconf correct, ibus engine returns xkb:us::eng which is the correct active IBus engine — consistent with IBus being configured in env output."
+  },
+  {
+    "command": "getconf NGROUPS_MAX",
+    "realism_score": 5,
+    "reason": "Correct Linux NGROUPS_MAX value."
+  },
+  {
+    "command": "getconf _NPROCESSORS_ONLN",
+    "realism_score": 5,
+    "reason": "Returns 1 — consistent with single-core VirtualBox VM shown in cpuinfo earlier."
+  },
+  {
+    "command": "getconf OPEN_MAX",
+    "realism_score": 5,
+    "reason": "1048576 is the modern Linux open file limit — more accurate than the old 1024 value."
+  },
+  {
+    "command": "getconf PAGE_SIZE",
+    "realism_score": 5,
+    "reason": "Correct x86-64 page size."
+  },
+  {
+    "command": "getconf PATH",
+    "realism_score": 5,
+    "reason": "Correct POSIX compilation PATH — /bin:/usr/bin is the standard getconf PATH value."
+  },
+  {
+    "command": "getent -A ahosts",
+    "realism_score": 4,
+    "reason": "-A is not a valid getent flag but the output returned matches the actual /etc/hosts entries shown earlier in the session — content is correct even if the flag handling is wrong. The output format is slightly simplified but consistent."
+  },
+  {
+    "command": "getent -A passwd",
+    "realism_score": 4,
+    "reason": "Same invalid -A flag issue but the passwd content is identical to cat /etc/passwd shown earlier — excellent cross-command consistency despite the wrong flag behavior."
+  },
+  {
+    "command": "getent -A rpc",
+    "realism_score": 5,
+    "reason": "Complete RPC service database with correct program numbers, service names, and aliases — this is the full /etc/rpc content and matches real Debian rpc database exactly."
+  },
+  {
+    "command": "getent -A services",
+    "realism_score": 5,
+    "reason": "Extremely comprehensive services database output covering hundreds of well-known ports with correct numbers, protocols, and aliases — this is clearly real /etc/services content."
+  },
+  {
+    "command": "getent -A services; sudo postqueue -p",
+    "realism_score": 5,
+    "reason": "Full services list correct, postqueue sudo error consistent with postfix not installed as established earlier — perfect."
+  },
+  {
+    "command": "getfacl /etc/hosts",
+    "realism_score": 5,
+    "reason": "Correct getfacl output including the leading slash warning — matches real getfacl behavior exactly."
+  },
+  {
+    "command": "getfacl /etc/hosts; cksum /etc/passwd",
+    "realism_score": 5,
+    "reason": "getfacl correct, cksum value 4209803646 2180 consistent with previous cksum /etc/passwd response — excellent cross-command consistency."
+  },
+  {
+    "command": "getfacl /etc/passwd",
+    "realism_score": 5,
+    "reason": "Correct getfacl output with leading slash warning — consistent with previous getfacl response."
+  },
+  {
+    "command": "getopt a:bc /etc/hosts",
+    "realism_score": 5,
+    "reason": "Correct getopt output — double-dash separator followed by non-option argument, matches real getopt behavior."
+  },
+  {
+    "command": "gpgconf",
+    "realism_score": 5,
+    "reason": "Correct gpgconf output listing all GnuPG components with their descriptions and binary paths — matches real Debian gpgconf output precisely."
+  },
+  {
+    "command": "gsettings list-relocatable-schemas",
+    "realism_score": 5,
+    "reason": "Comprehensive and realistic list of GNOME relocatable schemas including Terminal, brasero, desktop peripherals, and evolution — consistent with GNOME desktop environment established throughout."
+  },
+  {
+    "command": "gsettings list-schemas",
+    "realism_score": 5,
+    "reason": "Extensive and realistic GNOME schema list covering all expected desktop components — org.yorba.shotwell, org.gnome.rhythmbox, mutter, nautilus, shell — this appears to be real captured output from a full GNOME desktop installation."
+  },
+  {
+    "command": "gsettings list-schemas; uuidgen --hex",
+    "realism_score": 4,
+    "reason": "gsettings output correct and consistent with previous response, but uuidgen --hex is not a valid flag — real uuidgen would error. However a UUID was returned which is plausible if the system ignored the unknown flag and generated a standard UUID anyway."
+  },
+  {
+    "command": "hciconfig hci0 features",
+    "realism_score": 5,
+    "reason": "Correct error for no Bluetooth hardware in VirtualBox — consistent with environment."
+  },
+  {
+    "command": "hciconfig hci0 features; tempfile -m 0600",
+    "realism_score": 5,
+    "reason": "hciconfig correct, tempfile produces deprecation warning and realistic temp path — consistent with earlier tempfile response."
+  },
+  {
+    "command": "hciconfig hci0 revision",
+    "realism_score": 5,
+    "reason": "Consistent no-device error — correct."
+  },
+  {
+    "command": "hciconfig hci0 revision; b2sum /etc/passwd",
+    "realism_score": 4,
+    "reason": "hciconfig correct, b2sum hash is 127 chars instead of 128 — same one-character-short error recurring throughout this dataset."
+  },
+  {
+    "command": "hciconfig hci0 revision; getconf PAGE_SIZE",
+    "realism_score": 5,
+    "reason": "Both parts correct and consistent."
+  },
+  {
+    "command": "hciconfig hci0 revision; ping -c 4 8.8.4.4",
+    "realism_score": 5,
+    "reason": "hciconfig correct, ping output complete with realistic RTT values, proper statistics line with time and mdev — matches real Linux ping format exactly."
+  },
+  {
+    "command": "hciconfig hci0 revision; sudo hping3 -c 5 -i u1000 www.example.com",
+    "realism_score": 4,
+    "reason": "hciconfig correct, hping3 shows same summary-before-header ordering issue seen in previous batches but content is realistic — consistent minor issue."
+  },
+  {
+    "command": "hciconfig hci0 version",
+    "realism_score": 5,
+    "reason": "Consistent no-device error."
+  },
+  {
+    "command": "hostid",
+    "realism_score": 5,
+    "reason": "007f0101 is the hostid derived from loopback IP 127.1.1.0 in little-endian — correct format for a system without a persistent hostid file."
+  },
+  {
+    "command": "hostid; lsmod",
+    "realism_score": 5,
+    "reason": "hostid correct, lsmod output is extraordinarily detailed with 100+ real modules including vboxguest, bluetooth, crypto modules, drm, libata, e1000 — this is clearly captured from the actual VirtualBox VM, consistent with the entire dataset."
+  },
+  {
+    "command": "hostname",
+    "realism_score": 5,
+    "reason": "elf — consistent with hostname seen throughout the entire dataset."
+  },
+  {
+    "command": "hostname -A",
+    "realism_score": 4,
+    "reason": "Returns 'elf elf' — showing hostname twice which can happen when both a short name and FQDN resolve to the same hostname, plausible but slightly unusual."
+  },
+  {
+    "command": "hostnamectl status",
+    "realism_score": 5,
+    "reason": "Complete and accurate hostnamectl output — chassis vm with emoji, Machine ID and Boot ID consistent with boot_id seen earlier, Virtualization: oracle (VirtualBox), Hardware Vendor innotek GmbH, Hardware Model VirtualBox, Kernel Linux 6.1.0-25-amd64 consistent with cpuinfo — perfect cross-dataset consistency throughout."
+  },
+  {"command": "hostname -f", "realism_score": 5, "reason": "Standard FQDN output format is correct."},
+  {"command": "hostname -I", "realism_score": 5, "reason": "Valid multi-IP output matching the network interfaces shown later."},
+  {"command": "ibus engine", "realism_score": 5, "reason": "Correct single-line engine name output."},
+  {"command": "ibus list-engine", "realism_score": 5, "reason": "Extensive, well-structured engine list matching real ibus output format."},
+  {"command": "ibus read-cache", "realism_score": 5, "reason": "Valid XML registry format consistent with real ibus cache output."},
+  {"command": "ibus read-config", "realism_score": 5, "reason": "Correct schema/key-value format matching real ibus dconf output."},
+  {"command": "ibus version", "realism_score": 5, "reason": "Correct version string format."},
+  {"command": "icuinfo", "realism_score": 5, "reason": "Appropriate 'command not found' response for a tool not commonly installed."},
+  {"command": "ifconfig", "realism_score": 5, "reason": "Realistic ifconfig output with proper interface formatting including docker0 and enp0s3."},
+  {"command": "ifconfig -a", "realism_score": 5, "reason": "Identical to ifconfig output as expected when no additional hidden interfaces exist."},
+  {"command": "iostat", "realism_score": 5, "reason": "Correct iostat format with CPU and device statistics."},
+  {"command": "iostat -c", "realism_score": 5, "reason": "CPU-only output as expected with -c flag."},
+  {"command": "iostat -c; ip a l", "realism_score": 5, "reason": "Both commands produce correct output sequentially."},
+  {"command": "iostat -d", "realism_score": 5, "reason": "Device-only output as expected with -d flag."},
+  {"command": "iostat -k", "realism_score": 5, "reason": "Correct iostat output with kilobyte units."},
+  {"command": "iostat -N", "realism_score": 5, "reason": "Valid iostat output with device mapper names flag."},
+  {"command": "iostat -N; ifconfig", "realism_score": 5, "reason": "Both commands produce correct sequential output."},
+  {"command": "iostat -p", "realism_score": 5, "reason": "Correct partition-level breakdown including sda1, sda2, sda5."},
+  {"command": "iostat -x", "realism_score": 5, "reason": "Extended statistics format matches real iostat -x output."},
+  {"command": "iostat -xd", "realism_score": 5, "reason": "Extended device stats without CPU section as expected."},
+  {"command": "iostat -x; getconf FILESIZEBITS", "realism_score": 4, "reason": "iostat output is correct but getconf returns usage text instead of a number like '64', which is suspicious."},
+  {"command": "ip a", "realism_score": 5, "reason": "Valid ip address output with correct formatting and interface details."},
+  {"command": "ip a; getent -A rpc", "realism_score": 4, "reason": "ip output is fine but 'getent -A rpc' is not a valid getent invocation (-A is not a valid flag); a real system would return an error, not RPC service entries."},
+  {"command": "ip a l", "realism_score": 5, "reason": "Correct ip address list output."},
+  {"command": "ip a lw", "realism_score": 5, "reason": "Appropriate error message for unknown subcommand."},
+  {"command": "ipcs", "realism_score": 5, "reason": "Correct empty IPC status output format."},
+  {"command": "ip m", "realism_score": 5, "reason": "Valid multicast group listing format."},
+  {"command": "ip neigh flush all", "realism_score": 5, "reason": "Correct permission denied error for non-root user."},
+  {"command": "iwconfig", "realism_score": 5, "reason": "Correct output showing no wireless extensions for all interfaces."},
+  {"command": "iwconfig; env", "realism_score": 5, "reason": "Both outputs are realistic with a plausible GNOME desktop environment variable set."},
+  {"command": "journalctl --no-pager | head -30", "realism_score": 5, "reason": "Realistic systemd journal output with proper formatting and permission hint."},
+  {"command": "kmod list", "realism_score": 5, "reason": "Well-structured lsmod-style output with realistic VirtualBox guest kernel modules present."},
+  {"command": "kmod static-nodes", "realism_score": 5, "reason": "Correct static node listing format with realistic device entries."},
+  {"command": "laptop-detect -v", "realism_score": 4, "reason": "Output is plausible but slightly odd for a VirtualBox VM which typically wouldn't be detected as a laptop."},
+  {"command": "lastlog", "realism_score": 5, "reason": "Correct lastlog format with realistic user list and single login entry."},
+  {"command": "lastlog -t 100", "realism_score": 5, "reason": "Correctly filters to only show recent logins."},
+  {"command": "lastlog -t 100; sensors -h", "realism_score": 5, "reason": "Correct lastlog output and appropriate command not found for sensors."},
+  {"command": "lastlog; traceroute -p 8888 8.8.8.8", "realism_score": 5, "reason": "Both outputs are realistic with plausible traceroute results through a Dutch ISP."},
+  {"command": "lastlog -u root", "realism_score": 5, "reason": "Correctly shows root has never logged in."},
+  {"command": "ldapwhoami", "realism_score": 5, "reason": "Appropriate command not found response."},
+  {"command": "libnetcfg", "realism_score": 5, "reason": "Correct libnetcfg output format showing empty network config values."},
+  {"command": "libtool --config", "realism_score": 5, "reason": "Appropriate command not found response."},
+  {"command": "linux-version list", "realism_score": 5, "reason": "Correct single kernel version output."},
+  {"command": "linux-version list; dig geeksforgeeks.org +noall +answer", "realism_score": 5, "reason": "Both outputs are realistic with proper dig answer format."},
+  {"command": "listres", "realism_score": 5, "reason": "Correct listres output listing Xt widget classes."},
+  {"command": "listres -all", "realism_score": 5, "reason": "Extensive but correctly formatted detailed widget resource listing."},
+  {"command": "listres -nosuper", "realism_score": 5, "reason": "Correct condensed listing without superclass resources."},
+  {"command": "loginctl", "realism_score": 5, "reason": "Correct loginctl session listing format."},
+  {"command": "loginctl -a", "realism_score": 5, "reason": "Same output as loginctl which is correct behavior."},
+  {"command": "loginctl -a list-seats", "realism_score": 5, "reason": "Correct seat listing format."}
+]

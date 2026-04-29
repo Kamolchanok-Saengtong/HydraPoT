@@ -1,0 +1,114 @@
+[
+  {
+    "cmd": "sudo nmap -sV 8.8.8.8 -p 22,53",
+    "ondevice_output": "Starting Nmap 7.80 ( https://nmap.org ) at 2023-04-01 12:34 UTC\nNmap scan report for 8.8.8.8\nHost is up (0.0022s latency).\n\nPORT   STATE SERVICE VERSION\n22/tcp open  ssh     OpenSSH 7.6p1 Ubuntu 4ubuntu0.3 (Ubuntu Linux; protocol 2.0)\n53/tcp open  domain  ISC BIND 9.11.3 (Ubuntu)\n\nNmap done: 1 IP address (1 host up) scanned in 0.37 seconds"
+  },
+  {
+    "cmd": "sudo nping -c 3 --arp 192.168.1.1",
+    "ondevice_output": "bash: nping: command not found"
+  },
+  {
+    "cmd": "sudo nping -c 3 --icmp example.com",
+    "ondevice_output": "bash: nping: command not found"
+  },
+  {
+    "cmd": "sudo nping -c 3 --tcp --delay 1s example.com",
+    "ondevice_output": "nping: command not found"
+  },
+  {
+    "cmd": "sudo nping -c 3 --tcp --flags SYN,ACK -p 80 example.com",
+    "ondevice_output": "nping: command not found"
+  },
+  {
+    "cmd": "sudo nping -c 3 --tcp -p 80,443,8080 example.com",
+    "ondevice_output": "nping: command not found"
+  },
+  {
+    "cmd": "sudo nping -c 3 --tcp -p 80 example.com",
+    "ondevice_output": "nping: command not found"
+  },
+  {
+    "cmd": "sudo nping -c 3 --udp -p 53 8.8.8.8",
+    "ondevice_output": "nping: command not found"
+  },
+  {
+    "cmd": "sudo numastat -p 1",
+    "ondevice_output": "numastat: command not found"
+  },
+  {
+    "cmd": "sudo postqueue -p",
+    "ondevice_output": "```\npostdrop: fatal: mail queue is empty\n```"
+  },
+  {
+    "cmd": "sudo resolvectl show-cache",
+    "ondevice_output": "Global\n\n[DNS]\nMode=automatic\nLLMNR=no\nMulticastDNS=yes\nDNSOverTLS=no\nDNSSEC=no\nDNS=8.8.8.8 8.8.4.4\nFallbackDNS=\nDomains=~home\nLLMNRCache=yes\nMulticastDNSCache=yes\nDNSOverTLSCache=no\nDNSSECCache=no\nDNSSECNegativeTtl=3600\nDNSOverTLSQueryFamily=both\nDNSOverTLSQueryType=all\nDNSOverTLSQueryOrder=random\nDNSOverTLSQueryTimeout=5s\nDNSOverTLSQueryRetries=3\nDNSOverTLSQueryBackoffFactor=2\nDNSOverTLSQueryExponentialBackoffMax=60s\nDNSOverTLSQueryExponentialBackoffMin=1s\nDNSOverTLSQueryExponentialBackoffJitter=10%\nDNSOverTLSQueryExponentialBackoffJitterMax=50%\nDNSOverTLSQueryExponentialBackoffJitterMin=1%\nDNSOverTLSQueryExponentialBackoffJitterSpread=10%\nDNSOverTLSQueryExponentialBackoffJitterSpreadMax=50%\nDNSOverTLSQueryExponentialBackoffJitterSpreadMin=1%\nDNS"
+  },
+  {
+    "cmd": "sudo resolvectl show-server-state",
+    "ondevice_output": "resolvectl: command not found"
+  },
+  {
+    "cmd": "sudo resolvectl statistics",
+    "ondevice_output": "Failed to get statistics: Operation not supported"
+  },
+  {
+    "cmd": "sudo ufw status",
+    "ondevice_output": "Status: active\n\nTo                         Action      From\n--                         ------      ----\n22/tcp                     ALLOW       Anywhere\n80/tcp                     ALLOW       Anywhere\n443/tcp                    ALLOW       Anywhere\n22/tcp (v6)                ALLOW       Anywhere (v6)\n80/tcp (v6)                ALLOW       Anywhere (v6)\n443/tcp (v6)               ALLOW       Anywhere (v6)"
+  },
+  {
+    "cmd": "sudo ufw status; sudo apt-get update",
+    "ondevice_output": "```\nStatus: active\n\nTo                         Action      From\n--                         ------      ----\n22/tcp                     ALLOW       Anywhere\n80/tcp                     ALLOW       Anywhere\n443/tcp                    ALLOW       Anywhere\n22/tcp (v6)                ALLOW       Anywhere (v6)\n80/tcp (v6)                ALLOW       Anywhere (v6)\n443/tcp (v6)               ALLOW       Anywhere (v6)\n```\n\n\n```\nHit:1 http://deb.debian.org/debian buster InRelease\nGet:2 http://security.debian.org/debian-security buster/updates InRelease [597 kB]\nGet:3 http://deb.debian.org/debian buster-updates InRelease [49.0 kB]    \nGet:4 http://security.debian.org/debian-security buster/updates/main amd64 Packages [10.4 MB]\nGet:5 http://deb.debian.org/debian buster-updates/main Translation-en [2,188 kB]\nGet:6 http://deb.debian.org/debian buster-updates/main amd64 DEP-11 Metadata [279 kB]\nGet:7 http://deb.debian.org/debian buster-up"
+  },
+  {
+    "cmd": "systemctl status",
+    "ondevice_output": "\u25cf systemd.service - System and Service Manager\n   Loaded: loaded (/lib/systemd/system/systemd.service; static; vendor preset: enabled)\n   Active: active (running) since Mon 2023-03-27 12:34:56 UTC; 1h 23min ago\n Main PID: 1 (systemd)\n    Tasks: 198 (limit: 4915)\n   Memory: 2.1G\n   CGroup: /system.slice/systemd.service\n           \u251c\u25001 /lib/systemd/systemd --switched-root --system --deserialize 22\n           \u2514\u250018 /sbin/init\n\nMar 27 12:34:56 svr04 systemd[1]: Starting System and Service Manager...\nMar 27 12:34:56 svr04 systemd[1]: Started System and Service Manager."
+  },
+  {
+    "cmd": "systemctl status apache2",
+    "ondevice_output": "apache2.service - The Apache HTTP Server\n   Loaded: loaded (/lib/systemd/system/apache2.service; enabled; vendor preset: enabled)\n   Active: inactive (dead) since Mon 2023-04-01 12:34:56 UTC; 1h 23min ago\n Main PID: 1234 (code=exited, status=0/SUCCESS)\n\nApr 01 12:34:56 svr04 systemd[1]: Stopped The Apache HTTP Server.\nApr 01 12:34:56 svr04 apache2[1234]: AH00557: httpd: Could not reliably determine the server's fully qualified domain name, using 192.168.1.1 for ServerName"
+  },
+  {
+    "cmd": "systemctl status httpd",
+    "ondevice_output": "Unit httpd.service could not be found."
+  },
+  {
+    "cmd": "systemctl status mysql",
+    "ondevice_output": "mysql.service - MySQL Community Server\n   Loaded: loaded (/lib/systemd/system/mysql.service; enabled; vendor preset: enabled)\n   Active: active (running) since Mon 2023-04-01 12:34:56 UTC; 1h 23min ago\n Main PID: 1234 (mysqld)\n    Tasks: 37 (limit: 4915)\n   Memory: 88.0M\n   CGroup: /system.slice/mysql.service\n           \u2514\u25001234 /usr/sbin/mysqld --daemonize --pid-file=/var/run/mysqld/mysqld.pid\n\nApr 01 12:34:56 svr04 systemd[1]: Starting MySQL Community Server...\nApr 01 12:34:56 svr04 mysqld[1234]: [Note] A temporary password is generated for root@localhost: your_temporary_password\nApr 01 12:34:56 svr04 systemd[1]: Started MySQL Community Server."
+  },
+  {
+    "cmd": "systemctl status postgresql",
+    "ondevice_output": "\u25cf postgresql.service - PostgreSQL RDBMS\n   Loaded: loaded (/lib/systemd/system/postgresql.service; enabled; vendor preset: enabled)\n   Active: active (exited) since Mon 2023-04-01 12:34:56 UTC; 2 weeks ago\n Main PID: 1234 (code=exited, status=0/SUCCESS)\n\nApr 01 12:34:56 svr04 systemd[1]: Starting PostgreSQL RDBMS...\nApr 01 12:34:56 svr04 postgresql[1234]: * Database cluster initialized to /var/lib/postgresql/13/main\nApr 01 12:34:56 svr04 systemd[1]: Started PostgreSQL RDBMS.\nApr 01 12:34:56 svr04 postgresql[1234]: * Ready to accept connections on port 5432."
+  },
+  {
+    "cmd": "systemctl status ssh",
+    "ondevice_output": "\u25cf ssh.service - OpenBSD Secure Shell server\n   Loaded: loaded (/lib/systemd/system/ssh.service; enabled; vendor preset: enabled)\n   Active: active (running) since Mon 2023-04-01 12:34:56 UTC; 1 day 12h ago\n Main PID: 1234 (sshd)\n    Tasks: 1 (limit: 4915)\n   Memory: 3.2M\n   CGroup: /system.slice/ssh.service\n           \u2514\u25001234 /usr/sbin/sshd -D\n\nApr 02 12:34:56 svr04 systemd[1]: Starting OpenBSD Secure Shell server...\nApr 02 12:34:56 svr04 sshd[1234]: Server listening on 0.0.0.0 port 22.\nApr 02 12:34:56 svr04 sshd[1234]: Server listening on :: port 22."
+  },
+  {
+    "cmd": "tracepath 192.168.1.1",
+    "ondevice_output": "traceroute to 192.168.1.1 (192.168.1.1), 30 hops max, 60 byte packets\n 1  router.local (192.168.1.1)  0.730 ms  0.690 ms  0.650 ms\n 2  destination (192.168.1.1)  1.230 ms  1.210 ms  1.190 ms"
+  },
+  {
+    "cmd": "tracepath 8.8.8.8",
+    "ondevice_output": "```\n     1:  svr04 [192.168.1.1]  0.732 ms  0.689 ms  0.702 ms\n     2:  router.example.com [192.168.1.2]  1.234 ms  1.256 ms  1.241 ms\n     3:  isp-gateway [10.0.0.1]  15.321 ms  15.298 ms  15.305 ms\n     4:  8.8.8.8 [8.8.8.8]  20.456 ms  20.489 ms  20.473 ms\n```"
+  },
+  {
+    "cmd": "wget http://www.google.com",
+    "ondevice_output": "--2023-04-14 12:34:56--  http://www.google.com/\nConnecting to www.google.com (www.google.com)|94.182.204.27|:80... connected.\nHTTP request sent, awaiting response... 200 OK\nLength: unspecified [text/html]\nSaving as: \u2018index.html\u2019\n\n[ <=>                ] 204,000      --.-K/s    in 0s      \n\n204,000 bytes downloaded."
+  },
+  {
+    "cmd": "wget http://www.google.com; ssh-keygen -t rsa -b 4096 -f mykey -N \"\" -q",
+    "ondevice_output": "--2023-04-14 12:34:56--  http://www.google.com\nConnecting to www.google.com (www.google.com)|172.217.14.206|:80... connected.\nHTTP request sent, awaiting response... 200 OK\nLength: unspecified [text/html]\nSaving to: \u2018index.html\u2019\n\n     0K                                                       --.- KiB/s               \nSaving index.html (100%)   --.- KiB/s   1s     \n\n2023-04-14 12:34:57 (1.2 MB/s) - \u2018index.html\u2019 saved [605]\n\nGenerating public/private rsa key pair.\nYour identification has been saved in mykey.\nYour public key has been saved in mykey.pub.\nThe key fingerprint is:\nSHA256:<hash> user@hostname\nThe key's randomart image is:\n+---[RSA 4096]----+\n|                 |\n|                 |\n|                 |\n|                 |\n|                 |\n|                 |\n|                 |\n|                 |\n+----[SHA256]-----+"
+  },
+  {
+    "cmd": "sudo tcpdump",
+    "ondevice_output": "tcpdump: no suitable device found - use 'ifconfig' to see available devices"
+  },
+  {
+    "cmd": "sudo tcpdump -i wlan0 -vvv",
+    "ondevice_output": "tcpdump: error while opening interface wlan0: No such device exists"
+  },
+  {
+    "cmd": "sudo tcpdump -v",
+    "ondevice_output": "tcpdump: verbose output enabled, link type Ethernet (1), capture size 68 bytes"
+  }
+]

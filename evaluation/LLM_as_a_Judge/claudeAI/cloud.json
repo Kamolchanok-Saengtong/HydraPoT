@@ -1,0 +1,1142 @@
+[
+  {
+    "command": "crontab -l",
+    "realism_score": 5,
+    "reason": "Exact output a real system produces when no crontab exists for the user."
+  },
+  {
+    "command": "curl http://www.google.com",
+    "realism_score": 2,
+    "reason": "Real curl to google.com returns a large redirect HTML with headers; this stub is suspiciously clean and minimal."
+  },
+  {
+    "command": "curl http://www.google.com; uuidparse 58db5e87-604d-4bf3-9374-167f43545aa2",
+    "realism_score": 3,
+    "reason": "'command not found' is correct for uuidparse, but the curl response is still the same unrealistic stub."
+  },
+  {
+    "command": "echo AAA | sha384sum",
+    "realism_score": 2,
+    "reason": "The hash is 64 hex chars but sha384 produces 96 hex chars; an attacker verifying crypto output would catch this immediately."
+  },
+  {
+    "command": "echo AAA | sha512sum",
+    "realism_score": 2,
+    "reason": "sha512 requires 128 hex chars; the returned hash is only ~96 chars — wrong length, detectable."
+  },
+  {
+    "command": "echo AAA | shasum",
+    "realism_score": 4,
+    "reason": "Correct 40-char SHA1 hex format and trailing dash; plausible though the hash value itself is not verified here."
+  },
+  {
+    "command": "echo AAA | sum",
+    "realism_score": 5,
+    "reason": "Format matches real sum output — checksum and block count separated by spaces."
+  },
+  {
+    "command": "echo dsdsdda",
+    "realism_score": 5,
+    "reason": "Trivially correct — echo just returns the argument."
+  },
+  {
+    "command": "echo -n aaa| cksum",
+    "realism_score": 4,
+    "reason": "Format is correct (checksum then byte count), though an attacker could verify the exact CRC32 value trivially."
+  },
+  {
+    "command": "echo -n AAA | md5sum",
+    "realism_score": 3,
+    "reason": "Only 32 chars shown but truncated at 32 — correct length, however the actual MD5 of AAA is 'e1faffb3e614e6c2fba74296962386b7' which happens to match, but the trailing two-space-dash format is correct."
+  },
+  {
+    "command": "echo -n AAA | md5sum; loginctl",
+    "realism_score": 3,
+    "reason": "loginctl output is plausible in format but a real system would typically show 'no sessions' or a more complete table with column alignment; also loginctl is systemd-specific and may not exist on this claimed kernel."
+  },
+  {
+    "command": "echo -n AAA | sha256sum",
+    "realism_score": 2,
+    "reason": "SHA256 must be exactly 64 hex chars; this output is only 63 chars — a knowledgeable attacker would notice immediately."
+  },
+  {
+    "command": "echo ooooo",
+    "realism_score": 5,
+    "reason": "Correct trivial echo response."
+  },
+  {
+    "command": "echo RESULT=$?",
+    "realism_score": 5,
+    "reason": "Correct — $? is not expanded by the honeypot but the literal string output is what a real shell would produce if $? were 0."
+  },
+  {
+    "command": "echo $SHELL",
+    "realism_score": 5,
+    "reason": "/bin/bash is a realistic and expected value for this variable."
+  },
+  {
+    "command": "lnstat -c 1",
+    "realism_score": 4,
+    "reason": "Plausible on a minimal system, though the error format should be 'lnstat: option requires an argument' or similar depending on version; 'command not found' is acceptable on stripped-down images."
+  },
+  {
+    "command": "lnstat -dc 1",
+    "realism_score": 4,
+    "reason": "Same as above — consistent 'command not found' response is believable."
+  },
+  {
+    "command": "lnstat -j -c 1",
+    "realism_score": 4,
+    "reason": "Consistent with previous lnstat responses; uniformly missing tool is believable."
+  },
+  {
+    "command": "nmap 8.8.8.8",
+    "realism_score": 3,
+    "reason": "Missing the full Nmap header timing line and the scan summary lacks 'scanned in X.XX seconds' completeness; also real nmap against 8.8.8.8 would show many more ports or filtered states."
+  },
+  {
+    "command": "nmap -PN -n -p80,22 8.8.8.8",
+    "realism_score": 3,
+    "reason": "Port-specific scan format is reasonable but missing the standard Nmap version/timing footer and Nmap scan report header line is slightly off."
+  },
+  {
+    "command": "ssh-keygen -f ~/.ssh/mykey",
+    "realism_score": 5,
+    "reason": "Correct prompt sequence for interactive RSA key generation."
+  },
+  {
+    "command": "ssh-keygen -l -f ~/.ssh/id_rsa.pub",
+    "realism_score": 4,
+    "reason": "Format is correct; minor concern is 'abc123example' looks placeholder-like but overall structure matches real output."
+  },
+  {
+    "command": "ssh-keygen -p -f ~/.ssh/id_rsa",
+    "realism_score": 5,
+    "reason": "Correct interactive prompt for passphrase change."
+  },
+  {
+    "command": "ssh-keygen -R hostname",
+    "realism_score": 5,
+    "reason": "Exact output format matches real ssh-keygen -R behavior."
+  },
+  {
+    "command": "ssh-keygen -R hostname; uname -i",
+    "realism_score": 5,
+    "reason": "Both parts are correct — known_hosts update message and x86_64 are realistic."
+  },
+  {
+    "command": "ssh-keygen -s ca_key -I key_id -n user1,user2 id_rsa.pub",
+    "realism_score": 5,
+    "reason": "Certificate signing output format matches real ssh-keygen -s output precisely."
+  },
+  {
+    "command": "ssh-keygen -t ecdsa -b 521",
+    "realism_score": 5,
+    "reason": "Correct prompt for ECDSA key generation with the right default file path."
+  },
+  {
+    "command": "ssh-keygen -t ed25519",
+    "realism_score": 5,
+    "reason": "Correct prompt for ed25519 key generation."
+  },
+  {
+    "command": "ssh-keygen -t ed25519 -a 100",
+    "realism_score": 5,
+    "reason": "Correct — -a 100 just sets KDF rounds, output prompt is identical."
+  },
+  {
+    "command": "ssh-keygen -t rsa -b 2048 -C \"your_email@example.com\"",
+    "realism_score": 5,
+    "reason": "Standard key generation prompt is correct."
+  },
+  {
+    "command": "ssh-keygen -t rsa -b 4096",
+    "realism_score": 5,
+    "reason": "Correct prompt for RSA 4096 key generation."
+  },
+  {
+    "command": "ssh-keygen -t rsa -b 4096 -f mykey -N \"\" -q",
+    "realism_score": 5,
+    "reason": "Silent mode with empty passphrase produces no output — correct."
+  },
+  {
+    "command": "ssh-keygen -t rsa -b 4096 -f mykey -N \"\" -q; getfacl /etc/passwd",
+    "realism_score": 4,
+    "reason": "getfacl output format is correct but real output includes a blank line at the end and the path shows as 'etc/passwd' without leading slash which is actually how getfacl formats it — acceptable."
+  },
+  {
+    "command": "ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa_work -C \"work_email@company.com\"",
+    "realism_score": 5,
+    "reason": "Correct interactive passphrase prompt."
+  },
+  {
+    "command": "ssh-keygen -t rsa -N \"passphrase\"",
+    "realism_score": 5,
+    "reason": "Correct file path prompt even when passphrase is pre-supplied via -N."
+  },
+  {
+    "command": "ssh-keygen -y -f ~/.ssh/id_rsa",
+    "realism_score": 4,
+    "reason": "Format is correct though 'examplekey' in the public key body is visibly placeholder-like to an expert eye."
+  },
+  {
+    "command": "sudo apt-get update",
+    "realism_score": 3,
+    "reason": "Real apt-get update outputs many more Hit/Get lines across multiple repos; a single line is suspiciously minimal for any real Debian/Ubuntu system."
+  },
+  {
+    "command": "sudo apt-get upgrade",
+    "realism_score": 4,
+    "reason": "An already up-to-date system showing 0 upgrades is plausible and the format is correct."
+  },
+  {
+    "command": "sudo debconf-show --listowners bash",
+    "realism_score": 4,
+    "reason": "Returning 'bash' is plausible; real output may include more package names but single-package output is possible."
+  },
+  {
+    "command": "sudo hping3  -c 3 -1 www.example.com",
+    "realism_score": 4,
+    "reason": "Format is correct; the summary line format matches hping3 ICMP mode output well."
+  },
+  {
+    "command": "sudo hping3  -c 3 -S www.example.com -p 80",
+    "realism_score": 4,
+    "reason": "SYN packet responses with SA flags look realistic; minor concern is missing the final statistics summary block."
+  },
+  {
+    "command": "sudo hping3 -c 3 www.example.com",
+    "realism_score": 4,
+    "reason": "Plausible default mode output with correct packet format."
+  },
+  {
+    "command": "sudo hping3 -c 4 -A --ttl 64 www.example.com",
+    "realism_score": 4,
+    "reason": "ACK flag mode output format is correct and realistic."
+  },
+  {
+    "command": "sudo hping3 -c 5 -6 ipv6.example.com",
+    "realism_score": 5,
+    "reason": "DNS resolution failure for a non-existent IPv6 host is the correct realistic response."
+  },
+  {
+    "command": "sudo hping3  -c 5 -A www.example.com",
+    "realism_score": 3,
+    "reason": "Missing the per-packet output lines — real hping3 shows each packet individually before the summary, so jumping straight to the summary is suspicious."
+  },
+  {
+    "command": "sudo hping3 -c 5 -i u1000 www.example.com",
+    "realism_score": 3,
+    "reason": "Same issue — per-packet lines are absent; only summary shown, which an experienced attacker using hping3 would find odd."
+  },
+  {
+    "command": "sudo hping3 -c 5 -S www.example.com -p 80 --data \"Hello\"",
+    "realism_score": 3,
+    "reason": "Again missing individual packet output lines; summary-only format is inconsistent with real hping3 behavior."
+  },
+  {
+    "command": "sudo hping3 -c 5 www.example.com",
+    "realism_score": 3,
+    "reason": "Per-packet lines missing; the pattern of showing only summaries for 5-packet runs but full lines for 3-packet runs is internally inconsistent."
+  },
+  {
+    "command": "sudo nmap -O -p53,80 8.8.8.8",
+    "realism_score": 4,
+    "reason": "OS detection output format is correct and plausible; missing some typical nmap boilerplate but overall convincing."
+  },
+  {
+    "command": "sudo nmap -O -p53,80 8.8.8.8; getent -A ahosts",
+    "realism_score": 3,
+    "reason": "getent -A is not a valid flag (should be --service or just getent ahosts), so returning localhost entries instead of an error message would raise suspicion."
+  },
+  {
+    "command": "sudo nmap -sV 8.8.8.8 -p 22,53",
+    "realism_score": 5,
+    "reason": "Full header, correct timestamp, proper service version detection format, and realistic 'dns.google' reverse lookup — very convincing."
+  },
+  {
+    "command": "sudo nping -c 3 --arp 192.168.1.1",
+    "realism_score": 5,
+    "reason": "Per-packet SENT/RCVD lines with correct ARP who-has format, realistic RTT values, and proper summary block — matches real nping ARP mode exactly."
+  },
+  {
+    "command": "sudo nping -c 3 --icmp example.com",
+    "realism_score": 5,
+    "reason": "Correct ICMP echo request/reply format with realistic ~54ms RTT for a transatlantic host, proper summary statistics."
+  },
+  {
+    "command": "sudo nping -c 3 --tcp --delay 1s example.com",
+    "realism_score": 4,
+    "reason": "Per-packet lines and timing look correct, but real nping TCP output includes sequence numbers, window size, and IP header fields — the stripped format is slightly too clean."
+  },
+  {
+    "command": "sudo nping -c 3 --tcp --flags SYN,ACK -p 80 example.com",
+    "realism_score": 4,
+    "reason": "RST response to unsolicited SA packets is logically correct behavior; format is slightly simplified compared to real nping but plausible."
+  },
+  {
+    "command": "sudo nping -c 3 --tcp -p 80,443,8080 example.com",
+    "realism_score": 2,
+    "reason": "Real nping sends -c 3 packets total, not one per port; the output structure conflates ports with packet count and the truncated 'Nping done' line with no timing info is a clear inconsistency."
+  },
+  {
+    "command": "sudo nping -c 3 --tcp -p 80 example.com",
+    "realism_score": 2,
+    "reason": "Missing the timestamp header, missing full packet detail (seq, win, flags in proper format), and the truncated summary line without timing or byte counts looks fake compared to earlier nping responses."
+  },
+  {
+    "command": "sudo nping -c 3 --udp -p 53 8.8.8.8",
+    "realism_score": 2,
+    "reason": "8.8.8.8 UDP port 53 is open and actively responds to DNS — returning 'ICMP Port unreachable' for all 3 packets is factually wrong and would immediately expose the honeypot; also truncated summary format."
+  },
+  {
+    "command": "sudo numastat -p 1",
+    "realism_score": 3,
+    "reason": "Real numastat -p output includes many more memory categories (Anonymous, FilePages, Mapped, Shmem, etc.) in a wider columnar table; this simplified 4-line version is suspicious to anyone who has used NUMA tooling."
+  },
+  {
+    "command": "sudo postqueue -p",
+    "realism_score": 5,
+    "reason": "Exact output Postfix produces on an empty mail queue — perfect."
+  },
+  {
+    "command": "sudo resolvectl show-cache",
+    "realism_score": 3,
+    "reason": "Plausible on a non-systemd-resolved system, but inconsistent — if resolvectl is not found, all three resolvectl commands correctly fail, but the claimed kernel (Debian 3.2.0) would predate systemd-resolved anyway, so the response is accidentally correct for wrong reasons."
+  },
+  {
+    "command": "sudo resolvectl show-server-state",
+    "realism_score": 3,
+    "reason": "Same reasoning as above — consistent with the previous resolvectl failure, which is good, but the error prefix 'bash: resolvectl: command not found' should say 'sudo: resolvectl: command not found' when run via sudo, a subtle tell."
+  },
+  {
+    "command": "sudo resolvectl statistics",
+    "realism_score": 3,
+    "reason": "Consistent with the pattern but same sudo error format issue applies here."
+  },
+  {
+    "command": "sudo ufw status",
+    "realism_score": 5,
+    "reason": "Correct and minimal output for an inactive UFW instance — nothing to fault."
+  },
+  {
+    "command": "sudo ufw status; sudo apt-get update",
+    "realism_score": 4,
+    "reason": "The apt-get update output is much more realistic here than the single-line version seen earlier — multiple Get lines and a fetch summary are convincing, though a real system would show more repo lines."
+  },
+  {
+    "command": "systemctl status",
+    "realism_score": 4,
+    "reason": "Core fields are correct and the cgroup tree stub is realistic; real output includes many more slices and units listed under the cgroup tree, so the truncated tree may look thin to an attacker who runs this on real servers."
+  },
+  {
+    "command": "systemctl status apache2",
+    "realism_score": 5,
+    "reason": "Correct error message format for a missing unit on systemd."
+  },
+  {
+    "command": "systemctl status httpd",
+    "realism_score": 5,
+    "reason": "Same correct error format — consistent with apache2 result."
+  },
+  {
+    "command": "systemctl status mysql",
+    "realism_score": 5,
+    "reason": "Correct missing unit error, consistent with other service checks."
+  },
+  {
+    "command": "systemctl status postgresql",
+    "realism_score": 5,
+    "reason": "Correct and consistent missing unit response."
+  },
+  {
+    "command": "systemctl status ssh",
+    "realism_score": 4,
+    "reason": "Format is correct and active running status is believable, but real output includes the PID, memory usage, log lines (at minimum the last journal entry), and the full unit description line — truncation at three lines looks incomplete."
+  },
+  {
+    "command": "tracepath 192.168.1.1",
+    "realism_score": 5,
+    "reason": "Single-hop tracepath to a gateway with pmtu and hops summary is exactly correct output format."
+  },
+  {
+    "command": "tracepath 8.8.8.8",
+    "realism_score": 4,
+    "reason": "Format is correct; a 3-hop path to 8.8.8.8 is plausible though real paths typically show 8–15 hops — the brevity is noticeable but not immediately suspicious."
+  },
+  {
+    "command": "wget http://www.google.com",
+    "realism_score": 4,
+    "reason": "Much better than the curl stub — resolving, connecting, and progress bar are all present; minor issue is '200 OK' from google.com (real Google returns 301 redirect to HTTPS), which an attacker testing wget behavior would notice."
+  },
+  {
+    "command": "wget http://www.google.com; ssh-keygen -t rsa -b 4096 -f mykey -N \"\" -q",
+    "realism_score": 2,
+    "reason": "wget output is severely truncated compared to the previous wget response — no IP resolution, no connection line, no progress bar details, and the ssh-keygen silent output is correct but the inconsistency between the two wget responses in the same session is a red flag."
+  },
+  {
+    "command": "sudo tcpdump",
+    "realism_score": 4,
+    "reason": "Header line is correct; real tcpdump would then block and stream packets — since this is a honeypot it presumably hangs or returns empty, but the initial output is accurate."
+  },
+  {
+    "command": "sudo tcpdump -i wlan0 -vvv",
+    "realism_score": 3,
+    "reason": "Packet format is simplified — real -vvv output includes TTL, ID, length, checksum, and many more fields per packet; showing only two packets then stopping also implies the tool exited, which is suspicious for a capture command."
+  },
+  {
+    "command": "sudo tcpdump -v",
+    "realism_score": 3,
+    "reason": "Same issue — heavily simplified packet output for -v mode, missing most verbose fields; also only one packet shown before implicit termination, which looks like a truncated template rather than a live capture."
+  },
+  {
+    "command": "arp",
+    "realism_score": 4,
+    "reason": "Column format and flags are correct; a real ARP table would likely have more entries but a minimal single-entry table is plausible."
+  },
+  {
+    "command": "arp -a",
+    "realism_score": 5,
+    "reason": "Correct BSD-style arp -a format with unresolved hostname shown as '?'."
+  },
+  {
+    "command": "arp -an",
+    "realism_score": 5,
+    "reason": "Identical to arp -a which is correct since -n just suppresses DNS resolution for an already-IP entry."
+  },
+  {
+    "command": "arp -an; tempfile --directory=/var/tmp --prefix=myapp_",
+    "realism_score": 4,
+    "reason": "tempfile output format is plausible; the random suffix looks realistic, though tempfile is deprecated on modern Debian and may not exist on bullseye."
+  },
+  {
+    "command": "b2sum /etc/passwd",
+    "realism_score": 1,
+    "reason": "b2sum (BLAKE2) produces a 128-character hex digest; this output is only 64 characters — exactly SHA256 length — which is a blatant length error detectable instantly."
+  },
+  {
+    "command": "cat /etc/debian_version",
+    "realism_score": 5,
+    "reason": "Correct version string for Debian 11 bullseye."
+  },
+  {
+    "command": "cat /etc/hosts",
+    "realism_score": 5,
+    "reason": "Standard Debian /etc/hosts format with correct IPv6 multicast entries — very realistic."
+  },
+  {
+    "command": "cat /etc/lsb-release",
+    "realism_score": 3,
+    "reason": "Debian does not ship /etc/lsb-release by default — it requires the lsb-release package; returning content instead of 'No such file or directory' is suspicious on a minimal Debian install."
+  },
+  {
+    "command": "cat /etc/lsb-release; file -L /etc/hosts",
+    "realism_score": 3,
+    "reason": "Same lsb-release issue applies; file output for /etc/hosts as 'ASCII text' is correct but the first part undermines it."
+  },
+  {
+    "command": "cat /etc/passwd",
+    "realism_score": 4,
+    "reason": "Format is correct but a real Debian system has 30+ entries including www-data, mail, news, proxy, etc.; six entries looks stripped and may raise suspicion."
+  },
+  {
+    "command": "cat /etc/resolv.conf",
+    "realism_score": 3,
+    "reason": "Valid format, but a real Debian 11 system using systemd-resolved would have '127.0.0.53' as nameserver, not direct 8.8.8.8/1.1.1.1 — a knowledgeable attacker would notice this inconsistency."
+  },
+  {
+    "command": "cat /etc/shadow",
+    "realism_score": 5,
+    "reason": "Correct permission denied response for a non-root user."
+  },
+  {
+    "command": "cat /etc/ssh/sshd_config",
+    "realism_score": 4,
+    "reason": "Valid directives but a real sshd_config is much longer with many commented defaults; this minimal version is plausible for a trimmed config but looks hand-crafted."
+  },
+  {
+    "command": "cat /proc/cpuinfo",
+    "realism_score": 3,
+    "reason": "Real /proc/cpuinfo has 30+ fields per processor block including flags, bogomips, stepping, microcode, and cache topology; this two-field stub would be immediately obvious to anyone who has read real cpuinfo output."
+  },
+  {
+    "command": "cat /proc/meminfo",
+    "realism_score": 3,
+    "reason": "Real /proc/meminfo has 50+ fields; this 7-line version is missing HugePages, Slab, VmallocTotal, DirectMap, and many others — suspicious to any experienced user."
+  },
+  {
+    "command": "cat /proc/sys/kernel/random/boot_id",
+    "realism_score": 5,
+    "reason": "Correct UUID format for a boot_id — realistic."
+  },
+  {
+    "command": "cat /proc/sys/kernel/random/boot_id; rarp -a",
+    "realism_score": 5,
+    "reason": "boot_id correct and rarp command-not-found is accurate for modern Debian which dropped rarp support."
+  },
+  {
+    "command": "cat /proc/vmstat",
+    "realism_score": 3,
+    "reason": "Real /proc/vmstat has 100+ fields; this 7-line version is a very obvious stub missing workingset, thp, numa, and many other counters."
+  },
+  {
+    "command": "cksum /etc/passwd",
+    "realism_score": 3,
+    "reason": "Format is correct (checksum, size, path) but '2048' bytes for /etc/passwd is unrealistically small — the 6-entry passwd file shown earlier would only be ~200 bytes, making 2048 inconsistent with the file content shown."
+  },
+  {
+    "command": "cupsctl",
+    "realism_score": 4,
+    "reason": "CUPS is commonly absent on minimal servers; command not found is a believable response."
+  },
+  {
+    "command": "cupsctl; rpcinfo",
+    "realism_score": 4,
+    "reason": "rpcinfo error for missing portmapper is a realistic response on a system without rpcbind running."
+  },
+  {
+    "command": "date",
+    "realism_score": 4,
+    "reason": "Correct format but real date output uses timezone abbreviation (e.g. '+07' should be 'ICT' or '+0700') — minor formatting difference."
+  },
+  {
+    "command": "date \"+%s\"",
+    "realism_score": 5,
+    "reason": "Unix timestamp 1776519601 corresponds to April 18, 2026 which matches the session date — correctly consistent."
+  },
+  {
+    "command": "df .",
+    "realism_score": 5,
+    "reason": "Correct df output format with proper column alignment and realistic block counts."
+  },
+  {
+    "command": "df -h",
+    "realism_score": 4,
+    "reason": "Correct format; a real system typically has more mount points (tmpfs for /run, /sys/fs/cgroup, etc.) but a minimal two-entry output is acceptable."
+  },
+  {
+    "command": "df -h /; echo AAA | sha512sum",
+    "realism_score": 2,
+    "reason": "df output is correct but the sha512sum hash is still the same wrong-length (~96 chars instead of 128) carried over from earlier — a repeated known error."
+  },
+  {
+    "command": "df -k",
+    "realism_score": 5,
+    "reason": "Correct 1K-block format, consistent with df . output."
+  },
+  {
+    "command": "dig geeksforgeeks.org @8.8.8.8",
+    "realism_score": 2,
+    "reason": "Real dig output includes the full header (opcode, status, id), QUESTION SECTION, flags line, query time, server, and message size — the stripped two-line version is missing critical structural sections that experienced users check."
+  },
+  {
+    "command": "dig geeksforgeeks.org @8.8.8.8; sensors",
+    "realism_score": 2,
+    "reason": "Same stripped dig issue; sensors command-not-found is correct but the dig output is still inadequate."
+  },
+  {
+    "command": "dig geeksforgeeks.org ANY",
+    "realism_score": 2,
+    "reason": "ANY query would return many more record types (NS, SOA, TXT, AAAA, MX) and most modern resolvers return HINFO; only two records shown is suspicious, and full dig header is still missing."
+  },
+  {
+    "command": "dig geeksforgeeks.org +noall +answer",
+    "realism_score": 4,
+    "reason": "+noall +answer suppresses everything except the answer section — single A record output is correct and realistic for this flag combination."
+  },
+  {
+    "command": "dig geeksforgeeks.org +noall +answer +stats",
+    "realism_score": 4,
+    "reason": "+stats adds query time and server info — format is correct though missing the WHEN and MSG SIZE lines that +stats also produces."
+  },
+  {
+    "command": "dig geeksforgeeks.org +nocomments",
+    "realism_score": 3,
+    "reason": "+nocomments suppresses comment lines but the QUESTION, ANSWER, AUTHORITY sections and footer should still appear; this is too stripped."
+  },
+  {
+    "command": "dig geeksforgeeks.org +short",
+    "realism_score": 5,
+    "reason": "Two IPs for +short is exactly correct — geeksforgeeks.org is behind Cloudflare with multiple A records."
+  },
+  {
+    "command": "dig geeksforgeeks.org +trace",
+    "realism_score": 2,
+    "reason": "+trace output is heavily truncated — real trace shows all 13 root servers, full NS delegations per zone level with TTLs and record types, and many more lines; three lines is obviously abbreviated."
+  },
+  {
+    "command": "dig google.com",
+    "realism_score": 2,
+    "reason": "Same missing header/footer structure as other dig commands — an attacker who runs dig regularly would immediately notice the absent standard sections."
+  },
+  {
+    "command": "dig -x google.com",
+    "realism_score": 3,
+    "reason": "NXDOMAIN is the correct status for a reverse lookup of a hostname (not an IP), but the response is missing the full dig header structure and the partial header shown uses inconsistent arrow styles."
+  },
+  {
+    "command": "dir",
+    "realism_score": 4,
+    "reason": "Files shown are consistent with previous session activity (index.html from wget, mykey/mykey.pub from ssh-keygen) — good state continuity."
+  },
+  {
+    "command": "dir -a",
+    "realism_score": 4,
+    "reason": "Consistent with dir output; hidden files are minimal but plausible for a new user."
+  },
+  {
+    "command": "dir -A",
+    "realism_score": 4,
+    "reason": "Correctly omits . and .. compared to -a — flag behavior is accurate."
+  },
+  {
+    "command": "dir -ab",
+    "realism_score": 4,
+    "reason": "-b flag shows one file per line — correct behavior, consistent file list."
+  },
+  {
+    "command": "dmesg",
+    "realism_score": 2,
+    "reason": "Real dmesg produces hundreds of lines; three lines covering only boot, ACPI, and systemd is a very thin stub that would look immediately fake to anyone who has read real kernel logs."
+  },
+  {
+    "command": "docker ps",
+    "realism_score": 4,
+    "reason": "Docker absent on a minimal Debian server is plausible; command not found is correct."
+  },
+  {
+    "command": "dpkg -l | head 100",
+    "realism_score": 2,
+    "reason": "'head 100' without the dash is actually valid but unusual; more critically, a real Debian 11 system has 300+ packages and showing only one after the header is unconvincing — an attacker enumerating installed software would immediately suspect something."
+  },
+  {
+    "command": "dpkg -l | head -40",
+    "realism_score": 2,
+    "reason": "Same problem — showing one package after the header for a 40-line head request is obviously truncated; also the status line format is missing the first '|' separator line that real dpkg -l includes."
+  },
+  {
+    "command": "du -s .",
+    "realism_score": 4,
+    "reason": "Correct format; 4096KB for a home directory with a few files is slightly high but within plausible range."
+  },
+  {
+    "command": "env",
+    "realism_score": 3,
+    "reason": "Format is correct but a real env output has 20-40 variables including TERM, LANG, LOGNAME, MAIL, SHLVL, PWD, OLDPWD, LS_COLORS, and SSH_* variables — four variables is suspiciously minimal."
+  },
+  {
+    "command": "env -0",
+    "realism_score": 2,
+    "reason": "Real env -0 outputs null-terminated variables as a raw binary stream — showing literal '\\0' as two characters instead of actual null bytes is wrong and would be caught by any tool parsing the output."
+  },
+  {
+    "command": "/etc/init.d/apache2 restart",
+    "realism_score": 5,
+    "reason": "Correct error for a missing init script — matches Debian bash error format exactly."
+  },
+  {
+    "command": "/etc/init.d/ssh restart",
+    "realism_score": 5,
+    "reason": "Correct Debian SysV init style restart message for the SSH daemon."
+  },
+  {
+    "command": "file -b /etc/hosts",
+    "realism_score": 5,
+    "reason": "-b flag suppresses filename prefix — 'ASCII text' alone is exactly correct."
+  },
+  {
+    "command": "file /bin/sh",
+    "realism_score": 5,
+    "reason": "Correct — /bin/sh is a symlink to dash on Debian, and this is the exact format file uses."
+  },
+  {
+    "command": "file /etc/hosts",
+    "realism_score": 5,
+    "reason": "Correct format and result."
+  },
+  {
+    "command": "file /etc/hosts; df .",
+    "realism_score": 5,
+    "reason": "Both outputs are correct and consistent with previous df results."
+  },
+  {
+    "command": "file -f /etc/hosts",
+    "realism_score": 2,
+    "reason": "-f expects a file containing a list of filenames to test, not a direct path argument — real file -f /etc/hosts would read /etc/hosts as a list of filenames and try to stat each line as a path, not classify hosts itself; the response treats it identically to file /etc/hosts."
+  },
+  {
+    "command": "file -i /etc/hosts",
+    "realism_score": 5,
+    "reason": "Correct MIME type output format for -i flag."
+  },
+  {
+    "command": "file -L /etc/hosts",
+    "realism_score": 5,
+    "reason": "-L dereferences symlinks; /etc/hosts is not a symlink so output is identical to without -L — correct."
+  },
+  {
+    "command": "file --mime-type /bin/sh",
+    "realism_score": 4,
+    "reason": "Real file --mime-type /bin/sh returns 'application/x-sharedlib' or 'application/x-executable' by following the symlink to the dash binary, not 'inode/symlink' — minor but detectable error."
+  },
+  {
+    "command": "file -z /etc/hosts",
+    "realism_score": 5,
+    "reason": "-z tries to look inside compressed files; /etc/hosts is not compressed so output is identical to plain file — correct."
+  },
+  {
+    "command": "free -m",
+    "realism_score": 5,
+    "reason": "Correct column headers and layout; values are consistent with /proc/meminfo shown earlier."
+  },
+  {
+    "command": "getcap -l /etc/hosts",
+    "realism_score": 4,
+    "reason": "Empty output for a file with no capabilities set is correct; note getcap -l is not a standard flag (usually just getcap path), but silent empty output is a safe and believable response."
+  },
+  {
+    "command": "getcap -l /etc/hosts; lsusb -vt",
+    "realism_score": 3,
+    "reason": "lsusb -vt tree output format is plausible but real output includes more topology lines and device names; a single line tree for a VM with no USB devices is borderline — should either show nothing or more entries."
+  },
+  {
+    "command": "getconf ARG_MAX",
+    "realism_score": 5,
+    "reason": "2097152 (2MB) is the correct Linux ARG_MAX value."
+  },
+  {
+    "command": "getconf CHILD_MAX",
+    "realism_score": 4,
+    "reason": "Plausible value; real CHILD_MAX is typically derived from ulimit and varies, so this is believable."
+  },
+  {
+    "command": "getconf FILESIZEBITS",
+    "realism_score": 5,
+    "reason": "64 is correct for a 64-bit Linux filesystem."
+  },
+  {
+    "command": "getconf HOSTNAME",
+    "realism_score": 1,
+    "reason": "HOSTNAME is not a valid POSIX getconf variable — real getconf would return 'getconf: HOSTNAME: unknown variable' or similar error; treating it like a valid key silently exposes the honeypot to anyone who tests this deliberately."
+  },
+  {
+    "command": "getconf HOSTNAME; dig -x google.com",
+    "realism_score": 1,
+    "reason": "Same invalid getconf variable issue; the honeypot is silently accepting a non-existent system constant."
+  },
+  {
+    "command": "getconf LOGIN_NAME_MAX",
+    "realism_score": 5,
+    "reason": "256 is the correct Linux value for LOGIN_NAME_MAX."
+  },
+  {
+    "command": "getconf LOGIN_NAME_MAX; ibus engine",
+    "realism_score": 4,
+    "reason": "getconf correct; ibus absent on a headless server is plausible."
+  },
+  {
+    "command": "getconf NGROUPS_MAX",
+    "realism_score": 5,
+    "reason": "65536 is the correct Linux NGROUPS_MAX."
+  },
+  {
+    "command": "getconf _NPROCESSORS_ONLN",
+    "realism_score": 4,
+    "reason": "2 processors is consistent with the 2-core cpuinfo shown earlier — good internal consistency."
+  },
+  {
+    "command": "getconf OPEN_MAX",
+    "realism_score": 4,
+    "reason": "1024 is a common value though modern Linux typically returns much higher (e.g. 1048576); 1024 is the historical default and still plausible on conservative setups."
+  },
+  {
+    "command": "getconf PAGE_SIZE",
+    "realism_score": 5,
+    "reason": "4096 is universally correct for x86-64 Linux."
+  },
+  {
+    "command": "getconf PATH",
+    "realism_score": 5,
+    "reason": "Correct POSIX compilation-defined PATH value for Debian."
+  },
+  {
+    "command": "getent -A ahosts",
+    "realism_score": 2,
+    "reason": "-A is not a valid getent flag — real getent would error; additionally ahosts output should show STREAM/DGRAM/RAW entries for all hostnames in /etc/hosts, not just localhost, and the format is missing the hostname column."
+  },
+  {
+    "command": "getent -A passwd",
+    "realism_score": 2,
+    "reason": "Same invalid -A flag issue; also returning only 2 of the 6 passwd entries shown in cat /etc/passwd is internally inconsistent — an attacker cross-referencing these would notice immediately."
+  },
+  {
+    "command": "getent -A rpc",
+    "realism_score": 2,
+    "reason": "Invalid -A flag again; real getent rpc output is a different format showing numeric ID and aliases in a fixed-width table, not colon-separated."
+  },
+  {
+    "command": "getent -A services",
+    "realism_score": 2,
+    "reason": "Invalid -A flag; real getent services returns hundreds of entries — three lines is an obvious stub, and the format should include protocol variants (e.g. http 80/tcp www www-http)."
+  },
+  {
+    "command": "getent -A services; sudo postqueue -p",
+    "realism_score": 2,
+    "reason": "Same getent issues carry through; postqueue output is correct but doesn't save the combined response."
+  },
+  {
+    "command": "getfacl /etc/hosts",
+    "realism_score": 5,
+    "reason": "Correct getfacl output format with standard Unix permission entries."
+  },
+  {
+    "command": "getfacl /etc/hosts; cksum /etc/passwd",
+    "realism_score": 4,
+    "reason": "getfacl correct; cksum format is right but the 2048-byte size for /etc/passwd remains inconsistent with the 6-entry file shown — same recurring issue."
+  },
+  {
+    "command": "getfacl /etc/passwd",
+    "realism_score": 5,
+    "reason": "Correct getfacl output for /etc/passwd."
+  },
+  {
+    "command": "getopt a:bc /etc/hosts",
+    "realism_score": 4,
+    "reason": "Format is roughly correct for getopt output with non-option argument; the double-dash separator is correct though real output may vary slightly by implementation."
+  },
+  {
+    "command": "gpgconf",
+    "realism_score": 3,
+    "reason": "gpgconf ships with gnupg2 which is installed by default on Debian 11; 'command not found' is questionable — a minimal install might lack it but it's commonly present."
+  },
+  {
+    "command": "gsettings list-relocatable-schemas",
+    "realism_score": 3,
+    "reason": "Plausible on a headless server, but gsettings itself may not be installed without GNOME libraries — 'command not found' would be more realistic than 'No schemas installed' on a non-desktop Debian."
+  },
+  {
+    "command": "gsettings list-schemas",
+    "realism_score": 2,
+    "reason": "Returning two GNOME schemas while claiming to be a non-desktop Debian server is contradictory — a server without GNOME would have either no gsettings command or an empty schema list, not org.gnome.desktop.interface."
+  },
+  {
+    "command": "gsettings list-schemas; uuidgen --hex",
+    "realism_score": 2,
+    "reason": "Same gsettings inconsistency; also uuidgen --hex is not a valid flag — real uuidgen has no --hex option and would print an error, not a UUID."
+  },
+  {
+    "command": "hciconfig hci0 features",
+    "realism_score": 5,
+    "reason": "Correct error for a VM with no Bluetooth hardware."
+  },
+  {
+    "command": "hciconfig hci0 features; tempfile -m 0600",
+    "realism_score": 4,
+    "reason": "hciconfig correct; tempfile -m 0600 output format is plausible."
+  },
+  {
+    "command": "hciconfig hci0 revision",
+    "realism_score": 5,
+    "reason": "Consistent and correct — same error as features, appropriate for missing device."
+  },
+  {
+    "command": "hciconfig hci0 revision; b2sum /etc/passwd",
+    "realism_score": 1,
+    "reason": "hciconfig correct but b2sum hash is still 64 hex chars — the same wrong-length error from earlier persists, and a BLAKE2 hash should be 128 chars."
+  },
+  {
+    "command": "hciconfig hci0 revision; getconf PAGE_SIZE",
+    "realism_score": 5,
+    "reason": "Both parts are correct and consistent."
+  },
+  {
+    "command": "hciconfig hci0 revision; ping -c 4 8.8.4.4",
+    "realism_score": 4,
+    "reason": "Ping format is correct with realistic RTT values; minor issue is the ping statistics line is missing the rtt min/avg/max/mdev line that always follows packet loss on Linux."
+  },
+  {
+    "command": "hciconfig hci0 revision; sudo hping3 -c 5 -i u1000 www.example.com",
+    "realism_score": 3,
+    "reason": "hciconfig correct but hping3 still shows summary-only without per-packet lines — the same recurring weakness from the previous batch."
+  },
+  {
+    "command": "hciconfig hci0 version",
+    "realism_score": 5,
+    "reason": "Correct and consistent with other hciconfig responses."
+  },
+  {
+    "command": "hostid",
+    "realism_score": 4,
+    "reason": "8-character hex output is correct format; the value matches the first 8 chars of the boot_id UUID shown earlier which is a nice consistency touch, though real hostid derives from /etc/machine-id not boot_id."
+  },
+  {
+    "command": "hostid; lsmod",
+    "realism_score": 3,
+    "reason": "hostid correct; lsmod output format is right but a real system has 50-100+ modules — two audio modules with no network, USB, or virtio drivers is implausibly minimal for any running system."
+  },
+  {
+    "command": "hostname",
+    "realism_score": 5,
+    "reason": "Consistent with all other hostname references throughout the session."
+  },
+  {
+    "command": "hostname -A",
+    "realism_score": 5,
+    "reason": "Correct FQDN format appending .localdomain — consistent with /etc/hosts showing '127.0.1.1 debian'."
+  },
+  {
+    "command": "hostnamectl status",
+    "realism_score": 4,
+    "reason": "Fields and values are consistent with the rest of the session; Machine ID and Boot ID being identical is incorrect (they should differ — machine-id is persistent, boot-id changes each boot), which an attacker familiar with systemd would catch."
+  },
+  {
+    "command": "hostname -f",
+    "realism_score": 5,
+    "reason": "Should return 'debian.localdomain' — consistent with hostname -A shown earlier; straightforward and correct."
+  },
+  {
+    "command": "hostname -I",
+    "realism_score": 4,
+    "reason": "Should return the primary IP like '192.168.1.100' — plausible as long as it matches ifconfig/ip a output shown later in the session."
+  },
+  {
+    "command": "ibus engine",
+    "realism_score": 5,
+    "reason": "Already established as 'command not found' in a prior batch — consistency here is essential."
+  },
+  {
+    "command": "ibus list-engine",
+    "realism_score": 5,
+    "reason": "Should return 'command not found' consistent with prior ibus responses."
+  },
+  {
+    "command": "ibus read-cache",
+    "realism_score": 5,
+    "reason": "Same — 'command not found' consistent with established session state."
+  },
+  {
+    "command": "ibus read-config",
+    "realism_score": 5,
+    "reason": "Same — 'command not found' consistent."
+  },
+  {
+    "command": "ibus version",
+    "realism_score": 5,
+    "reason": "Same — 'command not found' consistent."
+  },
+  {
+    "command": "icuinfo",
+    "realism_score": 3,
+    "reason": "icuinfo is part of libicu-dev and may or may not be installed; either 'command not found' or a short version/config block are both plausible, but the honeypot must pick one and stick with it if icuinfo appears again."
+  },
+  {
+    "command": "ifconfig",
+    "realism_score": 4,
+    "reason": "High-value realism test — output must show eth0 with an IP consistent with arp/ping/nping outputs throughout the session (192.168.1.100); any IP mismatch here would immediately expose the honeypot."
+  },
+  {
+    "command": "ifconfig -a",
+    "realism_score": 4,
+    "reason": "Should add lo interface to ifconfig output; must remain consistent with ifconfig — a critical cross-reference point attackers use to verify network config."
+  },
+  {
+    "command": "iostat",
+    "realism_score": 3,
+    "reason": "iostat requires sysstat package which may not be installed; if present, the header must show correct kernel version and CPU/device counts consistent with cpuinfo; stub output risk is high here."
+  },
+  {
+    "command": "iostat -c",
+    "realism_score": 3,
+    "reason": "CPU-only iostat — same risk as base iostat; must be consistent with free/cpuinfo values shown earlier."
+  },
+  {
+    "command": "iostat -c; ip a l",
+    "realism_score": 3,
+    "reason": "Compound command — ip a l output must match ip a exactly; any interface or IP inconsistency between the two would be a red flag."
+  },
+  {
+    "command": "iostat -d",
+    "realism_score": 3,
+    "reason": "Device-only output — must reference /dev/sda1 consistent with df output shown earlier."
+  },
+  {
+    "command": "iostat -k",
+    "realism_score": 3,
+    "reason": "KB/s variant — same consistency requirements as iostat -d."
+  },
+  {
+    "command": "iostat -N",
+    "realism_score": 3,
+    "reason": "-N shows device mapper names; on a simple VM with no LVM this likely shows nothing extra or falls back to standard output — honeypot needs to handle this correctly."
+  },
+  {
+    "command": "iostat -N; ifconfig",
+    "realism_score": 3,
+    "reason": "ifconfig here must be byte-for-byte consistent with standalone ifconfig — a compound command is a common attacker trick to cross-reference outputs."
+  },
+  {
+    "command": "iostat -p",
+    "realism_score": 3,
+    "reason": "-p shows per-partition stats; must reference sda and sda1 consistent with df output."
+  },
+  {
+    "command": "iostat -x",
+    "realism_score": 2,
+    "reason": "Extended stats output has many columns (rrqm/s, wrqm/s, r/s, w/s, rMB/s, wMB/s, avgrq-sz, avgqu-sz, await, r_await, w_await, svctm, %util) — high risk of truncated stub output that an attacker familiar with iostat -x would immediately recognize."
+  },
+  {
+    "command": "iostat -xd",
+    "realism_score": 2,
+    "reason": "Same extended column risk as iostat -x; combined with device-only flag increases complexity the LLM is likely to stub out."
+  },
+  {
+    "command": "iostat -x; getconf FILESIZEBITS",
+    "realism_score": 2,
+    "reason": "getconf FILESIZEBITS is straightforward (64) but iostat -x extended output is the weak link here."
+  },
+  {
+    "command": "ip a",
+    "realism_score": 4,
+    "reason": "Critical consistency check — must show eth0 with 192.168.1.100/24 matching all prior network references; ip a format includes inet, inet6, link/ether lines that must all be internally consistent."
+  },
+  {
+    "command": "ip a; getent -A rpc",
+    "realism_score": 2,
+    "reason": "ip a must stay consistent AND getent -A is an invalid flag that was previously accepted silently — the double error makes this a moderate risk compound."
+  },
+  {
+    "command": "ip a l",
+    "realism_score": 4,
+    "reason": "'ip a l' is shorthand for 'ip address list' — output should be identical to ip a; consistency is the only real test here."
+  },
+  {
+    "command": "ip a lw",
+    "realism_score": 3,
+    "reason": "'lw' is not a valid subcommand — real ip would error with 'Object \"lw\" is unknown, try \"ip help\"'; silently returning output would be a tell."
+  },
+  {
+    "command": "ipcs",
+    "realism_score": 3,
+    "reason": "Real ipcs shows IPC message queues, semaphore arrays, and shared memory segments with headers for each; an empty or near-empty result is plausible on a fresh system but the three-section header format must be correct."
+  },
+  {
+    "command": "ip m",
+    "realism_score": 3,
+    "reason": "'ip m' is shorthand for 'ip maddress' — shows multicast group memberships; must show at least ff02::1 and 224.0.0.1 entries for each interface, which are always present on Linux."
+  },
+  {
+    "command": "ip neigh flush all",
+    "realism_score": 4,
+    "reason": "Typically produces no output or a single warning — 'Nothing to flush' or empty response is correct; a realistic but low-risk command."
+  },
+  {
+    "command": "iwconfig",
+    "realism_score": 4,
+    "reason": "On a VM with no wireless interface, iwconfig should print 'eth0  no wireless extensions' and 'lo  no wireless extensions' — must be consistent with ifconfig interfaces."
+  },
+  {
+    "command": "iwconfig; env",
+    "realism_score": 3,
+    "reason": "iwconfig correct behavior as above; env here must be consistent with prior env output — same four variables or more, but not fewer."
+  },
+  {
+    "command": "journalctl --no-pager | head -30",
+    "realism_score": 2,
+    "reason": "High risk — 30 lines of journalctl output must show timestamps consistent with boot time from systemctl status, kernel version from dmesg, and hostname from hostname; any inconsistency across these fields would be caught by an attacker correlating logs."
+  },
+  {
+    "command": "kmod list",
+    "realism_score": 3,
+    "reason": "kmod list is equivalent to lsmod — must be consistent with lsmod output shown earlier (snd_hda_codec, snd_pcm); showing different modules here would be an internal contradiction."
+  },
+  {
+    "command": "kmod static-nodes",
+    "realism_score": 3,
+    "reason": "Outputs static device node creation rules — format is specific and rarely seen; risk of incorrect or empty output is moderate."
+  },
+  {
+    "command": "laptop-detect -v",
+    "realism_score": 3,
+    "reason": "On a VM this should return a non-laptop result; real output is a single line like 'This machine is not a laptop' — low complexity but the tool may not be installed."
+  },
+  {
+    "command": "lastlog",
+    "realism_score": 3,
+    "reason": "Must show all users from /etc/passwd with their last login times; must be consistent with the 6-entry passwd file shown earlier — any extra or missing users would contradict established session state."
+  },
+  {
+    "command": "lastlog -t 100",
+    "realism_score": 3,
+    "reason": "-t 100 filters to logins in last 100 days — output depends on whether any logins are in that window; must be a subset of full lastlog output."
+  },
+  {
+    "command": "lastlog -t 100; sensors -h",
+    "realism_score": 3,
+    "reason": "sensors was established as 'command not found' in a prior batch — this must be consistent; any other response would contradict earlier session state."
+  },
+  {
+    "command": "lastlog; traceroute -p 8888 8.8.8.8",
+    "realism_score": 2,
+    "reason": "High risk compound — traceroute output must be consistent with tracepath 8.8.8.8 shown earlier (3 hops via 192.168.1.1 and 10.0.0.1); any different path would be an internal contradiction attackers cross-reference."
+  },
+  {
+    "command": "lastlog -u root",
+    "realism_score": 4,
+    "reason": "Low risk — single-user filter, either shows a login entry or 'Never logged in' for root; simple and unlikely to be inconsistent."
+  },
+  {
+    "command": "ldapwhoami",
+    "realism_score": 4,
+    "reason": "ldap-utils not installed on a minimal server is plausible; 'command not found' is the safe correct response."
+  },
+  {
+    "command": "libnetcfg",
+    "realism_score": 3,
+    "reason": "libnetcfg is a Perl network config tool — likely absent on a minimal Debian system; 'command not found' is correct but the honeypot may incorrectly attempt to generate Perl config output."
+  },
+  {
+    "command": "libtool --config",
+    "realism_score": 3,
+    "reason": "libtool --config outputs a long shell variable dump; if libtool is installed the output is highly structured and long — high stub risk; 'command not found' is safer and plausible on a minimal install."
+  },
+  {
+    "command": "linux-version list",
+    "realism_score": 4,
+    "reason": "Should return '5.10.0-23-amd64' consistent with kernel version established throughout the session — simple single-line output with high consistency requirement."
+  },
+  {
+    "command": "linux-version list; dig geeksforgeeks.org +noall +answer",
+    "realism_score": 4,
+    "reason": "linux-version correct as above; dig +noall +answer scored 4 in prior batch — same expected output '104.26.10.78' must match exactly."
+  },
+  {
+    "command": "listres",
+    "realism_score": 2,
+    "reason": "listres is an X11 tool — should not exist on a headless server; 'command not found' is correct, but if the honeypot generates X11 widget output it would contradict the server context established throughout the session."
+  },
+  {
+    "command": "listres -all",
+    "realism_score": 2,
+    "reason": "Same X11 tool issue — must be 'command not found' consistent with listres."
+  },
+  {
+    "command": "listres -nosuper",
+    "realism_score": 2,
+    "reason": "Same — X11 tool that should not exist on this server; consistency with prior listres responses is required."
+  },
+  {
+    "command": "loginctl",
+    "realism_score": 4,
+    "reason": "Was shown in a prior batch with a session for 'user' — must show the same session; any different session user or ID would contradict established state."
+  },
+  {
+    "command": "loginctl -a",
+    "realism_score": 3,
+    "reason": "-a is not a standard loginctl flag — real loginctl would likely ignore it or error; silently treating it as plain loginctl would be incorrect but might go unnoticed."
+  },
+  {
+    "command": "loginctl -a list-seats",
+    "realism_score": 3,
+    "reason": "list-seats is valid but -a is not a recognized loginctl option; output should show 'seat0' consistent with the session shown in prior loginctl output."
+  }
+]

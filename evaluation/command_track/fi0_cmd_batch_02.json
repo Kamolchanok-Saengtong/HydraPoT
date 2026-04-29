@@ -1,0 +1,152 @@
+[
+  {
+    "cmd": "file -b /etc/hosts"
+  },
+  {
+    "cmd": "file /bin/sh"
+  },
+  {
+    "cmd": "file /etc/hosts"
+  },
+  {
+    "cmd": "file /etc/hosts; df ."
+  },
+  {
+    "cmd": "file -f /etc/hosts"
+  },
+  {
+    "cmd": "file -i /etc/hosts"
+  },
+  {
+    "cmd": "file -L /etc/hosts"
+  },
+  {
+    "cmd": "file --mime-type /bin/sh"
+  },
+  {
+    "cmd": "file -z /etc/hosts"
+  },
+  {
+    "cmd": "free -m"
+  },
+  {
+    "cmd": "getcap -l /etc/hosts"
+  },
+  {
+    "cmd": "getcap -l /etc/hosts; lsusb -vt"
+  },
+  {
+    "cmd": "getconf ARG_MAX"
+  },
+  {
+    "cmd": "getconf CHILD_MAX"
+  },
+  {
+    "cmd": "getconf FILESIZEBITS"
+  },
+  {
+    "cmd": "getconf HOSTNAME"
+  },
+  {
+    "cmd": "getconf HOSTNAME; dig -x google.com"
+  },
+  {
+    "cmd": "getconf LOGIN_NAME_MAX"
+  },
+  {
+    "cmd": "getconf LOGIN_NAME_MAX; ibus engine"
+  },
+  {
+    "cmd": "getconf NGROUPS_MAX"
+  },
+  {
+    "cmd": "getconf _NPROCESSORS_ONLN"
+  },
+  {
+    "cmd": "getconf OPEN_MAX"
+  },
+  {
+    "cmd": "getconf PAGE_SIZE"
+  },
+  {
+    "cmd": "getconf PATH"
+  },
+  {
+    "cmd": "getent -A ahosts"
+  },
+  {
+    "cmd": "getent -A passwd"
+  },
+  {
+    "cmd": "getent -A rpc"
+  },
+  {
+    "cmd": "getent -A services"
+  },
+  {
+    "cmd": "getent -A services; sudo postqueue -p"
+  },
+  {
+    "cmd": "getfacl /etc/hosts"
+  },
+  {
+    "cmd": "getfacl /etc/hosts; cksum /etc/passwd"
+  },
+  {
+    "cmd": "getfacl /etc/passwd"
+  },
+  {
+    "cmd": "getopt a:bc /etc/hosts"
+  },
+  {
+    "cmd": "gpgconf"
+  },
+  {
+    "cmd": "gsettings list-relocatable-schemas"
+  },
+  {
+    "cmd": "gsettings list-schemas"
+  },
+  {
+    "cmd": "gsettings list-schemas; uuidgen --hex"
+  },
+  {
+    "cmd": "hciconfig hci0 features"
+  },
+  {
+    "cmd": "hciconfig hci0 features; tempfile -m 0600"
+  },
+  {
+    "cmd": "hciconfig hci0 revision"
+  },
+  {
+    "cmd": "hciconfig hci0 revision; b2sum /etc/passwd"
+  },
+  {
+    "cmd": "hciconfig hci0 revision; getconf PAGE_SIZE"
+  },
+  {
+    "cmd": "hciconfig hci0 revision; ping -c 4 8.8.4.4"
+  },
+  {
+    "cmd": "hciconfig hci0 revision; sudo hping3 -c 5 -i u1000 www.example.com"
+  },
+  {
+    "cmd": "hciconfig hci0 version"
+  },
+  {
+    "cmd": "hostid"
+  },
+  {
+    "cmd": "hostid; lsmod"
+  },
+  {
+    "cmd": "hostname"
+  },
+  {
+    "cmd": "hostname -A"
+  },
+  {
+    "cmd": "hostnamectl status"
+  }
+]

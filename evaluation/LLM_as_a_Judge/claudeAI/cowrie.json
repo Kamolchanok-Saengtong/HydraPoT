@@ -1,0 +1,352 @@
+[
+  {"command": "arp", "realism_score": 2, "reason": "The 'cannot execute binary file: Exec format error' is a real Linux error but unusual for arp — an attacker would find it suspicious that a basic networking tool can't execute."},
+  {"command": "arp -a", "realism_score": 2, "reason": "Same Exec format error repeated — a pattern that starts to look suspicious if seen across multiple commands."},
+  {"command": "arp -an", "realism_score": 2, "reason": "Same Exec format error again — by this point an attacker would likely suspect something is wrong with the system or it's a honeypot."},
+  {"command": "arp -an; tempfile", "realism_score": 2, "reason": "Both commands fail with Exec format error — the consistency of this failure across unrelated binaries is a red flag."},
+  {"command": "b2sum /etc/passwd", "realism_score": 4, "reason": "Returning 'command not found' is plausible since b2sum isn't always installed by default."},
+  {"command": "cat /etc/debian_version", "realism_score": 1, "reason": "Returns empty output — this file always contains content on Debian and blank output is immediately suspicious."},
+  {"command": "cat /etc/hosts", "realism_score": 4, "reason": "Format is correct and realistic, just with a different hostname (nas3) — an attacker would find this believable."},
+  {"command": "cat /etc/lsb-release", "realism_score": 5, "reason": "Correctly returns 'No such file or directory' matching expected Debian behavior."},
+  {"command": "cat /etc/lsb-release; file -L /etc/hosts", "realism_score": 3, "reason": "The lsb-release error is correct, but returning Exec format error for the file command is suspicious for a common utility."},
+  {"command": "cat /etc/passwd", "realism_score": 3, "reason": "Format is mostly correct but uses /bin/sh instead of /usr/sbin/nologin and shows outdated Debian 7 era accounts — an experienced attacker might notice."},
+  {"command": "cat /etc/resolv.conf", "realism_score": 4, "reason": "Simple, believable resolv.conf with Google DNS — very plausible output."},
+  {"command": "cat /etc/shadow", "realism_score": 3, "reason": "Showing shadow content when it should return permission denied is a serious inconsistency, but the format itself looks authentic — a savvy attacker would know they shouldn't be able to read this as a regular user."},
+  {"command": "cat /etc/ssh/sshd_config", "realism_score": 1, "reason": "Returns empty output — a real sshd_config always has content and blank output is immediately suspicious."},
+  {"command": "cat /proc/cpuinfo", "realism_score": 4, "reason": "Very well-formatted and detailed cpuinfo output with a Core2 Duo — realistic and believable to an attacker."},
+  {"command": "cat /proc/meminfo", "realism_score": 4, "reason": "Comprehensive meminfo output with realistic field names and values — quite convincing."},
+  {"command": "cat /proc/sys/kernel/random/boot_id", "realism_score": 1, "reason": "Returns empty output — this file always contains a UUID and blank output is a clear anomaly."},
+  {"command": "cat /proc/sys/kernel/random/boot_id; rarp -a", "realism_score": 2, "reason": "The boot_id part returns blank (wrong), and rarp gives Exec format error rather than the expected 'kernel does not support RARP' message."},
+  {"command": "cat /proc/vmstat", "realism_score": 1, "reason": "Returns empty output — this file always has substantial content and blank output is immediately suspicious."},
+  {"command": "cksum /etc/passwd", "realism_score": 2, "reason": "Returns Exec format error for cksum — an extremely basic coreutils command that should always be present on any Linux system."},
+  {"command": "crontab -l", "realism_score": 4, "reason": "Returns 'no crontab for root' which is perfectly plausible and correctly formatted."},
+  {"command": "cupsctl", "realism_score": 4, "reason": "'command not found' is plausible since CUPS may not be installed on a minimal server."},
+  {"command": "cupsctl; rpcinfo", "realism_score": 3, "reason": "cupsctl not found is fine, but Exec format error for rpcinfo is unusual — the combination raises suspicion."},
+  {"command": "curl http://www.google.com", "realism_score": 4, "reason": "Returns actual Google HTML content (Thai locale) — very realistic, though the language mismatch from the Dutch ground truth is a minor inconsistency."},
+  {"command": "curl http://www.google.com; uuidparse", "realism_score": 3, "reason": "curl works correctly returning Google HTML, but uuidparse giving 'command not found' is acceptable — overall moderately convincing."},
+  {"command": "date", "realism_score": 4, "reason": "Returns a plausible date in correct format — only minor issue is UTC timezone instead of a local timezone, but still believable."},
+  {"command": "date \"+%s\"", "realism_score": 2, "reason": "Returns a full date string instead of a Unix timestamp — this is clearly wrong and an attacker would immediately notice."},
+  {"command": "df .", "realism_score": 3, "reason": "Shows more filesystems than just the current directory's filesystem, and uses a very long UUID-based device path — unusual but not impossible."},
+  {"command": "df -h", "realism_score": 3, "reason": "Same output as df . which is suspicious — df -h should show all filesystems but the output looks reasonable otherwise."},
+  {"command": "df -h /; echo AAA | sha512sum", "realism_score": 2, "reason": "df part is plausible but sha512sum fails with Exec format error — a coreutils staple failing this way is suspicious."},
+  {"command": "df -k", "realism_score": 2, "reason": "Returns human-readable sizes instead of 1K-blocks despite the -k flag — an attacker would notice this immediately."},
+  {"command": "dig geeksforgeeks.org @8.8.8.8", "realism_score": 3, "reason": "Structural format is correct but ignores the @8.8.8.8 server specification — uses a different server instead, which an attacker might notice."},
+  {"command": "dig geeksforgeeks.org @8.8.8.8; sensors", "realism_score": 3, "reason": "dig output structure is reasonable and 'sensors: command not found' is correct — decent overall."},
+  {"command": "dig geeksforgeeks.org ANY", "realism_score": 2, "reason": "Returns a standard A record query result instead of ANY — ignores the query type, which an attacker testing DNS would notice."},
+  {"command": "dig geeksforgeeks.org +noall +answer", "realism_score": 2, "reason": "Returns the full verbose dig output instead of just the answer section — completely ignores the +noall +answer flags."},
+  {"command": "dig geeksforgeeks.org +noall +answer +stats", "realism_score": 2, "reason": "Same issue — returns full verbose output ignoring the flags, a knowledgeable attacker would spot this."},
+  {"command": "dig geeksforgeeks.org +nocomments", "realism_score": 2, "reason": "Returns output with all the comment sections present — completely ignores the +nocomments flag."},
+  {"command": "dig geeksforgeeks.org +short", "realism_score": 1, "reason": "+short should return just the IP address, but returns the full verbose dig output — a very obvious failure."},
+  {"command": "dig geeksforgeeks.org +trace", "realism_score": 2, "reason": "Returns a simple A record response instead of the full DNS delegation trace — clearly doesn't simulate the +trace flag."},
+  {"command": "dig google.com", "realism_score": 4, "reason": "Format is correct with proper structure and a plausible Google IP — quite convincing for a standard dig query."},
+  {"command": "dig -x google.com", "realism_score": 2, "reason": "Returns 'Invalid option: -x' when -x is a valid and common dig option for reverse lookups — an attacker would immediately know this is wrong."},
+  {"command": "dir", "realism_score": 1, "reason": "Returns empty output — dir always produces output in a non-empty directory and blank output is suspicious."},
+  {"command": "dir -a", "realism_score": 3, "reason": "Shows some hidden files in a reasonable format, though the content is minimal and doesn't match what a real working directory would contain."},
+  {"command": "dir -A", "realism_score": 1, "reason": "Returns empty output — same issue as dir, should show dotfiles."},
+  {"command": "dir -ab", "realism_score": 3, "reason": "Returns the same output as dir -a which is plausible, though -b should show non-printable characters escaped."},
+  {"command": "dmesg", "realism_score": 5, "reason": "Extremely detailed and authentic-looking kernel boot log with realistic hardware details — very convincing."},
+  {"command": "docker ps", "realism_score": 3, "reason": "'command not found' is plausible on a server without Docker installed, though the ground truth shows a permission error suggesting Docker is present."},
+  {"command": "dpkg -l | head 100", "realism_score": 3, "reason": "dpkg fails with Exec format error and head gives a slightly different but plausible error — the head error path is believable."},
+  {"command": "dpkg -l | head -40", "realism_score": 2, "reason": "dpkg fails with Exec format error and head returns 'invalid option -- 4' which is wrong — head -40 is valid syntax."},
+  {"command": "du -s .", "realism_score": 1, "reason": "Returns empty output — du -s always produces output and blank output is immediately suspicious."},
+  {"command": "echo AAA | sha384sum", "realism_score": 2, "reason": "Returns Exec format error for sha384sum — another coreutils binary failing this way is suspicious and inconsistent with echo working fine."},
+  {
+      "command": "echo AAA | sha512sum",
+      "realism_score": 1,
+      "reason": "A real server would compute and return the SHA-512 hash; 'Exec format error' on a standard coreutils binary is implausible and would immediately raise suspicion."
+    },
+    {
+      "command": "echo AAA | shasum",
+      "realism_score": 3,
+      "reason": "'shasum: command not found' is plausible on a minimal Debian/Ubuntu system since shasum is a Perl script not always installed, but a real attacker would test this quickly."
+    },
+    {
+      "command": "echo AAA | sum",
+      "realism_score": 1,
+      "reason": "'sum' is a core GNU coreutils binary present on virtually every Linux system; failing with 'Exec format error' is not believable."
+    },
+    {
+      "command": "echo dsdsdda",
+      "realism_score": 4,
+      "reason": "Output is correct but the leading ANSI escape code (\\u001b[4l) before the echoed string is a minor artifact not present in real bash output."
+    },
+    {
+      "command": "echo -n aaa| cksum",
+      "realism_score": 1,
+      "reason": "'cksum' is a standard coreutils tool; returning 'Exec format error' instead of the checksum is completely implausible."
+    },
+    {
+      "command": "echo -n AAA | md5sum",
+      "realism_score": 1,
+      "reason": "md5sum is a ubiquitous coreutils tool; any experienced attacker would know it must work and the 'Exec format error' is a clear honeypot indicator."
+    },
+    {
+      "command": "echo -n AAA | md5sum; loginctl",
+      "realism_score": 1,
+      "reason": "Commands execute in wrong order (loginctl error appears before md5sum error), loginctl is mishandled, and both use the 'Exec format error' pattern — multiple red flags stacked."
+    },
+    {
+      "command": "echo -n AAA | sha256sum",
+      "realism_score": 1,
+      "reason": "Same fatal flaw as sha512sum and md5sum — 'Exec format error' on sha256sum, a standard coreutils binary, is not realistic."
+    },
+    {
+      "command": "echo ooooo",
+      "realism_score": 4,
+      "reason": "Output is correct; the prepended escape sequence (\\u001b[4l) is the only detectable artifact, which most attackers might dismiss."
+    },
+    {
+      "command": "echo RESULT=$?",
+      "realism_score": 1,
+      "reason": "Cowrie echoes the literal string 'RESULT=$?' without expanding the $? variable — a fundamental shell emulation failure no real bash would produce."
+    },
+    {
+      "command": "echo $SHELL",
+      "realism_score": 4,
+      "reason": "'/bin/bash' is the correct output; only the prepended escape code is a minor inconsistency."
+    },
+    {
+      "command": "env",
+      "realism_score": 2,
+      "reason": "The environment is a sparse 9-variable set with no DISPLAY, XDG_*, DBUS, LESSOPEN, or SSH_* variables; a real interactive root session would have 30+ env vars, making this look clearly templated."
+    },
+    {
+      "command": "env -0",
+      "realism_score": 2,
+      "reason": "The -0 flag should NUL-separate output, but Cowrie returns standard newline-delimited output, ignoring the flag entirely; the env vars are also the same sparse set as entry 62."
+    },
+    {
+      "command": "/etc/init.d/apache2 restart",
+      "realism_score": 2,
+      "reason": "Real bash would say 'No such file or directory', not 'command not found' — the latter is wrong for an absolute path invocation and an attacker would notice."
+    },
+    {
+      "command": "/etc/init.d/ssh restart",
+      "realism_score": 1,
+      "reason": "A real init.d script would restart or fail with a systemd error; returning 'Exec format error' for a shell script path is nonsensical and immediately suspicious."
+    },
+    {
+      "command": "file -b /etc/hosts",
+      "realism_score": 1,
+      "reason": "'file' is a standard utility present on all Linux systems; 'Exec format error' instead of 'ASCII text' is not believable."
+    },
+    {
+      "command": "file /bin/sh",
+      "realism_score": 1,
+      "reason": "Same 'Exec format error' problem for the 'file' command — by this point in a session an attacker would be certain they are in a honeypot."
+    },
+    {
+      "command": "file /etc/hosts",
+      "realism_score": 1,
+      "reason": "Repeated 'Exec format error' for 'file' — an attacker seeing this pattern three times in a row would be entirely certain."
+    },
+    {
+      "command": "file /etc/hosts; df .",
+      "realism_score": 2,
+      "reason": "'file' still fails with Exec format error, but 'df .' does return output; however the df output format uses 'rootfs' and unrealistically large field widths inconsistent with typical df output."
+    },
+    {
+      "command": "file -f /etc/hosts",
+      "realism_score": 1,
+      "reason": "'Exec format error' for 'file' is by now a repeated and unmistakable honeypot signature."
+    },
+    {
+      "command": "file -i /etc/hosts",
+      "realism_score": 1,
+      "reason": "Same 'Exec format error' pattern — no real system would fail on 'file -i' with this error."
+    },
+    {
+      "command": "file -L /etc/hosts",
+      "realism_score": 1,
+      "reason": "Same issue — 'file' consistently fails with 'Exec format error' across all variants, which is a dead giveaway."
+    },
+    {
+      "command": "file --mime-type /bin/sh",
+      "realism_score": 1,
+      "reason": "Another 'file' variant failing with 'Exec format error'; no real Linux system would behave this way."
+    },
+    {
+      "command": "file -z /etc/hosts",
+      "realism_score": 1,
+      "reason": "Same repeated 'Exec format error' for 'file' — this is the 8th consecutive failure of the same tool and is completely implausible."
+    },
+    {
+      "command": "free -m",
+      "realism_score": 3,
+      "reason": "Output format is correct and values are plausible (32GB RAM is high but not impossible for a server); minor formatting inconsistencies with column alignment would likely pass casual inspection."
+    },
+    {
+      "command": "getcap -l /etc/hosts",
+      "realism_score": 3,
+      "reason": "'getcap: command not found' is plausible since getcap may not be installed on minimal systems, though a security-conscious attacker might question the absence."
+    },
+    {
+      "command": "getcap -l /etc/hosts; lsusb -vt",
+      "realism_score": 2,
+      "reason": "'getcap: command not found' is plausible but 'lsusb' failing with 'Exec format error' is suspicious; also a server without USB devices would likely just not have lsusb installed rather than having a broken binary."
+    },
+    {
+      "command": "getconf ARG_MAX",
+      "realism_score": 1,
+      "reason": "Returns '32' instead of the real value '2097152'; an attacker testing system limits would immediately know this is wrong."
+    },
+    {
+      "command": "getconf CHILD_MAX",
+      "realism_score": 1,
+      "reason": "Returns '32' instead of a real value (typically 15000+); the hardcoded '32' for every getconf query is a clear honeypot signature."
+    },
+    {
+      "command": "getconf FILESIZEBITS",
+      "realism_score": 1,
+      "reason": "FILESIZEBITS requires a pathname argument; real getconf would print usage/error, but Cowrie returns '32' regardless — ignoring both the semantics and the argument requirement."
+    },
+    {
+      "command": "getconf HOSTNAME",
+      "realism_score": 1,
+      "reason": "Real getconf returns 'Unrecognized variable HOSTNAME'; Cowrie returns '32', which would immediately expose the honeypot to any attacker who knows getconf behavior."
+    },
+    {
+      "command": "getconf HOSTNAME; dig -x google.com",
+      "realism_score": 1,
+      "reason": "getconf returns '32' (wrong), and dig -x is incorrectly rejected as invalid — real dig fully supports -x for reverse lookups; both failures together are a strong indicator."
+    },
+    {
+      "command": "getconf LOGIN_NAME_MAX",
+      "realism_score": 1,
+      "reason": "Returns '32' instead of the real value '256'; pattern of '32' for all getconf queries is now obvious."
+    },
+    {
+      "command": "getconf LOGIN_NAME_MAX; ibus engine",
+      "realism_score": 2,
+      "reason": "getconf returns '32' (wrong), but 'ibus: command not found' is actually plausible on a headless server; the compound failure is still suspicious."
+    },
+    {
+      "command": "getconf NGROUPS_MAX",
+      "realism_score": 1,
+      "reason": "Returns '32' instead of the real value '65536'; the universal '32' response exposes Cowrie's hardcoded stub."
+    },
+    {
+      "command": "getconf _NPROCESSORS_ONLN",
+      "realism_score": 1,
+      "reason": "Returns '32' instead of the actual CPU count; while a 32-CPU server is not impossible, it is implausible in combination with every other getconf constant also returning '32'."
+    },
+    {
+      "command": "getconf OPEN_MAX",
+      "realism_score": 1,
+      "reason": "Returns '32' instead of the real value (typically 1048576); completely wrong and by this point the attacker would be certain."
+    },
+    {
+      "command": "getconf PAGE_SIZE",
+      "realism_score": 1,
+      "reason": "Returns '32' instead of '4096' — page size is one of the most well-known Linux constants and getting it wrong is an immediate giveaway."
+    },
+    {
+      "command": "getconf PATH",
+      "realism_score": 1,
+      "reason": "Returns '32' instead of '/bin:/usr/bin'; the universal '32' stub is now confirmed across 10+ getconf queries."
+    },
+    {
+      "command": "getent -A ahosts",
+      "realism_score": 1,
+      "reason": "'getent' fails with 'Exec format error' — it is a standard glibc tool present on every Linux system; this failure is not believable."
+    },
+    {
+      "command": "getent -A passwd",
+      "realism_score": 1,
+      "reason": "Same 'Exec format error' for getent — an attacker trying to enumerate users would immediately know something is wrong when this fundamental tool fails."
+    },
+    {
+      "command": "getent -A rpc",
+      "realism_score": 1,
+      "reason": "Repeated 'Exec format error' for getent — consistent with the honeypot's broken binary emulation pattern."
+    },
+    {
+      "command": "getent -A services",
+      "realism_score": 1,
+      "reason": "Same Exec format error — four consecutive getent failures confirm the honeypot's inability to emulate this tool."
+    },
+    {
+      "command": "getent -A services; sudo postqueue -p",
+      "realism_score": 1,
+      "reason": "getent fails as before; additionally the sudo usage error message differs from real sudo syntax and real sudo running as root would behave differently."
+    },
+    {
+      "command": "getfacl /etc/hosts",
+      "realism_score": 3,
+      "reason": "'getfacl: command not found' is plausible on a minimal system without ACL tools installed; this is one of the more believable responses in this batch."
+    },
+    {
+      "command": "getfacl /etc/hosts; cksum /etc/passwd",
+      "realism_score": 2,
+      "reason": "'getfacl: command not found' is plausible, but cksum failing with 'Exec format error' (a coreutils binary) undermines the realism of the combined response."
+    },
+    {
+      "command": "getfacl /etc/passwd",
+      "realism_score": 3,
+      "reason": "'getfacl: command not found' is plausible in isolation; same as entry 95."
+    },
+    {
+      "command": "getopt a:bc /etc/hosts",
+      "realism_score": 1,
+      "reason": "'getopt' is a standard util-linux tool present on all Linux systems; 'Exec format error' is not a believable response."
+    },
+    {
+      "command": "gpgconf",
+      "realism_score": 3,
+      "reason": "'gpgconf: command not found' is plausible on a server without GnuPG installed; this is a believable response."
+    },
+    {
+      "command": "gsettings list-relocatable-schemas",
+      "realism_score": 5,
+      "reason": "'gsettings: command not found' is fully realistic on a headless SSH server without a GNOME desktop environment installed; no attacker would question this."
+    },
+  {"command": "gsettings list-schemas", "realism_score": 3, "reason": "Command not found is plausible on a minimal server, but a system with GNOME schemas installed would have gsettings."},
+  {"command": "gsettings list-schemas; uuidgen --hex", "realism_score": 3, "reason": "Both missing is plausible on a minimal server, but uuidgen is commonly installed on Debian."},
+  {"command": "hciconfig hci0 features", "realism_score": 4, "reason": "hciconfig not found is reasonable on a server without Bluetooth tools."},
+  {"command": "hciconfig hci0 features; tempfile -m 0600", "realism_score": 2, "reason": "The exec format error for /bin/tempfile reveals architecture mismatch, which a real system would never show."},
+  {"command": "hciconfig hci0 revision", "realism_score": 4, "reason": "hciconfig not found is believable on a non-Bluetooth server."},
+  {"command": "hciconfig hci0 revision; b2sum /etc/passwd", "realism_score": 3, "reason": "hciconfig missing is fine, but b2sum should exist on modern Debian; both missing raises suspicion."},
+  {"command": "hciconfig hci0 revision; getconf PAGE_SIZE", "realism_score": 2, "reason": "getconf returning 32 instead of 4096 is wrong; PAGE_SIZE is always 4096 on x86-64 and most ARM64 systems."},
+  {"command": "hciconfig hci0 revision; ping -c 4 8.8.4.4", "realism_score": 2, "reason": "ping: bad number of packets to transmit is incorrect output; -c 4 is valid syntax that always works."},
+  {"command": "hciconfig hci0 revision; sudo hping3 -c 5 -i u1000 www.example.com", "realism_score": 1, "reason": "The sudo error message shown is completely wrong syntax for modern sudo and would never appear on a real system."},
+  {"command": "hciconfig hci0 version", "realism_score": 4, "reason": "hciconfig not found is plausible on a server without Bluetooth utilities."},
+  {"command": "hostid", "realism_score": 1, "reason": "Exec format error for /usr/bin/hostid reveals architecture mismatch; a real system would output a hex hostid."},
+  {"command": "hostid; lsmod", "realism_score": 1, "reason": "Both hostid and lsmod returning exec format errors is a definitive sign of a broken/fake environment."},
+  {"command": "hostname", "realism_score": 5, "reason": "Returns svr04 cleanly, which is realistic for a honeypot hostname response."},
+  {"command": "hostname -A", "realism_score": 3, "reason": "Empty output instead of the full hostname is suspicious; real systems return FQDN with -A flag."},
+  {"command": "hostnamectl status", "realism_score": 3, "reason": "hostnamectl not found is plausible on very minimal systems but odd for a Debian system with systemd."},
+  {"command": "hostname -f", "realism_score": 3, "reason": "Empty output instead of FQDN is suspicious; a real system would return at minimum the short hostname."},
+  {"command": "hostname -I", "realism_score": 3, "reason": "Empty output is wrong; hostname -I should return the IP address(es) of all interfaces."},
+  {"command": "ibus engine", "realism_score": 4, "reason": "ibus not found is reasonable on a headless server without a desktop environment."},
+  {"command": "ibus list-engine", "realism_score": 4, "reason": "ibus not found is believable on a server without a GUI/input method stack."},
+  {"command": "ibus read-cache", "realism_score": 4, "reason": "ibus not found is consistent with previous ibus responses and plausible on a server."},
+  {"command": "ibus read-config", "realism_score": 4, "reason": "ibus not found is consistent and plausible for a headless server."},
+  {"command": "ibus version", "realism_score": 4, "reason": "ibus not found is consistent with other ibus responses, believable on a server."},
+  {"command": "icuinfo", "realism_score": 5, "reason": "icuinfo not found is realistic; it is rarely installed by default on Debian servers."},
+  {"command": "ifconfig", "realism_score": 4, "reason": "Output format and content are believable, though the interface name eth0 vs enp0s3 differs from ground truth but is plausible for older-style naming."},
+  {"command": "ifconfig -a", "realism_score": 4, "reason": "Consistent with the previous ifconfig output, believable network interface display."},
+  {"command": "iostat", "realism_score": 3, "reason": "iostat not found is plausible but sysstat is commonly installed on servers being monitored."},
+  {"command": "iostat -c", "realism_score": 3, "reason": "Consistent with iostat not found, but raises the same concern about a missing common utility."},
+  {"command": "iostat -c; ip a l", "realism_score": 1, "reason": "ip returning exec format error is a critical failure revealing the honeypot's architecture mismatch."},
+  {"command": "iostat -d", "realism_score": 3, "reason": "iostat not found is plausible but consistently missing sysstat tools is suspicious on a server."},
+  {"command": "iostat -k", "realism_score": 3, "reason": "Same as other iostat variants; plausible but raises questions about a server without monitoring tools."},
+  {"command": "iostat -N", "realism_score": 3, "reason": "Consistent not found response, same plausibility concerns as other iostat commands."},
+  {"command": "iostat -N; ifconfig", "realism_score": 3, "reason": "ifconfig output is believable but iostat missing combined with the eth0 naming is mildly inconsistent."},
+  {"command": "iostat -p", "realism_score": 3, "reason": "iostat not found is consistent but sysstat package absence on a monitored server is suspicious."},
+  {"command": "iostat -x", "realism_score": 3, "reason": "Consistent with other iostat responses; same plausibility assessment."},
+  {"command": "iostat -xd", "realism_score": 3, "reason": "Consistent iostat not found response."},
+  {"command": "iostat -x; getconf FILESIZEBITS", "realism_score": 2, "reason": "getconf returning 32 for FILESIZEBITS is wrong; it should return 64 on any modern 64-bit Linux system."},
+  {"command": "ip a", "realism_score": 1, "reason": "Exec format error for /sbin/ip is a critical tell that exposes the honeypot's architecture incompatibility."},
+  {"command": "ip a; getent -A rpc", "realism_score": 1, "reason": "Both ip and getent returning exec format errors definitively exposes a broken fake environment."},
+  {"command": "ip a l", "realism_score": 1, "reason": "Same exec format error for ip; completely unrealistic for any real Linux system."},
+  {"command": "ip a lw", "realism_score": 1, "reason": "Exec format error instead of the expected 'unknown command' error message from ip; exposes architecture mismatch."},
+  {"command": "ipcs", "realism_score": 1, "reason": "Exec format error for /usr/bin/ipcs is another clear sign of architecture mismatch in the honeypot."},
+  {"command": "ip m", "realism_score": 1, "reason": "Exec format error for ip continues the pattern of broken binary execution."},
+  {"command": "ip neigh flush all", "realism_score": 1, "reason": "Exec format error instead of a permission denied or flush response exposes the fake environment."},
+  {"command": "iwconfig", "realism_score": 3, "reason": "iwconfig not found is plausible on a server without wireless-tools installed."},
+  {"command": "iwconfig; env", "realism_score": 3, "reason": "iwconfig missing is plausible; env output is minimal but believable for a restricted shell environment, though missing many real variables."},
+  {"command": "journalctl --no-pager | head -30", "realism_score": 3, "reason": "journalctl not found is plausible on older or minimal systems but odd for a modern Debian system with systemd."},
+  {"command": "kmod list", "realism_score": 1, "reason": "Exec format error for /bin/kmod on a system that supposedly has kernel modules is completely unrealistic."},
+  {"command": "kmod static-nodes", "realism_score": 1, "reason": "Same exec format error for kmod; no real system would have an architecture-mismatched kmod binary."},
+  {"command": "laptop-detect -v", "realism_score": 1, "reason": "Exec format error for laptop-detect exposes the same architecture mismatch problem."},
+  {"command": "lastlog", "realism_score": 1, "reason": "Exec format error for /usr/bin/lastlog is unrealistic; this is a standard utility that should always execute correctly."}
+]

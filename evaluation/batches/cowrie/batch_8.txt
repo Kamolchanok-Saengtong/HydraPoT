@@ -1,0 +1,500 @@
+=== Entry 351 ===
+{
+  "index": 351,
+  "cmd": "ssh-keygen -t rsa -b 4096 -f mykey -N \"\" -q",
+  "ground_truth": "mykey already exists.\nOverwrite (y/n)?",
+  "cowrie_output": "\u001b[4l-bash: /usr/bin/ssh-keygen: cannot execute binary file: Exec format error",
+  "latency_ms": 110.79,
+  "skipped": false
+}
+
+=== Entry 352 ===
+{
+  "index": 352,
+  "cmd": "ssh-keygen -t rsa -b 4096 -f mykey -N \"\" -q; getfacl /etc/passwd",
+  "ground_truth": "mykey already exists.\nOverwrite (y/n)? \ngetfacl: Removing leading '/' from absolute path names\n# file: etc/passwd\n# owner: root\n# group: root\nuser::rw-\ngroup::r--\nother::r--",
+  "cowrie_output": "\u001b[4l-bash: /usr/bin/ssh-keygen: cannot execute binary file: Exec format error\n\u001b[4h-bash: getfacl: command not found",
+  "latency_ms": 111.06,
+  "skipped": false
+}
+
+=== Entry 353 ===
+{
+  "index": 353,
+  "cmd": "ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa_work -C \"work_email@company.com\"",
+  "ground_truth": "Generating public/private rsa key pair.\n/home/niels/.ssh/id_rsa_work already exists.\nOverwrite (y/n)?",
+  "cowrie_output": "\u001b[4l-bash: /usr/bin/ssh-keygen: cannot execute binary file: Exec format error",
+  "latency_ms": 110.68,
+  "skipped": false
+}
+
+=== Entry 354 ===
+{
+  "index": 354,
+  "cmd": "ssh-keygen -t rsa -N \"passphrase\"",
+  "ground_truth": "Generating public/private rsa key pair.\nEnter file in which to save the key (/home/niels/.ssh/id_rsa):",
+  "cowrie_output": "\u001b[4l-bash: /usr/bin/ssh-keygen: cannot execute binary file: Exec format error",
+  "latency_ms": 110.87,
+  "skipped": false
+}
+
+=== Entry 355 ===
+{
+  "index": 355,
+  "cmd": "ssh-keygen -y -f ~/.ssh/id_rsa",
+  "ground_truth": "/home/niels/.ssh/id_rsa: No such file or directory",
+  "cowrie_output": "\u001b[4l-bash: /usr/bin/ssh-keygen: cannot execute binary file: Exec format error",
+  "latency_ms": 110.74,
+  "skipped": false
+}
+
+=== Entry 356 ===
+{
+  "index": 356,
+  "cmd": "stat /etc/hosts",
+  "ground_truth": "File: /etc/hosts\n  Size: 210       \tBlocks: 8          IO Block: 4096   regular file\nDevice: 8,1\tInode: 783644      Links: 1\nAccess: (0644/-rw-r--r--)  Uid: (    0/    root)   Gid: (    0/    root)\nAccess: 2024-10-12 16:00:43.136000375 +0200\nModify: 2024-10-02 15:05:26.828580221 +0200\nChange: 2024-10-02 15:05:26.828580221 +0200\n Birth: 2024-10-02 15:05:24.616580135 +0200",
+  "cowrie_output": "\u001b[4l-bash: /usr/bin/stat: cannot execute binary file: Exec format error",
+  "latency_ms": 110.72,
+  "skipped": false
+}
+
+=== Entry 357 ===
+{
+  "index": 357,
+  "cmd": "stat /etc/passwd",
+  "ground_truth": "File: /etc/passwd\n  Size: 2180      \tBlocks: 8          IO Block: 4096   regular file\nDevice: 8,1\tInode: 787872      Links: 1\nAccess: (0644/-rw-r--r--)  Uid: (    0/    root)   Gid: (    0/    root)\nAccess: 2024-10-12 16:00:35.860000091 +0200\nModify: 2024-10-02 19:52:26.367379372 +0200\nChange: 2024-10-02 19:52:26.375379460 +0200\n Birth: 2024-10-02 19:52:26.367379372 +0200",
+  "cowrie_output": "\u001b[4l-bash: /usr/bin/stat: cannot execute binary file: Exec format error",
+  "latency_ms": 110.62,
+  "skipped": false
+}
+
+=== Entry 358 ===
+{
+  "index": 358,
+  "cmd": "strace -f ls",
+  "ground_truth": "execve(\"/usr/bin/ls\", [\"ls\"], 0x7ffcf8264278 /* 42 vars */) = 0\nbrk(NULL)                               = 0x5651bb643000\nmmap(NULL, 8192, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0) = 0x7f7614b5c000\naccess(\"/etc/ld.so.preload\", R_OK)      = -1 ENOENT (No such file or directory)\nopenat(AT_FDCWD, \"/etc/ld.so.cache\", O_RDONLY|O_CLOEXEC) = 3\nnewfstatat(3, \"\", {st_mode=S_IFREG|0644, st_size=72550, ...}, AT_EMPTY_PATH) = 0\nmmap(NULL, 72550, PROT_READ, MAP_PRIVATE, 3, 0) = 0x7f7614b4a000\nclose(3)                                = 0\nopenat(AT_FDCWD, \"/lib/x86_64-linux-gnu/libselinux.so.1\", O_RDONLY|O_CLOEXEC) = 3\nread(3, \"\\177ELF\\2\\1\\1\\0\\0\\0\\0\\0\\0\\0\\0\\0\\3\\0>\\0\\1\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\"..., 832) = 832\nnewfstatat(3, \"\", {st_mode=S_IFREG|0644, st_size=174312, ...}, AT_EMPTY_PATH) = 0\nmmap(NULL, 186064, PROT_READ, MAP_PRIVATE|MAP_DENYWRITE, 3, 0) = 0x7f7614b1c000\nmmap(0x7f7614b23000, 110592, PROT_READ|PROT_EXEC, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3, 0x7000) = 0x7f7614b23000\nmmap(0x7f7614b3e000, 32768, PROT_READ, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3, 0x22000) = 0x7f7614b3e000\nmmap(0x7f7614b46000, 8192, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3, 0x29000) = 0x7f7614b46000\nmmap(0x7f7614b48000, 5840, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_FIXED|MAP_ANONYMOUS, -1, 0) = 0x7f7614b48000\nclose(3)                                = 0\nopenat(AT_FDCWD, \"/lib/x86_64-linux-gnu/libc.so.6\", O_RDONLY|O_CLOEXEC) = 3\nread(3, \"\\177ELF\\2\\1\\1\\3\\0\\0\\0\\0\\0\\0\\0\\0\\3\\0>\\0\\1\\0\\0\\0\\20t\\2\\0\\0\\0\\0\\0\"..., 832) = 832\npread64(3, \"\\6\\0\\0\\0\\4\\0\\0\\0@\\0\\0\\0\\0\\0\\0\\0@\\0\\0\\0\\0\\0\\0\\0@\\0\\0\\0\\0\\0\\0\\0\"..., 784, 64) = 784\nnewfstatat(3, \"\", {st_mode=S_IFREG|0755, st_size=1922136, ...}, AT_EMPTY_PATH) = 0\npread64(3, \"\\6\\0\\0\\0\\4\\0\\0\\0@\\0\\0\\0\\0\\0\\0\\0@\\0\\0\\0\\0\\0\\0\\0@\\0\\0\\0\\0\\0\\0\\0\"..., 784, 64) = 784\nmmap(NULL, 1970000, PROT_READ, MAP_PRIVATE|MAP_DENYWRITE, 3, 0) = 0x7f761493b000\nmmap(0x7f7614961000, 1396736, PROT_READ|PROT_EXEC, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3, 0x26000) = 0x7f7614961000\nmmap(0x7f7614ab6000, 339968, PROT_READ, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3, 0x17b000) = 0x7f7614ab6000\nmmap(0x7f7614b09000, 24576, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3, 0x1ce000) = 0x7f7614b09000\nmmap(0x7f7614b0f000, 53072, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_FIXED|MAP_ANONYMOUS, -1, 0) = 0x7f7614b0f000\nclose(3)                                = 0\nopenat(AT_FDCWD, \"/lib/x86_64-linux-gnu/libpcre2-8.so.0\", O_RDONLY|O_CLOEXEC) = 3\nread(3, \"\\177ELF\\2\\1\\1\\0\\0\\0\\0\\0\\0\\0\\0\\0\\3\\0>\\0\\1\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\"..., 832) = 832\nnewfstatat(3, \"\", {st_mode=S_IFREG|0644, st_size=629384, ...}, AT_EMPTY_PATH) = 0\nmmap(NULL, 627592, PROT_READ, MAP_PRIVATE|MAP_DENYWRITE, 3, 0) = 0x7f76148a1000\nmmap(0x7f76148a3000, 438272, PROT_READ|PROT_EXEC, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3, 0x2000) = 0x7f76148a3000\nmmap(0x7f761490e000, 176128, PROT_READ, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3, 0x6d000) = 0x7f761490e000\nmmap(0x7f7614939000, 8192, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3, 0x98000) = 0x7f7614939000\nclose(3)                                = 0\nmmap(NULL, 12288, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0) = 0x7f761489e000\narch_prctl(ARCH_SET_FS, 0x7f761489e800) = 0\nset_tid_address(0x7f761489ead0)         = 4831\nset_robust_list(0x7f761489eae0, 24)     = 0\nrseq(0x7f761489f120, 0x20, 0, 0x53053053) = 0\nmprotect(0x7f7614b09000, 16384, PROT_READ) = 0\nmprotect(0x7f7614939000, 4096, PROT_READ) = 0\nmprotect(0x7f7614b46000, 4096, PROT_READ) = 0\nmprotect(0x5651b9b5f000, 4096, PROT_READ) = 0\nmprotect(0x7f7614b8e000, 8192, PROT_READ) = 0\nprlimit64(0, RLIMIT_STACK, NULL, {rlim_cur=8192*1024, rlim_max=RLIM64_INFINITY}) = 0\nmunmap(0x7f7614b4a000, 72550)           = 0\nstatfs(\"/sys/fs/selinux\", 0x7ffecaa439c0) = -1 ENOENT (No such file or directory)\nstatfs(\"/selinux\", 0x7ffecaa439c0)      = -1 ENOENT (No such file or directory)\ngetrandom(\"\\x6b\\x84\\x1d\\xe8\\xf3\\x77\\x86\\xeb\", 8, GRND_NONBLOCK) = 8\nbrk(NULL)                               = 0x5651bb643000\nbrk(0x5651bb664000)                     = 0x5651bb664000\nopenat(AT_FDCWD, \"/proc/filesystems\", O_RDONLY|O_CLOEXEC) = 3\nnewfstatat(3, \"\", {st_mode=S_IFREG|0444, st_size=0, ...}, AT_EMPTY_PATH) = 0\nread(3, \"nodev\\tsysfs\\nnodev\\ttmpfs\\nnodev\\tbd\"..., 1024) = 361\nread(3, \"\", 1024)                       = 0\nclose(3)                                = 0\naccess(\"/etc/selinux/config\", F_OK)     = -1 ENOENT (No such file or directory)\nopenat(AT_FDCWD, \"/usr/lib/locale/locale-archive\", O_RDONLY|O_CLOEXEC) = 3\nnewfstatat(3, \"\", {st_mode=S_IFREG|0644, st_size=3048928, ...}, AT_EMPTY_PATH) = 0\nmmap(NULL, 3048928, PROT_READ, MAP_PRIVATE, 3, 0) = 0x7f7614400000\nclose(3)                                = 0\nioctl(1, TCGETS, 0x7ffecaa43900)        = -1 ENOTTY (Inappropriate ioctl for device)\nopenat(AT_FDCWD, \".\", O_RDONLY|O_NONBLOCK|O_CLOEXEC|O_DIRECTORY) = 3\nnewfstatat(3, \"\", {st_mode=S_IFDIR|0775, st_size=4096, ...}, AT_EMPTY_PATH) = 0\ngetdents64(3, 0x5651bb649ce0 /* 23 entries */, 32768) = 768\ngetdents64(3, 0x5651bb649ce0 /* 0 entries */, 32768) = 0\nclose(3)                                = 0\nnewfstatat(1, \"\", {st_mode=S_IFIFO|0600, st_size=0, ...}, AT_EMPTY_PATH) = 0\nwrite(1, \"5\\ncert.pem\\ncmd\\ncommands-manual.t\"..., 1715\ncert.pem\ncmd\ncommands-manual.txt\ncommands.txt\nds.json\nindex.html\nindex.html.1\nkey.pem\nmanual-commands-output\nmanual-output\nmerge.sh\nmykey\nmykey.pub\noutput\npkgs-deps.txt\n) = 171\nclose(1)                                = 0\nclose(2)                                = 0\nexit_group(0)                           = ?\n+++ exited with 0 +++",
+  "cowrie_output": "-bash: strace: command not found",
+  "latency_ms": 110.7,
+  "skipped": false
+}
+
+=== Entry 359 ===
+{
+  "index": 359,
+  "cmd": "strace ls",
+  "ground_truth": "execve(\"/usr/bin/ls\", [\"ls\"], 0x7ffd6d6a1210 /* 42 vars */) = 0\nbrk(NULL)                               = 0x561182f2d000\nmmap(NULL, 8192, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0) = 0x7ffa49914000\naccess(\"/etc/ld.so.preload\", R_OK)      = -1 ENOENT (No such file or directory)\nopenat(AT_FDCWD, \"/etc/ld.so.cache\", O_RDONLY|O_CLOEXEC) = 3\nnewfstatat(3, \"\", {st_mode=S_IFREG|0644, st_size=72550, ...}, AT_EMPTY_PATH) = 0\nmmap(NULL, 72550, PROT_READ, MAP_PRIVATE, 3, 0) = 0x7ffa49902000\nclose(3)                                = 0\nopenat(AT_FDCWD, \"/lib/x86_64-linux-gnu/libselinux.so.1\", O_RDONLY|O_CLOEXEC) = 3\nread(3, \"\\177ELF\\2\\1\\1\\0\\0\\0\\0\\0\\0\\0\\0\\0\\3\\0>\\0\\1\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\"..., 832) = 832\nnewfstatat(3, \"\", {st_mode=S_IFREG|0644, st_size=174312, ...}, AT_EMPTY_PATH) = 0\nmmap(NULL, 186064, PROT_READ, MAP_PRIVATE|MAP_DENYWRITE, 3, 0) = 0x7ffa498d4000\nmmap(0x7ffa498db000, 110592, PROT_READ|PROT_EXEC, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3, 0x7000) = 0x7ffa498db000\nmmap(0x7ffa498f6000, 32768, PROT_READ, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3, 0x22000) = 0x7ffa498f6000\nmmap(0x7ffa498fe000, 8192, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3, 0x29000) = 0x7ffa498fe000\nmmap(0x7ffa49900000, 5840, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_FIXED|MAP_ANONYMOUS, -1, 0) = 0x7ffa49900000\nclose(3)                                = 0\nopenat(AT_FDCWD, \"/lib/x86_64-linux-gnu/libc.so.6\", O_RDONLY|O_CLOEXEC) = 3\nread(3, \"\\177ELF\\2\\1\\1\\3\\0\\0\\0\\0\\0\\0\\0\\0\\3\\0>\\0\\1\\0\\0\\0\\20t\\2\\0\\0\\0\\0\\0\"..., 832) = 832\npread64(3, \"\\6\\0\\0\\0\\4\\0\\0\\0@\\0\\0\\0\\0\\0\\0\\0@\\0\\0\\0\\0\\0\\0\\0@\\0\\0\\0\\0\\0\\0\\0\"..., 784, 64) = 784\nnewfstatat(3, \"\", {st_mode=S_IFREG|0755, st_size=1922136, ...}, AT_EMPTY_PATH) = 0\npread64(3, \"\\6\\0\\0\\0\\4\\0\\0\\0@\\0\\0\\0\\0\\0\\0\\0@\\0\\0\\0\\0\\0\\0\\0@\\0\\0\\0\\0\\0\\0\\0\"..., 784, 64) = 784\nmmap(NULL, 1970000, PROT_READ, MAP_PRIVATE|MAP_DENYWRITE, 3, 0) = 0x7ffa496f3000\nmmap(0x7ffa49719000, 1396736, PROT_READ|PROT_EXEC, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3, 0x26000) = 0x7ffa49719000\nmmap(0x7ffa4986e000, 339968, PROT_READ, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3, 0x17b000) = 0x7ffa4986e000\nmmap(0x7ffa498c1000, 24576, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3, 0x1ce000) = 0x7ffa498c1000\nmmap(0x7ffa498c7000, 53072, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_FIXED|MAP_ANONYMOUS, -1, 0) = 0x7ffa498c7000\nclose(3)                                = 0\nopenat(AT_FDCWD, \"/lib/x86_64-linux-gnu/libpcre2-8.so.0\", O_RDONLY|O_CLOEXEC) = 3\nread(3, \"\\177ELF\\2\\1\\1\\0\\0\\0\\0\\0\\0\\0\\0\\0\\3\\0>\\0\\1\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\"..., 832) = 832\nnewfstatat(3, \"\", {st_mode=S_IFREG|0644, st_size=629384, ...}, AT_EMPTY_PATH) = 0\nmmap(NULL, 627592, PROT_READ, MAP_PRIVATE|MAP_DENYWRITE, 3, 0) = 0x7ffa49659000\nmmap(0x7ffa4965b000, 438272, PROT_READ|PROT_EXEC, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3, 0x2000) = 0x7ffa4965b000\nmmap(0x7ffa496c6000, 176128, PROT_READ, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3, 0x6d000) = 0x7ffa496c6000\nmmap(0x7ffa496f1000, 8192, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3, 0x98000) = 0x7ffa496f1000\nclose(3)                                = 0\nmmap(NULL, 12288, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0) = 0x7ffa49656000\narch_prctl(ARCH_SET_FS, 0x7ffa49656800) = 0\nset_tid_address(0x7ffa49656ad0)         = 4827\nset_robust_list(0x7ffa49656ae0, 24)     = 0\nrseq(0x7ffa49657120, 0x20, 0, 0x53053053) = 0\nmprotect(0x7ffa498c1000, 16384, PROT_READ) = 0\nmprotect(0x7ffa496f1000, 4096, PROT_READ) = 0\nmprotect(0x7ffa498fe000, 4096, PROT_READ) = 0\nmprotect(0x561182070000, 4096, PROT_READ) = 0\nmprotect(0x7ffa49946000, 8192, PROT_READ) = 0\nprlimit64(0, RLIMIT_STACK, NULL, {rlim_cur=8192*1024, rlim_max=RLIM64_INFINITY}) = 0\nmunmap(0x7ffa49902000, 72550)           = 0\nstatfs(\"/sys/fs/selinux\", 0x7fffa8915500) = -1 ENOENT (No such file or directory)\nstatfs(\"/selinux\", 0x7fffa8915500)      = -1 ENOENT (No such file or directory)\ngetrandom(\"\\xe9\\x55\\xce\\x94\\x12\\xf0\\xd1\\x4e\", 8, GRND_NONBLOCK) = 8\nbrk(NULL)                               = 0x561182f2d000\nbrk(0x561182f4e000)                     = 0x561182f4e000\nopenat(AT_FDCWD, \"/proc/filesystems\", O_RDONLY|O_CLOEXEC) = 3\nnewfstatat(3, \"\", {st_mode=S_IFREG|0444, st_size=0, ...}, AT_EMPTY_PATH) = 0\nread(3, \"nodev\\tsysfs\\nnodev\\ttmpfs\\nnodev\\tbd\"..., 1024) = 361\nread(3, \"\", 1024)                       = 0\nclose(3)                                = 0\naccess(\"/etc/selinux/config\", F_OK)     = -1 ENOENT (No such file or directory)\nopenat(AT_FDCWD, \"/usr/lib/locale/locale-archive\", O_RDONLY|O_CLOEXEC) = 3\nnewfstatat(3, \"\", {st_mode=S_IFREG|0644, st_size=3048928, ...}, AT_EMPTY_PATH) = 0\nmmap(NULL, 3048928, PROT_READ, MAP_PRIVATE, 3, 0) = 0x7ffa49200000\nclose(3)                                = 0\nioctl(1, TCGETS, 0x7fffa8915440)        = -1 ENOTTY (Inappropriate ioctl for device)\nopenat(AT_FDCWD, \".\", O_RDONLY|O_NONBLOCK|O_CLOEXEC|O_DIRECTORY) = 3\nnewfstatat(3, \"\", {st_mode=S_IFDIR|0775, st_size=4096, ...}, AT_EMPTY_PATH) = 0\ngetdents64(3, 0x561182f33ce0 /* 23 entries */, 32768) = 768\ngetdents64(3, 0x561182f33ce0 /* 0 entries */, 32768) = 0\nclose(3)                                = 0\nnewfstatat(1, \"\", {st_mode=S_IFIFO|0600, st_size=0, ...}, AT_EMPTY_PATH) = 0\nwrite(1, \"5\\ncert.pem\\ncmd\\ncommands-manual.t\"..., 1715\ncert.pem\ncmd\ncommands-manual.txt\ncommands.txt\nds.json\nindex.html\nindex.html.1\nkey.pem\nmanual-commands-output\nmanual-output\nmerge.sh\nmykey\nmykey.pub\noutput\npkgs-deps.txt\n) = 171\nclose(1)                                = 0\nclose(2)                                = 0\nexit_group(0)                           = ?\n+++ exited with 0 +++",
+  "cowrie_output": "-bash: strace: command not found",
+  "latency_ms": 110.72,
+  "skipped": false
+}
+
+=== Entry 360 ===
+{
+  "index": 360,
+  "cmd": "sudo apt-get update",
+  "ground_truth": "Hit:1 http://security.debian.org/debian-security bookworm-security InRelease\nHit:2 http://deb.debian.org/debian bookworm InRelease\nHit:3 http://deb.debian.org/debian bookworm-updates InRelease\nReading package lists...",
+  "cowrie_output": "\u001b[4l\u001b[4h\u001b[4lE: Could not open lock file /var/lib/apt/lists/lock - open (13: Permission denied)\nE: Unable to lock the list directory",
+  "latency_ms": 110.78,
+  "skipped": false
+}
+
+=== Entry 361 ===
+{
+  "index": 361,
+  "cmd": "sudo apt-get upgrade",
+  "ground_truth": "Reading package lists...\nBuilding dependency tree...\nReading state information...\nCalculating upgrade...\nThe following package was automatically installed and is no longer required:\n  libdbus-glib-1-2\nUse 'sudo apt autoremove' to remove it.\nThe following packages have been kept back:\n  linux-image-amd64\nThe following packages will be upgraded:\n  apache2-bin firefox-esr libcpupower1 libgsf-1-114 libgsf-1-common libgsf-bin\n  linux-compiler-gcc-12-x86 linux-cpupower linux-kbuild-6.1 linux-libc-dev\n10 upgraded, 0 newly installed, 0 to remove and 1 not upgraded.\nNeed to get 0 B/77.4 MB of archives.\nAfter this operation, 20.3 MB of additional disk space will be used.\nDo you want to continue? [Y/n] Abort.",
+  "cowrie_output": "\u001b[4l\u001b[4h\u001b[4lE: Could not open lock file /var/lib/apt/lists/lock - open (13: Permission denied)\nE: Unable to lock the list directory",
+  "latency_ms": 110.58,
+  "skipped": false
+}
+
+=== Entry 362 ===
+{
+  "index": 362,
+  "cmd": "sudo debconf-show --listowners bash",
+  "ground_truth": "console-setup\ngrub-pc\ndictionaries-common\ndiscover\nunknown\nlibpam-runtime\nsysstat\napt-listchanges\nssl-cert\nca-certificates\nd-i\nkeyboard-configuration\ngdm3\nopenssh-server\nlibc6\nlibc6:amd64\ntzdata\nlocales\nbase-passwd\nsane-utils\niamerican\nibritish\niproute2\nfontconfig-config\ndebconf\ncollectd-core\nupdate-inetd\ncups\nunattended-upgrades\nman-db\nlibpam0g:amd64\nwamerican\nucf\ntasksel\nuser-setup-udeb\nxserver-xorg-legacy\napparmor\nlibpaper1\nlibpaper1:amd64\nlinux-base\nlibpam-modules",
+  "cowrie_output": "\u001b[4l\u001b[4h\u001b[4l-bash: /usr/bin/debconf-show: cannot execute binary file: Exec format error",
+  "latency_ms": 110.6,
+  "skipped": false
+}
+
+=== Entry 363 ===
+{
+  "index": 363,
+  "cmd": "sudo hping3  -c 3 -1 www.example.com",
+  "ground_truth": "--- www.example.com hping statistic ---\n3 packets transmitted, 3 packets received, 0% packet loss\nround-trip min/avg/max = 107.6/139.6/179.5 ms\nHPING www.example.com (enp0s3 93.184.215.14): icmp mode set, 28 headers + 0 data bytes\nlen=46 ip=93.184.215.14 ttl=50 id=43401 icmp_seq=0 rtt=131.8 ms\nlen=46 ip=93.184.215.14 ttl=50 id=43707 icmp_seq=1 rtt=107.6 ms\nlen=46 ip=93.184.215.14 ttl=50 id=44585 icmp_seq=2 rtt=179.5 ms",
+  "cowrie_output": "\u001b[4lsudo: Only one of the -e, -h, -i, -K, -l, -s, -v or -V options may be specified\nusage: sudo [-D level] -h | -K | -k | -V\nusage: sudo -v [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid]\nusage: sudo -l[l] [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-U user name] [-u user name|#uid] [-g groupname|#gid] [command]\nusage: sudo [-AbEHknPS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] [-g groupname|#gid] [VAR=value] [-i|-s] [<command>]\nusage: sudo -e [-AknS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] file ...",
+  "latency_ms": 110.61,
+  "skipped": false
+}
+
+=== Entry 364 ===
+{
+  "index": 364,
+  "cmd": "sudo hping3  -c 3 -S www.example.com -p 80",
+  "ground_truth": "--- www.example.com hping statistic ---\n3 packets transmitted, 3 packets received, 0% packet loss\nround-trip min/avg/max = 115.8/166.6/204.5 ms\nHPING www.example.com (enp0s3 93.184.215.14): S set, 40 headers + 0 data bytes\nlen=46 ip=93.184.215.14 ttl=50 DF id=0 sport=80 flags=SA seq=0 win=65535 rtt=115.8 ms\nlen=46 ip=93.184.215.14 ttl=52 DF id=0 sport=80 flags=SA seq=1 win=65535 rtt=179.4 ms\nlen=46 ip=93.184.215.14 ttl=52 DF id=0 sport=80 flags=SA seq=2 win=65535 rtt=204.5 ms",
+  "cowrie_output": "\u001b[4lsudo: Only one of the -e, -h, -i, -K, -l, -s, -v or -V options may be specified\nusage: sudo [-D level] -h | -K | -k | -V\nusage: sudo -v [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid]\nusage: sudo -l[l] [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-U user name] [-u user name|#uid] [-g groupname|#gid] [command]\nusage: sudo [-AbEHknPS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] [-g groupname|#gid] [VAR=value] [-i|-s] [<command>]\nusage: sudo -e [-AknS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] file ...",
+  "latency_ms": 110.81,
+  "skipped": false
+}
+
+=== Entry 365 ===
+{
+  "index": 365,
+  "cmd": "sudo hping3 -c 3 www.example.com",
+  "ground_truth": "--- www.example.com hping statistic ---\n3 packets transmitted, 0 packets received, 100% packet loss\nround-trip min/avg/max = 0.0/0.0/0.0 ms\nHPING www.example.com (enp0s3 93.184.215.14): NO FLAGS are set, 40 headers + 0 data bytes",
+  "cowrie_output": "\u001b[4lsudo: Only one of the -e, -h, -i, -K, -l, -s, -v or -V options may be specified\nusage: sudo [-D level] -h | -K | -k | -V\nusage: sudo -v [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid]\nusage: sudo -l[l] [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-U user name] [-u user name|#uid] [-g groupname|#gid] [command]\nusage: sudo [-AbEHknPS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] [-g groupname|#gid] [VAR=value] [-i|-s] [<command>]\nusage: sudo -e [-AknS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] file ...",
+  "latency_ms": 110.84,
+  "skipped": false
+}
+
+=== Entry 366 ===
+{
+  "index": 366,
+  "cmd": "sudo hping3 -c 4 -A --ttl 64 www.example.com",
+  "ground_truth": "--- www.example.com hping statistic ---\n4 packets transmitted, 0 packets received, 100% packet loss\nround-trip min/avg/max = 0.0/0.0/0.0 ms\nHPING www.example.com (enp0s3 93.184.215.14): A set, 40 headers + 0 data bytes",
+  "cowrie_output": "\u001b[4lsudo: Only one of the -e, -h, -i, -K, -l, -s, -v or -V options may be specified\nusage: sudo [-D level] -h | -K | -k | -V\nusage: sudo -v [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid]\nusage: sudo -l[l] [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-U user name] [-u user name|#uid] [-g groupname|#gid] [command]\nusage: sudo [-AbEHknPS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] [-g groupname|#gid] [VAR=value] [-i|-s] [<command>]\nusage: sudo -e [-AknS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] file ...",
+  "latency_ms": 110.84,
+  "skipped": false
+}
+
+=== Entry 367 ===
+{
+  "index": 367,
+  "cmd": "sudo hping3 -c 5 -6 ipv6.example.com",
+  "ground_truth": "hping3: invalid option -- 6\nTry hping3 --help",
+  "cowrie_output": "\u001b[4lsudo: Only one of the -e, -h, -i, -K, -l, -s, -v or -V options may be specified\nusage: sudo [-D level] -h | -K | -k | -V\nusage: sudo -v [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid]\nusage: sudo -l[l] [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-U user name] [-u user name|#uid] [-g groupname|#gid] [command]\nusage: sudo [-AbEHknPS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] [-g groupname|#gid] [VAR=value] [-i|-s] [<command>]\nusage: sudo -e [-AknS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] file ...",
+  "latency_ms": 110.82,
+  "skipped": false
+}
+
+=== Entry 368 ===
+{
+  "index": 368,
+  "cmd": "sudo hping3  -c 5 -A www.example.com",
+  "ground_truth": "--- www.example.com hping statistic ---\n5 packets transmitted, 0 packets received, 100% packet loss\nround-trip min/avg/max = 0.0/0.0/0.0 ms\nHPING www.example.com (enp0s3 93.184.215.14): A set, 40 headers + 0 data bytes",
+  "cowrie_output": "\u001b[4lsudo: Only one of the -e, -h, -i, -K, -l, -s, -v or -V options may be specified\nusage: sudo [-D level] -h | -K | -k | -V\nusage: sudo -v [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid]\nusage: sudo -l[l] [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-U user name] [-u user name|#uid] [-g groupname|#gid] [command]\nusage: sudo [-AbEHknPS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] [-g groupname|#gid] [VAR=value] [-i|-s] [<command>]\nusage: sudo -e [-AknS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] file ...",
+  "latency_ms": 110.83,
+  "skipped": false
+}
+
+=== Entry 369 ===
+{
+  "index": 369,
+  "cmd": "sudo hping3 -c 5 -i u1000 www.example.com",
+  "ground_truth": "--- www.example.com hping statistic ---\n5 packets transmitted, 0 packets received, 100% packet loss\nround-trip min/avg/max = 0.0/0.0/0.0 ms\nHPING www.example.com (enp0s3 93.184.215.14): NO FLAGS are set, 40 headers + 0 data bytes",
+  "cowrie_output": "\u001b[4lsudo: Only one of the -e, -h, -i, -K, -l, -s, -v or -V options may be specified\nusage: sudo [-D level] -h | -K | -k | -V\nusage: sudo -v [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid]\nusage: sudo -l[l] [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-U user name] [-u user name|#uid] [-g groupname|#gid] [command]\nusage: sudo [-AbEHknPS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] [-g groupname|#gid] [VAR=value] [-i|-s] [<command>]\nusage: sudo -e [-AknS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] file ...",
+  "latency_ms": 110.72,
+  "skipped": false
+}
+
+=== Entry 370 ===
+{
+  "index": 370,
+  "cmd": "sudo hping3 -c 5 -S www.example.com -p 80 --data \"Hello\"",
+  "ground_truth": "--- www.example.com hping statistic ---\n5 packets transmitted, 5 packets received, 0% packet loss\nround-trip min/avg/max = 114.9/145.8/202.4 ms\nHPING www.example.com (enp0s3 93.184.215.14): S set, 40 headers + 0 data bytes\nlen=46 ip=93.184.215.14 ttl=50 DF id=0 sport=80 flags=SA seq=0 win=65535 rtt=131.2 ms\nlen=46 ip=93.184.215.14 ttl=52 DF id=0 sport=80 flags=SA seq=1 win=65535 rtt=154.8 ms\nlen=46 ip=93.184.215.14 ttl=52 DF id=0 sport=80 flags=SA seq=2 win=65535 rtt=114.9 ms\nlen=46 ip=93.184.215.14 ttl=52 DF id=0 sport=80 flags=SA seq=3 win=65535 rtt=202.4 ms\nlen=46 ip=93.184.215.14 ttl=50 DF id=0 sport=80 flags=SA seq=4 win=65535 rtt=125.8 ms",
+  "cowrie_output": "\u001b[4lsudo: Only one of the -e, -h, -i, -K, -l, -s, -v or -V options may be specified\nusage: sudo [-D level] -h | -K | -k | -V\nusage: sudo -v [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid]\nusage: sudo -l[l] [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-U user name] [-u user name|#uid] [-g groupname|#gid] [command]\nusage: sudo [-AbEHknPS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] [-g groupname|#gid] [VAR=value] [-i|-s] [<command>]\nusage: sudo -e [-AknS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] file ...",
+  "latency_ms": 110.6,
+  "skipped": false
+}
+
+=== Entry 371 ===
+{
+  "index": 371,
+  "cmd": "sudo hping3 -c 5 www.example.com",
+  "ground_truth": "--- www.example.com hping statistic ---\n5 packets transmitted, 0 packets received, 100% packet loss\nround-trip min/avg/max = 0.0/0.0/0.0 ms\nHPING www.example.com (enp0s3 93.184.215.14): NO FLAGS are set, 40 headers + 0 data bytes",
+  "cowrie_output": "\u001b[4lsudo: Only one of the -e, -h, -i, -K, -l, -s, -v or -V options may be specified\nusage: sudo [-D level] -h | -K | -k | -V\nusage: sudo -v [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid]\nusage: sudo -l[l] [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-U user name] [-u user name|#uid] [-g groupname|#gid] [command]\nusage: sudo [-AbEHknPS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] [-g groupname|#gid] [VAR=value] [-i|-s] [<command>]\nusage: sudo -e [-AknS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] file ...",
+  "latency_ms": 110.76,
+  "skipped": false
+}
+
+=== Entry 372 ===
+{
+  "index": 372,
+  "cmd": "sudo nmap -O -p53,80 8.8.8.8",
+  "ground_truth": "Starting Nmap 7.93 ( https://nmap.org ) at 2024-10-12 16:16 CEST\nNmap scan report for 8.8.8.8\nHost is up (0.020s latency).\n\nPORT   STATE    SERVICE\n53/tcp open     domain\n80/tcp filtered http\nWarning: OSScan results may be unreliable because we could not find at least 1 open and 1 closed port\nDevice type: general purpose|WAP|specialized\nRunning (JUST GUESSING): OpenBSD 4.X (88%), Linux 2.6.X (86%), FreeBSD 7.X (85%), Crestron 2-Series (85%)\nOS CPE: cpe:/o:openbsd:openbsd:4.3 cpe:/o:linux:linux_kernel:2.6.22 cpe:/o:freebsd:freebsd:7.0 cpe:/o:crestron:2_series\nAggressive OS guesses: OpenBSD 4.3 (88%), OpenWrt Kamikaze 7.09 (Linux 2.6.22) (86%), FreeBSD 7.0-RELEASE (85%), Crestron XPanel control system (85%)\nNo exact OS matches for host (test conditions non-ideal).\n\nOS detection performed. Please report any incorrect results at https://nmap.org/submit/ .\nNmap done: 1 IP address (1 host up) scanned in 21.92 seconds",
+  "cowrie_output": "\u001b[4lsudo: Only one of the -e, -h, -i, -K, -l, -s, -v or -V options may be specified\nusage: sudo [-D level] -h | -K | -k | -V\nusage: sudo -v [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid]\nusage: sudo -l[l] [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-U user name] [-u user name|#uid] [-g groupname|#gid] [command]\nusage: sudo [-AbEHknPS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] [-g groupname|#gid] [VAR=value] [-i|-s] [<command>]\nusage: sudo -e [-AknS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] file ...",
+  "latency_ms": 110.82,
+  "skipped": false
+}
+
+=== Entry 373 ===
+{
+  "index": 373,
+  "cmd": "sudo nmap -O -p53,80 8.8.8.8; getent -A ahosts",
+  "ground_truth": "Starting Nmap 7.93 ( https://nmap.org ) at 2024-10-12 16:16 CEST\nNmap scan report for 8.8.8.8\nHost is up (0.020s latency).\n\nPORT   STATE    SERVICE\n53/tcp open     domain\n80/tcp filtered http\nWarning: OSScan results may be unreliable because we could not find at least 1 open and 1 closed port\nDevice type: general purpose|WAP|specialized\nRunning (JUST GUESSING): OpenBSD 4.X (88%), Linux 2.6.X (86%), FreeBSD 7.X (85%), Crestron 2-Series (85%)\nOS CPE: cpe:/o:openbsd:openbsd:4.3 cpe:/o:linux:linux_kernel:2.6.22 cpe:/o:freebsd:freebsd:7.0 cpe:/o:crestron:2_series\nAggressive OS guesses: OpenBSD 4.3 (88%), OpenWrt Kamikaze 7.09 (Linux 2.6.22) (86%), FreeBSD 7.0-RELEASE (85%), Crestron XPanel control system (85%)\nNo exact OS matches for host (test conditions non-ideal).\n\nOS detection performed. Please report any incorrect results at https://nmap.org/submit/ .\nNmap done: 1 IP address (1 host up) scanned in 21.92 seconds\n\n127.0.0.1       localhost\n127.0.1.1       elf.myguest.virtualbox.org elf\n127.0.0.1       localhost ip6-localhost ip6-loopback",
+  "cowrie_output": "\u001b[4lsudo: Only one of the -e, -h, -i, -K, -l, -s, -v or -V options may be specified\nusage: sudo [-D level] -h | -K | -k | -V\nusage: sudo -v [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid]\nusage: sudo -l[l] [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-U user name] [-u user name|#uid] [-g groupname|#gid] [command]\nusage: sudo [-AbEHknPS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] [-g groupname|#gid] [VAR=value] [-i|-s] [<command>]\nusage: sudo -e [-AknS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] file ...\n\u001b[4h\u001b[4l-bash: /usr/bin/getent: cannot execute binary file: Exec format error",
+  "latency_ms": 110.75,
+  "skipped": false
+}
+
+=== Entry 374 ===
+{
+  "index": 374,
+  "cmd": "sudo nmap -sV 8.8.8.8 -p 22,53",
+  "ground_truth": "Starting Nmap 7.93 ( https://nmap.org ) at 2024-10-12 16:16 CEST\nNmap scan report for 8.8.8.8\nHost is up (0.022s latency).\n\nPORT   STATE    SERVICE    VERSION\n22/tcp filtered ssh\n53/tcp open     tcpwrapped\n\nService detection performed. Please report any incorrect results at https://nmap.org/submit/ .\nNmap done: 1 IP address (1 host up) scanned in 20.35 seconds",
+  "cowrie_output": "\u001b[4lsudo: Only one of the -e, -h, -i, -K, -l, -s, -v or -V options may be specified\nusage: sudo [-D level] -h | -K | -k | -V\nusage: sudo -v [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid]\nusage: sudo -l[l] [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-U user name] [-u user name|#uid] [-g groupname|#gid] [command]\nusage: sudo [-AbEHknPS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] [-g groupname|#gid] [VAR=value] [-i|-s] [<command>]\nusage: sudo -e [-AknS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] file ...",
+  "latency_ms": 124.95,
+  "skipped": false
+}
+
+=== Entry 375 ===
+{
+  "index": 375,
+  "cmd": "sudo nping -c 3 --arp 192.168.1.1",
+  "ground_truth": "Starting Nping 0.7.93 ( https://nmap.org/nping ) at 2024-10-12 16:37 CEST\nSENT (0.0089s) ARP who has 192.168.1.1? Tell 192.168.178.161\nSENT (1.0098s) ARP who has 192.168.1.1? Tell 192.168.178.161\nSENT (2.0112s) ARP who has 192.168.1.1? Tell 192.168.178.161\n \nMax rtt: N/A | Min rtt: N/A | Avg rtt: N/A\nRaw packets sent: 3 (126B) | Rcvd: 0 (0B) | Lost: 3 (100.00%)\nNping done: 1 IP address pinged in 3.04 seconds",
+  "cowrie_output": "\u001b[4lsudo: Only one of the -e, -h, -i, -K, -l, -s, -v or -V options may be specified\nusage: sudo [-D level] -h | -K | -k | -V\nusage: sudo -v [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid]\nusage: sudo -l[l] [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-U user name] [-u user name|#uid] [-g groupname|#gid] [command]\nusage: sudo [-AbEHknPS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] [-g groupname|#gid] [VAR=value] [-i|-s] [<command>]\nusage: sudo -e [-AknS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] file ...",
+  "latency_ms": 110.95,
+  "skipped": false
+}
+
+=== Entry 376 ===
+{
+  "index": 376,
+  "cmd": "sudo nping -c 3 --icmp example.com",
+  "ground_truth": "Starting Nping 0.7.93 ( https://nmap.org/nping ) at 2024-10-12 16:18 CEST\nSENT (0.1040s) ICMP [192.168.178.161 > 93.184.215.14 Echo request (type=8/code=0) id=43837 seq=1] IP [ttl=64 id=40360 iplen=28 ]\nRCVD (0.2354s) ICMP [93.184.215.14 > 192.168.178.161 Echo reply (type=0/code=0) id=43837 seq=1] IP [ttl=50 id=63688 iplen=28 ]\nSENT (1.1042s) ICMP [192.168.178.161 > 93.184.215.14 Echo request (type=8/code=0) id=43837 seq=2] IP [ttl=64 id=40360 iplen=28 ]\nRCVD (1.2607s) ICMP [93.184.215.14 > 192.168.178.161 Echo reply (type=0/code=0) id=43837 seq=2] IP [ttl=50 id=63806 iplen=28 ]\nSENT (2.1055s) ICMP [192.168.178.161 > 93.184.215.14 Echo request (type=8/code=0) id=43837 seq=3] IP [ttl=64 id=40360 iplen=28 ]\nRCVD (2.2843s) ICMP [93.184.215.14 > 192.168.178.161 Echo reply (type=0/code=0) id=43837 seq=3] IP [ttl=50 id=64180 iplen=28 ]\n \nMax rtt: 178.757ms | Min rtt: 131.340ms | Avg rtt: 155.436ms\nRaw packets sent: 3 (84B) | Rcvd: 3 (138B) | Lost: 0 (0.00%)\nNping done: 1 IP address pinged in 2.31 seconds",
+  "cowrie_output": "\u001b[4lsudo: Only one of the -e, -h, -i, -K, -l, -s, -v or -V options may be specified\nusage: sudo [-D level] -h | -K | -k | -V\nusage: sudo -v [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid]\nusage: sudo -l[l] [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-U user name] [-u user name|#uid] [-g groupname|#gid] [command]\nusage: sudo [-AbEHknPS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] [-g groupname|#gid] [VAR=value] [-i|-s] [<command>]\nusage: sudo -e [-AknS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] file ...",
+  "latency_ms": 110.83,
+  "skipped": false
+}
+
+=== Entry 377 ===
+{
+  "index": 377,
+  "cmd": "sudo nping -c 3 --tcp --delay 1s example.com",
+  "ground_truth": "Starting Nping 0.7.93 ( https://nmap.org/nping ) at 2024-10-12 16:18 CEST\nSENT (0.0523s) TCP 192.168.178.161:2502 > 93.184.215.14:80 S ttl=64 id=43714 iplen=40  seq=3702456020 win=1480 \nRCVD (0.1562s) TCP 93.184.215.14:80 > 192.168.178.161:2502 SA ttl=50 id=0 iplen=44  seq=709055310 win=65535 <mss 1460>\nSENT (1.0550s) TCP 192.168.178.161:2502 > 93.184.215.14:80 S ttl=64 id=43714 iplen=40  seq=3702456020 win=1480 \nRCVD (1.1592s) TCP 93.184.215.14:80 > 192.168.178.161:2502 SA ttl=50 id=0 iplen=44  seq=724737462 win=65535 <mss 1460>\nSENT (2.0577s) TCP 192.168.178.161:2502 > 93.184.215.14:80 S ttl=64 id=43714 iplen=40  seq=3702456020 win=1480 \nRCVD (2.1606s) TCP 93.184.215.14:80 > 192.168.178.161:2502 SA ttl=50 id=0 iplen=44  seq=740399211 win=65535 <mss 1460>\n \nMax rtt: 104.004ms | Min rtt: 102.823ms | Avg rtt: 103.515ms\nRaw packets sent: 3 (120B) | Rcvd: 3 (138B) | Lost: 0 (0.00%)\nNping done: 1 IP address pinged in 2.18 seconds",
+  "cowrie_output": "\u001b[4lsudo: Only one of the -e, -h, -i, -K, -l, -s, -v or -V options may be specified\nusage: sudo [-D level] -h | -K | -k | -V\nusage: sudo -v [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid]\nusage: sudo -l[l] [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-U user name] [-u user name|#uid] [-g groupname|#gid] [command]\nusage: sudo [-AbEHknPS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] [-g groupname|#gid] [VAR=value] [-i|-s] [<command>]\nusage: sudo -e [-AknS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] file ...",
+  "latency_ms": 110.8,
+  "skipped": false
+}
+
+=== Entry 378 ===
+{
+  "index": 378,
+  "cmd": "sudo nping -c 3 --tcp --flags SYN,ACK -p 80 example.com",
+  "ground_truth": "Starting Nping 0.7.93 ( https://nmap.org/nping ) at 2024-10-12 16:37 CEST\nSENT (0.0567s) TCP 192.168.178.161:20268 > 93.184.215.14:80 SA ttl=64 id=16297 iplen=40  seq=1277466342 win=1480 \nSENT (1.0571s) TCP 192.168.178.161:20268 > 93.184.215.14:80 SA ttl=64 id=16297 iplen=40  seq=1277466342 win=1480 \nSENT (2.0584s) TCP 192.168.178.161:20268 > 93.184.215.14:80 SA ttl=64 id=16297 iplen=40  seq=1277466342 win=1480 \n \nMax rtt: N/A | Min rtt: N/A | Avg rtt: N/A\nRaw packets sent: 3 (120B) | Rcvd: 0 (0B) | Lost: 3 (100.00%)\nNping done: 1 IP address pinged in 3.13 seconds",
+  "cowrie_output": "\u001b[4lsudo: Only one of the -e, -h, -i, -K, -l, -s, -v or -V options may be specified\nusage: sudo [-D level] -h | -K | -k | -V\nusage: sudo -v [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid]\nusage: sudo -l[l] [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-U user name] [-u user name|#uid] [-g groupname|#gid] [command]\nusage: sudo [-AbEHknPS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] [-g groupname|#gid] [VAR=value] [-i|-s] [<command>]\nusage: sudo -e [-AknS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] file ...",
+  "latency_ms": 110.63,
+  "skipped": false
+}
+
+=== Entry 379 ===
+{
+  "index": 379,
+  "cmd": "sudo nping -c 3 --tcp -p 80,443,8080 example.com",
+  "ground_truth": "Starting Nping 0.7.93 ( https://nmap.org/nping ) at 2024-10-12 16:18 CEST\nSENT (0.0580s) TCP 192.168.178.161:21878 > 93.184.215.14:80 S ttl=64 id=20677 iplen=40  seq=4022517163 win=1480 \nRCVD (0.2147s) TCP 93.184.215.14:80 > 192.168.178.161:21878 SA ttl=50 id=0 iplen=44  seq=3599814803 win=65535 <mss 1460>\nSENT (1.0584s) TCP 192.168.178.161:21878 > 93.184.215.14:8080 S ttl=64 id=20677 iplen=40  seq=4022517163 win=1480 \nSENT (2.0597s) TCP 192.168.178.161:21878 > 93.184.215.14:8080 S ttl=64 id=20677 iplen=40  seq=4022517163 win=1480 \nSENT (3.0615s) TCP 192.168.178.161:21878 > 93.184.215.14:80 S ttl=64 id=20677 iplen=40  seq=4022517163 win=1480 \nRCVD (1120.4246s) TCP 93.184.215.14:80 > 192.168.178.161:21878 SA ttl=50 id=0 iplen=44  seq=3646750647 win=65535 <mss 1460>\nSENT (1120.4246s) TCP 192.168.178.161:21878 > 93.184.215.14:443 S ttl=64 id=20677 iplen=40  seq=4022517163 win=1480 \nRCVD (1120.5332s) TCP 93.184.215.14:443 > 192.168.178.161:21878 SA ttl=52 id=0 iplen=44  seq=1247749071 win=65535 <mss 1460>\nSENT (1121.4274s) TCP 192.168.178.161:21878 > 93.184.215.14:8080 S ttl=64 id=20677 iplen=40  seq=4022517163 win=1480 \nSENT (1122.4294s) TCP 192.168.178.161:21878 > 93.184.215.14:80 S ttl=64 id=20677 iplen=40  seq=4022517163 win=1480 \nRCVD (1122.5879s) TCP 93.184.215.14:80 > 192.168.178.161:21878 SA ttl=50 id=0 iplen=44  seq=3679816150 win=65535 <mss 1460>\nSENT (1123.4311s) TCP 192.168.178.161:21878 > 93.184.215.14:443 S ttl=64 id=20677 iplen=40  seq=4022517163 win=1480 \nRCVD (1123.6126s) TCP 93.184.215.14:443 > 192.168.178.161:21878 SA ttl=52 id=0 iplen=44  seq=1294690002 win=65535 <mss 1460>\nSENT (1124.4326s) TCP 192.168.178.161:21878 > 93.184.215.14:8080 S ttl=64 id=20677 iplen=40  seq=4022517163 win=1480 \n \nMax rtt: 1117362.970ms | Min rtt: 108.072ms | Avg rtt: 223593.440ms\nRaw packets sent: 9 (360B) | Rcvd: 5 (230B) | Lost: 4 (44.44%)\nNping done: 1 IP address pinged in 1125.46 seconds",
+  "cowrie_output": "\u001b[4lsudo: Only one of the -e, -h, -i, -K, -l, -s, -v or -V options may be specified\nusage: sudo [-D level] -h | -K | -k | -V\nusage: sudo -v [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid]\nusage: sudo -l[l] [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-U user name] [-u user name|#uid] [-g groupname|#gid] [command]\nusage: sudo [-AbEHknPS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] [-g groupname|#gid] [VAR=value] [-i|-s] [<command>]\nusage: sudo -e [-AknS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] file ...",
+  "latency_ms": 110.7,
+  "skipped": false
+}
+
+=== Entry 380 ===
+{
+  "index": 380,
+  "cmd": "sudo nping -c 3 --tcp -p 80 example.com",
+  "ground_truth": "Starting Nping 0.7.93 ( https://nmap.org/nping ) at 2024-10-12 16:18 CEST\nSENT (0.0535s) TCP 192.168.178.161:1436 > 93.184.215.14:80 S ttl=64 id=59838 iplen=40  seq=835270809 win=1480 \nRCVD (0.2334s) TCP 93.184.215.14:80 > 192.168.178.161:1436 SA ttl=50 id=0 iplen=44  seq=3588450676 win=65535 <mss 1460>\nSENT (1.0546s) TCP 192.168.178.161:1436 > 93.184.215.14:80 S ttl=64 id=59838 iplen=40  seq=835270809 win=1480 \nRCVD (1.1591s) TCP 93.184.215.14:80 > 192.168.178.161:1436 SA ttl=50 id=0 iplen=44  seq=3604101208 win=65535 <mss 1460>\nSENT (2.0563s) TCP 192.168.178.161:1436 > 93.184.215.14:80 S ttl=64 id=59838 iplen=40  seq=835270809 win=1480 \nRCVD (2.1765s) TCP 93.184.215.14:80 > 192.168.178.161:1436 SA ttl=50 id=0 iplen=44  seq=3619736673 win=65535 <mss 1460>\n \nMax rtt: 179.759ms | Min rtt: 104.191ms | Avg rtt: 134.727ms\nRaw packets sent: 3 (120B) | Rcvd: 3 (138B) | Lost: 0 (0.00%)\nNping done: 1 IP address pinged in 2.20 seconds",
+  "cowrie_output": "\u001b[4lsudo: Only one of the -e, -h, -i, -K, -l, -s, -v or -V options may be specified\nusage: sudo [-D level] -h | -K | -k | -V\nusage: sudo -v [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid]\nusage: sudo -l[l] [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-U user name] [-u user name|#uid] [-g groupname|#gid] [command]\nusage: sudo [-AbEHknPS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] [-g groupname|#gid] [VAR=value] [-i|-s] [<command>]\nusage: sudo -e [-AknS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] file ...",
+  "latency_ms": 110.64,
+  "skipped": false
+}
+
+=== Entry 381 ===
+{
+  "index": 381,
+  "cmd": "sudo nping -c 3 --udp -p 53 8.8.8.8",
+  "ground_truth": "Starting Nping 0.7.93 ( https://nmap.org/nping ) at 2024-10-12 16:18 CEST\nSENT (0.0079s) UDP 192.168.178.161:53 > 8.8.8.8:53 ttl=64 id=49528 iplen=28 \nSENT (1.0085s) UDP 192.168.178.161:53 > 8.8.8.8:53 ttl=64 id=49528 iplen=28 \nSENT (2.0099s) UDP 192.168.178.161:53 > 8.8.8.8:53 ttl=64 id=49528 iplen=28 \n \nMax rtt: N/A | Min rtt: N/A | Avg rtt: N/A\nRaw packets sent: 3 (84B) | Rcvd: 0 (0B) | Lost: 3 (100.00%)\nNping done: 1 IP address pinged in 3.08 seconds",
+  "cowrie_output": "\u001b[4lsudo: Only one of the -e, -h, -i, -K, -l, -s, -v or -V options may be specified\nusage: sudo [-D level] -h | -K | -k | -V\nusage: sudo -v [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid]\nusage: sudo -l[l] [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-U user name] [-u user name|#uid] [-g groupname|#gid] [command]\nusage: sudo [-AbEHknPS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] [-g groupname|#gid] [VAR=value] [-i|-s] [<command>]\nusage: sudo -e [-AknS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] file ...",
+  "latency_ms": 110.78,
+  "skipped": false
+}
+
+=== Entry 382 ===
+{
+  "index": 382,
+  "cmd": "sudo numastat -p 1",
+  "ground_truth": "sudo: numastat: command not found",
+  "cowrie_output": "\u001b[4lsudo: Only one of the -e, -h, -i, -K, -l, -s, -v or -V options may be specified\nusage: sudo [-D level] -h | -K | -k | -V\nusage: sudo -v [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid]\nusage: sudo -l[l] [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-U user name] [-u user name|#uid] [-g groupname|#gid] [command]\nusage: sudo [-AbEHknPS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] [-g groupname|#gid] [VAR=value] [-i|-s] [<command>]\nusage: sudo -e [-AknS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] file ...",
+  "latency_ms": 110.82,
+  "skipped": false
+}
+
+=== Entry 383 ===
+{
+  "index": 383,
+  "cmd": "sudo postqueue -p",
+  "ground_truth": "sudo: postqueue: command not found",
+  "cowrie_output": "\u001b[4lsudo: Only one of the -e, -h, -i, -K, -l, -s, -v or -V options may be specified\nusage: sudo [-D level] -h | -K | -k | -V\nusage: sudo -v [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid]\nusage: sudo -l[l] [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-U user name] [-u user name|#uid] [-g groupname|#gid] [command]\nusage: sudo [-AbEHknPS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] [-g groupname|#gid] [VAR=value] [-i|-s] [<command>]\nusage: sudo -e [-AknS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] file ...",
+  "latency_ms": 110.52,
+  "skipped": false
+}
+
+=== Entry 384 ===
+{
+  "index": 384,
+  "cmd": "sudo resolvectl show-cache",
+  "ground_truth": "sudo: resolvectl: command not found",
+  "cowrie_output": "\u001b[4lsudo: Only one of the -e, -h, -i, -K, -l, -s, -v or -V options may be specified\nusage: sudo [-D level] -h | -K | -k | -V\nusage: sudo -v [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid]\nusage: sudo -l[l] [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-U user name] [-u user name|#uid] [-g groupname|#gid] [command]\nusage: sudo [-AbEHknPS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] [-g groupname|#gid] [VAR=value] [-i|-s] [<command>]\nusage: sudo -e [-AknS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] file ...",
+  "latency_ms": 110.79,
+  "skipped": false
+}
+
+=== Entry 385 ===
+{
+  "index": 385,
+  "cmd": "sudo resolvectl show-server-state",
+  "ground_truth": "sudo: resolvectl: command not found",
+  "cowrie_output": "\u001b[4lsudo: Only one of the -e, -h, -i, -K, -l, -s, -v or -V options may be specified\nusage: sudo [-D level] -h | -K | -k | -V\nusage: sudo -v [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid]\nusage: sudo -l[l] [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-U user name] [-u user name|#uid] [-g groupname|#gid] [command]\nusage: sudo [-AbEHknPS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] [-g groupname|#gid] [VAR=value] [-i|-s] [<command>]\nusage: sudo -e [-AknS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] file ...",
+  "latency_ms": 114.52,
+  "skipped": false
+}
+
+=== Entry 386 ===
+{
+  "index": 386,
+  "cmd": "sudo resolvectl statistics",
+  "ground_truth": "sudo: resolvectl: command not found",
+  "cowrie_output": "\u001b[4lsudo: Only one of the -e, -h, -i, -K, -l, -s, -v or -V options may be specified\nusage: sudo [-D level] -h | -K | -k | -V\nusage: sudo -v [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid]\nusage: sudo -l[l] [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-U user name] [-u user name|#uid] [-g groupname|#gid] [command]\nusage: sudo [-AbEHknPS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] [-g groupname|#gid] [VAR=value] [-i|-s] [<command>]\nusage: sudo -e [-AknS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] file ...",
+  "latency_ms": 110.73,
+  "skipped": false
+}
+
+=== Entry 387 ===
+{
+  "index": 387,
+  "cmd": "sudo ufw status",
+  "ground_truth": "sudo: ufw: command not found",
+  "cowrie_output": "\u001b[4lsudo: Only one of the -e, -h, -i, -K, -l, -s, -v or -V options may be specified\nusage: sudo [-D level] -h | -K | -k | -V\nusage: sudo -v [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid]\nusage: sudo -l[l] [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-U user name] [-u user name|#uid] [-g groupname|#gid] [command]\nusage: sudo [-AbEHknPS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] [-g groupname|#gid] [VAR=value] [-i|-s] [<command>]\nusage: sudo -e [-AknS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] file ...",
+  "latency_ms": 110.83,
+  "skipped": false
+}
+
+=== Entry 388 ===
+{
+  "index": 388,
+  "cmd": "sudo ufw status; sudo apt-get update",
+  "ground_truth": "sudo: ufw: command not found\n\nHit:1 http://security.debian.org/debian-security bookworm-security InRelease\nHit:2 http://deb.debian.org/debian bookworm InRelease\nHit:3 http://deb.debian.org/debian bookworm-updates InRelease\nReading package lists...",
+  "cowrie_output": "\u001b[4lsudo: Only one of the -e, -h, -i, -K, -l, -s, -v or -V options may be specified\nusage: sudo [-D level] -h | -K | -k | -V\nusage: sudo -v [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid]\nusage: sudo -l[l] [-AknS] [-D level] [-g groupname|#gid] [-p prompt] [-U user name] [-u user name|#uid] [-g groupname|#gid] [command]\nusage: sudo [-AbEHknPS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] [-g groupname|#gid] [VAR=value] [-i|-s] [<command>]\nusage: sudo -e [-AknS] [-r role] [-t type] [-C fd] [-D level] [-g groupname|#gid] [-p prompt] [-u user name|#uid] file ...\n\u001b[4h\u001b[4l\u001b[4h\u001b[4lE: Could not open lock file /var/lib/apt/lists/lock - open (13: Permission denied)\nE: Unable to lock the list directory",
+  "latency_ms": 110.83,
+  "skipped": false
+}
+
+=== Entry 389 ===
+{
+  "index": 389,
+  "cmd": "sum /etc/hosts",
+  "ground_truth": "32490     1 /etc/hosts",
+  "cowrie_output": "\u001b[4l-bash: /usr/bin/sum: cannot execute binary file: Exec format error",
+  "latency_ms": 110.8,
+  "skipped": false
+}
+
+=== Entry 390 ===
+{
+  "index": 390,
+  "cmd": "systemctl status",
+  "ground_truth": "\u25cf elf\n    State: running\n    Units: 299 loaded (incl. loaded aliases)\n     Jobs: 0 queued\n   Failed: 0 units\n    Since: Sat 2024-10-12 16:00:35 CEST; 16min ago\n  systemd: 252.30-1~deb12u2\n   CGroup: /\n           \u251c\u2500init.scope\n           \u2502 \u2514\u25001 /sbin/init\n           \u251c\u2500system.slice\n           \u2502 \u251c\u2500ModemManager.service\n           \u2502 \u2502 \u2514\u2500568 /usr/sbin/ModemManager\n           \u2502 \u251c\u2500NetworkManager.service\n           \u2502 \u2502 \u2514\u2500544 /usr/sbin/NetworkManager --no-daemon\n           \u2502 \u251c\u2500accounts-daemon.service\n           \u2502 \u2502 \u2514\u2500512 /usr/libexec/accounts-daemon\n           \u2502 \u251c\u2500avahi-daemon.service\n           \u2502 \u2502 \u251c\u2500513 \"avahi-daemon: running [elf.local]\"\n           \u2502 \u2502 \u2514\u2500526 \"avahi-daemon: chroot helper\"\n           \u2502 \u251c\u2500colord.service\n           \u2502 \u2502 \u2514\u2500780 /usr/libexec/colord\n           \u2502 \u251c\u2500containerd.service\n           \u2502 \u2502 \u2514\u2500601 /usr/bin/containerd\n           \u2502 \u251c\u2500cron.service\n           \u2502 \u2502 \u2514\u2500514 /usr/sbin/cron -f\n           \u2502 \u251c\u2500cups-browsed.service\n           \u2502 \u2502 \u2514\u25001077 /usr/sbin/cups-browsed\n           \u2502 \u251c\u2500cups.service\n           \u2502 \u2502 \u2514\u2500585 /usr/sbin/cupsd -l\n           \u2502 \u251c\u2500dbus.service\n           \u2502 \u2502 \u2514\u2500515 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only\n           \u2502 \u251c\u2500docker.service\n           \u2502 \u2502 \u2514\u25001081 /usr/sbin/dockerd -H fd:// --containerd=/run/containerd/containerd.sock\n           \u2502 \u251c\u2500fwupd.service\n           \u2502 \u2502 \u2514\u25001876 /usr/libexec/fwupd/fwupd\n           \u2502 \u251c\u2500gdm.service\n           \u2502 \u2502 \u2514\u2500623 /usr/sbin/gdm3\n           \u2502 \u251c\u2500low-memory-monitor.service\n           \u2502 \u2502 \u2514\u2500517 /usr/libexec/low-memory-monitor\n           \u2502 \u251c\u2500packagekit.service\n           \u2502 \u2502 \u2514\u25004099 /usr/libexec/packagekitd\n           \u2502 \u251c\u2500polkit.service\n           \u2502 \u2502 \u2514\u2500519 /usr/lib/polkit-1/polkitd --no-debug\n           \u2502 \u251c\u2500power-profiles-daemon.service\n           \u2502 \u2502 \u2514\u2500520 /usr/libexec/power-profiles-daemon\n           \u2502 \u251c\u2500rpcbind.service\n           \u2502 \u2502 \u2514\u2500277 /sbin/rpcbind -f -w\n           \u2502 \u251c\u2500rtkit-daemon.service\n           \u2502 \u2502 \u2514\u2500678 /usr/libexec/rtkit-daemon\n           \u2502 \u251c\u2500ssh.service\n           \u2502 \u2502 \u2514\u25002768 \"sshd: /usr/sbin/sshd -D [listener] 0 of 10-100 startups\"\n           \u2502 \u251c\u2500switcheroo-control.service\n           \u2502 \u2502 \u2514\u2500521 /usr/libexec/switcheroo-control\n           \u2502 \u251c\u2500systemd-journald.service\n           \u2502 \u2502 \u2514\u2500230 /lib/systemd/systemd-journald\n           \u2502 \u251c\u2500systemd-logind.service\n           \u2502 \u2502 \u2514\u2500522 /lib/systemd/systemd-logind\n           \u2502 \u251c\u2500systemd-timesyncd.service\n           \u2502 \u2502 \u2514\u2500278 /lib/systemd/systemd-timesyncd\n           \u2502 \u251c\u2500systemd-udevd.service\n           \u2502 \u2502 \u2514\u2500udev\n           \u2502 \u2502   \u251c\u2500 261 /lib/systemd/systemd-udevd\n           \u2502 \u2502   \u251c\u25004621 \"(udev-worker)\"\n           \u2502 \u2502   \u2514\u25004622 \"(udev-worker)\"\n           \u2502 \u251c\u2500udisks2.service\n           \u2502 \u2502 \u2514\u2500523 /usr/libexec/udisks2/udisksd\n           \u2502 \u251c\u2500upower.service\n           \u2502 \u2502 \u2514\u2500766 /usr/libexec/upowerd\n           \u2502 \u251c\u2500uuidd.service\n           \u2502 \u2502 \u2514\u25003360 /usr/sbin/uuidd --socket-activation\n           \u2502 \u2514\u2500wpa_supplicant.service\n           \u2502   \u2514\u2500564 /sbin/wpa_supplicant -u -s -O \"DIR=/run/wpa_supplicant GROUP=netdev\"\n           \u2514\u2500user.slice\n             \u2514\u2500user-1000.slice\n               \u251c\u2500session-2.scope\n               \u2502 \u251c\u25001253 \"gdm-session-worker [pam/gdm-password]\"\n               \u2502 \u251c\u25001313 /usr/libexec/gdm-wayland-session /usr/bin/gnome-session\n               \u2502 \u2514\u25001319 /usr/libexec/gnome-session-binary\n               \u2514\u2500user@1000.service\n                 \u251c\u2500app.slice\n                 \u2502 \u251c\u2500app-gnome-at\\x2dspi\\x2ddbus\\x2dbus-1421.scope\n                 \u2502 \u2502 \u251c\u25001421 /usr/libexec/at-spi-bus-launcher --launch-immediately\n                 \u2502 \u2502 \u251c\u25001428 /usr/bin/dbus-daemon --config-file=/usr/share/defaults/at-spi2/accessibility.conf --nofork --print-address 11 --address=unix:path=/run/user/1000/at-spi/bus\n                 \u2502 \u2502 \u2514\u25001561 /usr/libexec/at-spi2-registryd --use-gnome-session\n                 \u2502 \u251c\u2500app-gnome-org.gnome.Evolution\\x2dalarm\\x2dnotify-1658.scope\n                 \u2502 \u2502 \u2514\u25001658 /usr/libexec/evolution-data-server/evolution-alarm-notify\n                 \u2502 \u251c\u2500app-gnome-org.gnome.SettingsDaemon.DiskUtilityNotify-1652.scope\n                 \u2502 \u2502 \u2514\u25001652 /usr/libexec/gsd-disk-utility-notify\n                 \u2502 \u251c\u2500app-gnome-org.gnome.Software-1653.scope\n                 \u2502 \u2502 \u2514\u25001653 /usr/bin/gnome-software --gapplication-service\n                 \u2502 \u251c\u2500app-gnome\\x2dsession\\x2dmanager.slice\n                 \u2502 \u2502 \u2514\u2500gnome-session-manager@gnome.service\n                 \u2502 \u2502   \u2514\u25001384 /usr/libexec/gnome-session-binary --systemd-service --session=gnome\n                 \u2502 \u251c\u2500app-org.gnome.Terminal.slice\n                 \u2502 \u2502 \u251c\u2500gnome-terminal-server.service\n                 \u2502 \u2502 \u2502 \u2514\u25002171 /usr/libexec/gnome-terminal-server\n                 \u2502 \u2502 \u251c\u2500vte-spawn-570e42ba-ecf5-4905-8670-5dffacd9d470.scope\n                 \u2502 \u2502 \u2502 \u251c\u25002952 bash\n                 \u2502 \u2502 \u2502 \u251c\u25004431 sudo su\n                 \u2502 \u2502 \u2502 \u251c\u25004432 sudo su\n                 \u2502 \u2502 \u2502 \u251c\u25004433 su\n                 \u2502 \u2502 \u2502 \u2514\u25004434 bash\n                 \u2502 \u2502 \u2514\u2500vte-spawn-bd6060fc-3ce3-4b86-8591-4165ebc46a21.scope\n                 \u2502 \u2502   \u251c\u25002197 bash\n                 \u2502 \u2502   \u251c\u25004439 go run cmd/command-runner/main.go -f commands.txt\n                 \u2502 \u2502   \u251c\u25004462 /tmp/go-build447372338/b001/exe/main -f commands.txt\n                 \u2502 \u2502   \u2514\u25004624 systemctl status\n                 \u2502 \u251c\u2500dconf.service\n                 \u2502 \u2502 \u2514\u25001491 /usr/libexec/dconf-service\n                 \u2502 \u251c\u2500evolution-addressbook-factory.service\n                 \u2502 \u2502 \u2514\u25001538 /usr/libexec/evolution-addressbook-factory\n                 \u2502 \u251c\u2500evolution-calendar-factory.service\n                 \u2502 \u2502 \u2514\u25001504 /usr/libexec/evolution-calendar-factory\n                 \u2502 \u251c\u2500evolution-source-registry.service\n                 \u2502 \u2502 \u2514\u25001482 /usr/libexec/evolution-source-registry\n                 \u2502 \u251c\u2500gcr-ssh-agent.service\n                 \u2502 \u2502 \u2514\u25001377 /usr/libexec/gcr-ssh-agent /run/user/1000/gcr\n                 \u2502 \u251c\u2500gnome-keyring-daemon.service\n                 \u2502 \u2502 \u2514\u25001296 /usr/bin/gnome-keyring-daemon --foreground --components=pkcs11,secrets --control-directory=/run/user/1000/keyring\n                 \u2502 \u251c\u2500gnome-session-monitor.service\n                 \u2502 \u2502 \u2514\u25001378 /usr/libexec/gnome-session-ctl --monitor\n                 \u2502 \u251c\u2500ssh-agent.service\n                 \u2502 \u2502 \u2514\u25001379 ssh-agent -D -a /run/user/1000/openssh_agent\n                 \u2502 \u251c\u2500xdg-desktop-portal-gnome.service\n                 \u2502 \u2502 \u2514\u25001825 /usr/libexec/xdg-desktop-portal-gnome\n                 \u2502 \u2514\u2500xdg-desktop-portal-gtk.service\n                 \u2502   \u2514\u25001843 /usr/libexec/xdg-desktop-portal-gtk\n                 \u251c\u2500background.slice\n                 \u2502 \u2514\u2500tracker-miner-fs-3.service\n                 \u2502   \u2514\u25001820 /usr/libexec/tracker-miner-fs-3\n                 \u251c\u2500init.scope\n                 \u2502 \u251c\u25001268 /lib/systemd/systemd --user\n                 \u2502 \u2514\u25001269 \"(sd-pam)\"\n                 \u2514\u2500session.slice\n                   \u251c\u2500dbus.service\n                   \u2502 \u251c\u25001295 /usr/bin/dbus-daemon --session --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only\n                   \u2502 \u251c\u25001473 /usr/libexec/gnome-shell-calendar-server\n                   \u2502 \u251c\u25001501 /usr/libexec/goa-daemon\n                   \u2502 \u251c\u25001518 /usr/libexec/goa-identity-service\n                   \u2502 \u251c\u25001562 /usr/bin/gjs /usr/share/gnome-shell/org.gnome.Shell.Notifications\n                   \u2502 \u251c\u25001757 /usr/bin/gjs /usr/share/gnome-shell/org.gnome.ScreenSaver\n                   \u2502 \u2514\u25001762 /usr/libexec/ibus-portal\n                   \u251c\u2500gvfs-afc-volume-monitor.service\n                   \u2502 \u2514\u25001513 /usr/libexec/gvfs-afc-volume-monitor\n                   \u251c\u2500gvfs-daemon.service\n                   \u2502 \u251c\u25001315 /usr/libexec/gvfsd\n                   \u2502 \u2514\u25001368 /usr/libexec/gvfsd-fuse /run/user/1000/gvfs -f\n                   \u251c\u2500gvfs-goa-volume-monitor.service\n                   \u2502 \u2514\u25001540 /usr/libexec/gvfs-goa-volume-monitor\n                   \u251c\u2500gvfs-gphoto2-volume-monitor.service\n                   \u2502 \u2514\u25001545 /usr/libexec/gvfs-gphoto2-volume-monitor\n                   \u251c\u2500gvfs-metadata.service\n                   \u2502 \u2514\u25001867 /usr/libexec/gvfsd-metadata\n                   \u251c\u2500gvfs-mtp-volume-monitor.service\n                   \u2502 \u2514\u25001526 /usr/libexec/gvfs-mtp-volume-monitor\n                   \u251c\u2500gvfs-udisks2-volume-monitor.service\n                   \u2502 \u2514\u25001500 /usr/libexec/gvfs-udisks2-volume-monitor\n                   \u251c\u2500org.freedesktop.IBus.session.GNOME.service\n                   \u2502 \u251c\u25001580 sh -c \"/usr/bin/ibus-daemon --panel disable \\$([ \\\"\\$XDG_SESSION_TYPE\\\" = \\\"x11\\\" ] && echo \\\"--xim\\\")\"\n                   \u2502 \u251c\u25001645 /usr/bin/ibus-daemon --panel disable\n                   \u2502 \u251c\u25001752 /usr/libexec/ibus-memconf\n                   \u2502 \u251c\u25001756 /usr/libexec/ibus-extension-gtk3\n                   \u2502 \u2514\u25001779 /usr/libexec/ibus-engine-simple\n                   \u251c\u2500org.gnome.SettingsDaemon.A11ySettings.service\n                   \u2502 \u2514\u25001583 /usr/libexec/gsd-a11y-settings\n                   \u251c\u2500org.gnome.SettingsDaemon.Color.service\n                   \u2502 \u2514\u25001584 /usr/libexec/gsd-color\n                   \u251c\u2500org.gnome.SettingsDaemon.Datetime.service\n                   \u2502 \u2514\u25001586 /usr/libexec/gsd-datetime\n                   \u251c\u2500org.gnome.SettingsDaemon.Housekeeping.service\n                   \u2502 \u2514\u25001596 /usr/libexec/gsd-housekeeping\n                   \u251c\u2500org.gnome.SettingsDaemon.Keyboard.service\n                   \u2502 \u2514\u25001598 /usr/libexec/gsd-keyboard\n                   \u251c\u2500org.gnome.SettingsDaemon.MediaKeys.service\n                   \u2502 \u2514\u25001601 /usr/libexec/gsd-media-keys\n                   \u251c\u2500org.gnome.SettingsDaemon.Power.service\n                   \u2502 \u2514\u25001603 /usr/libexec/gsd-power\n                   \u251c\u2500org.gnome.SettingsDaemon.PrintNotifications.service\n                   \u2502 \u251c\u25001610 /usr/libexec/gsd-print-notifications\n                   \u2502 \u2514\u25001702 /usr/libexec/gsd-printer\n                   \u251c\u2500org.gnome.SettingsDaemon.Rfkill.service\n                   \u2502 \u2514\u25001611 /usr/libexec/gsd-rfkill\n                   \u251c\u2500org.gnome.SettingsDaemon.ScreensaverProxy.service\n                   \u2502 \u2514\u25001612 /usr/libexec/gsd-screensaver-proxy\n                   \u251c\u2500org.gnome.SettingsDaemon.Sharing.service\n                   \u2502 \u2514\u25001613 /usr/libexec/gsd-sharing\n                   \u251c\u2500org.gnome.SettingsDaemon.Smartcard.service\n                   \u2502 \u2514\u25001614 /usr/libexec/gsd-smartcard\n                   \u251c\u2500org.gnome.SettingsDaemon.Sound.service\n                   \u2502 \u2514\u25001615 /usr/libexec/gsd-sound\n                   \u251c\u2500org.gnome.SettingsDaemon.UsbProtection.service\n                   \u2502 \u2514\u25001616 /usr/libexec/gsd-usb-protection\n                   \u251c\u2500org.gnome.SettingsDaemon.Wacom.service\n                   \u2502 \u2514\u25001617 /usr/libexec/gsd-wacom\n                   \u251c\u2500org.gnome.SettingsDaemon.XSettings.service\n                   \u2502 \u251c\u25003320 /usr/libexec/gsd-xsettings\n                   \u2502 \u2514\u25003344 /usr/libexec/ibus-x11\n                   \u251c\u2500org.gnome.Shell@wayland.service\n                   \u2502 \u251c\u25001419 /usr/bin/gnome-shell\n                   \u2502 \u2514\u25003317 /usr/bin/Xwayland :0 -rootless -noreset -accessx -core -auth /run/user/1000/.mutter-Xwaylandauth.4REGV2 -listenfd 4 -listenfd 5 -displayfd 6 -initfd 7\n                   \u251c\u2500pipewire-pulse.service\n                   \u2502 \u2514\u25001294 /usr/bin/pipewire-pulse\n                   \u251c\u2500pipewire.service\n                   \u2502 \u2514\u25001284 /usr/bin/pipewire\n                   \u251c\u2500wireplumber.service\n                   \u2502 \u2514\u25001293 /usr/bin/wireplumber\n                   \u251c\u2500xdg-desktop-portal.service\n                   \u2502 \u2514\u25001789 /usr/libexec/xdg-desktop-portal\n                   \u251c\u2500xdg-document-portal.service\n                   \u2502 \u251c\u25001813 /usr/libexec/xdg-document-portal\n                   \u2502 \u2514\u25001821 fusermount3 -o rw,nosuid,nodev,fsname=portal,auto_unmount,subtype=portal -- /run/user/1000/doc\n                   \u2514\u2500xdg-permission-store.service\n                     \u2514\u25001471 /usr/libexec/xdg-permission-store",
+  "cowrie_output": "-bash: systemctl: command not found",
+  "latency_ms": 110.76,
+  "skipped": false
+}
+
+=== Entry 391 ===
+{
+  "index": 391,
+  "cmd": "systemctl status apache2",
+  "ground_truth": "Unit apache2.service could not be found.",
+  "cowrie_output": "-bash: systemctl: command not found",
+  "latency_ms": 110.73,
+  "skipped": false
+}
+
+=== Entry 392 ===
+{
+  "index": 392,
+  "cmd": "systemctl status httpd",
+  "ground_truth": "Unit httpd.service could not be found.",
+  "cowrie_output": "-bash: systemctl: command not found",
+  "latency_ms": 110.7,
+  "skipped": false
+}
+
+=== Entry 393 ===
+{
+  "index": 393,
+  "cmd": "systemctl status mysql",
+  "ground_truth": "Unit mysql.service could not be found.",
+  "cowrie_output": "-bash: systemctl: command not found",
+  "latency_ms": 110.63,
+  "skipped": false
+}
+
+=== Entry 394 ===
+{
+  "index": 394,
+  "cmd": "systemctl status postgresql",
+  "ground_truth": "Unit postgresql.service could not be found.",
+  "cowrie_output": "-bash: systemctl: command not found",
+  "latency_ms": 110.79,
+  "skipped": false
+}
+
+=== Entry 395 ===
+{
+  "index": 395,
+  "cmd": "systemctl status ssh",
+  "ground_truth": "\u25cf ssh.service - OpenBSD Secure Shell server\n     Loaded: loaded (/lib/systemd/system/ssh.service; enabled; preset: enabled)\n     Active: active (running) since Sat 2024-10-12 16:03:52 CEST; 13min ago\n       Docs: man:sshd(8)\n             man:sshd_config(5)\n    Process: 2767 ExecStartPre=/usr/sbin/sshd -t (code=exited, status=0/SUCCESS)\n   Main PID: 2768 (sshd)\n      Tasks: 1 (limit: 4622)\n     Memory: 1.4M\n        CPU: 255ms\n     CGroup: /system.slice/ssh.service\n             \u2514\u25002768 \"sshd: /usr/sbin/sshd -D [listener] 0 of 10-100 startups\"",
+  "cowrie_output": "-bash: systemctl: command not found",
+  "latency_ms": 110.79,
+  "skipped": false
+}
+
+=== Entry 396 ===
+{
+  "index": 396,
+  "cmd": "tempfile --directory=/var/tmp --prefix=myapp_",
+  "ground_truth": "WARNING: tempfile is deprecated; consider using mktemp instead.\n/var/tmp/myapp_jQQm2l",
+  "cowrie_output": "\u001b[4l-bash: /bin/tempfile: cannot execute binary file: Exec format error",
+  "latency_ms": 110.8,
+  "skipped": false
+}
+
+=== Entry 397 ===
+{
+  "index": 397,
+  "cmd": "tempfile -d /tmp",
+  "ground_truth": "WARNING: tempfile is deprecated; consider using mktemp instead.\n/tmp/file2PiKok",
+  "cowrie_output": "\u001b[4l-bash: /bin/tempfile: cannot execute binary file: Exec format error",
+  "latency_ms": 110.77,
+  "skipped": false
+}
+
+=== Entry 398 ===
+{
+  "index": 398,
+  "cmd": "tempfile -d /tmp -p log_ -m 0640 -s .tmp",
+  "ground_truth": "WARNING: tempfile is deprecated; consider using mktemp instead.\n/tmp/log_J9kbwI.tmp",
+  "cowrie_output": "\u001b[4l-bash: /bin/tempfile: cannot execute binary file: Exec format error",
+  "latency_ms": 110.8,
+  "skipped": false
+}
+
+=== Entry 399 ===
+{
+  "index": 399,
+  "cmd": "tempfile -m 0600",
+  "ground_truth": "WARNING: tempfile is deprecated; consider using mktemp instead.\n/tmp/file51xpqp",
+  "cowrie_output": "\u001b[4l-bash: /bin/tempfile: cannot execute binary file: Exec format error",
+  "latency_ms": 110.69,
+  "skipped": false
+}
+
+=== Entry 400 ===
+{
+  "index": 400,
+  "cmd": "tempfile -m 0600; tracepath 8.8.8.8",
+  "ground_truth": "WARNING: tempfile is deprecated; consider using mktemp instead.\n/tmp/file51xpqp\n\nbash: line 1: tracepath: command not found",
+  "cowrie_output": "\u001b[4l-bash: /bin/tempfile: cannot execute binary file: Exec format error\n\u001b[4h-bash: tracepath: command not found",
+  "latency_ms": 110.64,
+  "skipped": false
+}
+

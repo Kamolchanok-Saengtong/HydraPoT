@@ -1,0 +1,58 @@
+[
+  {
+    "theme_id": "theme5_system_saboteur",
+    "index": 1,
+    "cmd": "export CMD=\"cat /etc/shadow\"",
+    "response": "",
+    "fi": 0,
+    "latency_ms": 400.81
+  },
+  {
+    "theme_id": "theme5_system_saboteur",
+    "index": 2,
+    "cmd": "echo $CMD | base64",
+    "response": "\u001b[4l\u001b[4h\u001b[4lCg==",
+    "fi": 2,
+    "latency_ms": 400.95
+  },
+  {
+    "theme_id": "theme5_system_saboteur",
+    "index": 3,
+    "cmd": "$(echo \"Y2F0IC9ldGMvc2hhZG93\" | base64 -d)",
+    "response": "\u001b[4l\u001b[4l-bash: : command not found",
+    "fi": 0,
+    "latency_ms": 400.98
+  },
+  {
+    "theme_id": "theme5_system_saboteur",
+    "index": 4,
+    "cmd": "touch /etc/ld.so.preload",
+    "response": "\u001b[4l",
+    "fi": 1,
+    "latency_ms": 400.98
+  },
+  {
+    "theme_id": "theme5_system_saboteur",
+    "index": 5,
+    "cmd": "ls -l /etc/ld.so.preload",
+    "response": "\u001b[4l",
+    "fi": 0,
+    "latency_ms": 400.93
+  },
+  {
+    "theme_id": "theme5_system_saboteur",
+    "index": 6,
+    "cmd": "chattr +i /etc/ld.so.preload",
+    "response": "\u001b[4l",
+    "fi": 0,
+    "latency_ms": 400.93
+  },
+  {
+    "theme_id": "theme5_system_saboteur",
+    "index": 7,
+    "cmd": "rm /etc/ld.so.preload",
+    "response": "\u001b[4l",
+    "fi": 2,
+    "latency_ms": 400.92
+  }
+]

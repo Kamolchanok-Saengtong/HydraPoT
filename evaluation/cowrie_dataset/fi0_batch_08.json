@@ -1,0 +1,182 @@
+[
+  {
+    "cmd": "users",
+    "response": "\u001b[4lroot"
+  },
+  {
+    "cmd": "uuidgen",
+    "response": "-bash: uuidgen: command not found"
+  },
+  {
+    "cmd": "uuidgen --hex",
+    "response": "-bash: uuidgen: command not found"
+  },
+  {
+    "cmd": "uuidgen -m",
+    "response": "-bash: uuidgen: command not found"
+  },
+  {
+    "cmd": "uuidgen --md5",
+    "response": "-bash: uuidgen: command not found"
+  },
+  {
+    "cmd": "uuidgen -N aaa",
+    "response": "-bash: uuidgen: command not found"
+  },
+  {
+    "cmd": "uuidgen --name aaa",
+    "response": "-bash: uuidgen: command not found"
+  },
+  {
+    "cmd": "uuidgen -r",
+    "response": "-bash: uuidgen: command not found"
+  },
+  {
+    "cmd": "uuidgen --random",
+    "response": "-bash: uuidgen: command not found"
+  },
+  {
+    "cmd": "uuidgen --random; icuinfo",
+    "response": "-bash: uuidgen: command not found\n-bash: icuinfo: command not found"
+  },
+  {
+    "cmd": "uuidgen -s",
+    "response": "-bash: uuidgen: command not found"
+  },
+  {
+    "cmd": "uuidgen --sha1",
+    "response": "-bash: uuidgen: command not found"
+  },
+  {
+    "cmd": "uuidgen -t",
+    "response": "-bash: uuidgen: command not found"
+  },
+  {
+    "cmd": "uuidgen --time",
+    "response": "-bash: uuidgen: command not found"
+  },
+  {
+    "cmd": "uuidgen -x",
+    "response": "-bash: uuidgen: command not found"
+  },
+  {
+    "cmd": "uuidparse 58db5e87-604d-4bf3-9374-167f43545aa2",
+    "response": "-bash: uuidparse: command not found"
+  },
+  {
+    "cmd": "vmstat",
+    "response": "\u001b[4l-bash: /usr/bin/vmstat: cannot execute binary file: Exec format error"
+  },
+  {
+    "cmd": "vmstat -a",
+    "response": "\u001b[4l-bash: /usr/bin/vmstat: cannot execute binary file: Exec format error"
+  },
+  {
+    "cmd": "vmstat -f",
+    "response": "\u001b[4l-bash: /usr/bin/vmstat: cannot execute binary file: Exec format error"
+  },
+  {
+    "cmd": "wdctl",
+    "response": "-bash: wdctl: command not found"
+  },
+  {
+    "cmd": "who",
+    "response": "\u001b[4lroot     pts/0        2026-03-20 11:55 (172.18.0.1)"
+  },
+  {
+    "cmd": "who -a",
+    "response": "\u001b[4lroot     pts/0        2026-03-20 11:55 (172.18.0.1)"
+  },
+  {
+    "cmd": "who -a; hostname -f",
+    "response": "\u001b[4lroot     pts/0        2026-03-20 11:55 (172.18.0.1)"
+  },
+  {
+    "cmd": "whoami",
+    "response": "\u001b[4lroot"
+  },
+  {
+    "cmd": "who -b",
+    "response": "\u001b[4lroot     pts/0        2026-03-20 11:55 (172.18.0.1)"
+  },
+  {
+    "cmd": "who -d",
+    "response": "\u001b[4lroot     pts/0        2026-03-20 11:55 (172.18.0.1)"
+  },
+  {
+    "cmd": "whois 8.8.8.8",
+    "response": "-bash: whois: command not found"
+  },
+  {
+    "cmd": "whois google.com",
+    "response": "-bash: whois: command not found"
+  },
+  {
+    "cmd": "who -u",
+    "response": "\u001b[4lroot     pts/0        2026-03-20 11:55 (172.18.0.1)"
+  },
+  {
+    "cmd": "hashcat -m 100 -a 1 shadow",
+    "response": "-bash: hashcat: command not found"
+  },
+  {
+    "cmd": "hashcat -m 100 -a 3 hashes.txt",
+    "response": "-bash: hashcat: command not found"
+  },
+  {
+    "cmd": "hashcat -m 100 -a 3 shadow",
+    "response": "-bash: hashcat: command not found"
+  },
+  {
+    "cmd": "hashcat -m 100 -a shadow",
+    "response": "-bash: hashcat: command not found"
+  },
+  {
+    "cmd": "netcat -l -p 31337",
+    "response": "\u001b[4lnc: Permission denied"
+  },
+  {
+    "cmd": "netcat -l -p 443",
+    "response": "\u001b[4lnc: Permission denied"
+  },
+  {
+    "cmd": "netcat -l -p 44444",
+    "response": "\u001b[4lnc: Permission denied"
+  },
+  {
+    "cmd": "netcat -v -l -p 443",
+    "response": "\u001b[4lnc: Permission denied"
+  },
+  {
+    "cmd": "netcat -v -l -p 44444",
+    "response": "\u001b[4lnc: Permission denied"
+  },
+  {
+    "cmd": "netcat -v -l -p 80",
+    "response": "\u001b[4lnc: Permission denied"
+  },
+  {
+    "cmd": "nvidia-detect",
+    "response": "-bash: nvidia-detect: command not found"
+  },
+  {
+    "cmd": "openssl s_client -connect www.google.com:443",
+    "response": "-bash: openssl: command not found"
+  },
+  {
+    "cmd": "python3 -m http.server 2305",
+    "response": "-bash: python3: command not found"
+  },
+  {
+    "cmd": "tcpdump -i en0",
+    "response": "-bash: tcpdump: command not found"
+  },
+  {
+    "cmd": "tcpdump -i eth0",
+    "response": "-bash: tcpdump: command not found"
+  },
+  {
+    "cmd": "tcpdump -v",
+    "response": "-bash: tcpdump: command not found"
+  }
+]

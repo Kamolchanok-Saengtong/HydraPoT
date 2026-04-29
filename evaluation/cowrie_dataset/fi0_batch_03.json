@@ -1,0 +1,202 @@
+[
+  {
+    "cmd": "hostname -f",
+    "response": ""
+  },
+  {
+    "cmd": "hostname -I",
+    "response": ""
+  },
+  {
+    "cmd": "ibus engine",
+    "response": "-bash: ibus: command not found"
+  },
+  {
+    "cmd": "ibus list-engine",
+    "response": "-bash: ibus: command not found"
+  },
+  {
+    "cmd": "ibus read-cache",
+    "response": "-bash: ibus: command not found"
+  },
+  {
+    "cmd": "ibus read-config",
+    "response": "-bash: ibus: command not found"
+  },
+  {
+    "cmd": "ibus version",
+    "response": "-bash: ibus: command not found"
+  },
+  {
+    "cmd": "icuinfo",
+    "response": "-bash: icuinfo: command not found"
+  },
+  {
+    "cmd": "ifconfig",
+    "response": "\u001b[4leth0      Link encap:Ethernet  HWaddr 9f:60:46:a8:7e:36\n          inet addr:172.18.0.2  Bcast:172.18.0.255  Mask:255.255.255.0\n          inet6 addr: fedb::2eb:c1ff:fe4e:3401/64 Scope:Link\n          UP BROADCAST RUNNING MULTICAST  MTU:1500  Metric:1\n          RX packets:280065 errors:0 dropped:0 overruns:0 frame:0\n          TX packets:44227 errors:0 dropped:0 overruns:0 carrier:0\n          collisions:0 txqueuelen:1000\n          RX bytes:142273389 (142.3 MB)  TX bytes:22467469 (22.5 MB)\nlo        Link encap:Local Loopback\n          inet addr:127.0.0.1  Mask:255.0.0.0\n          inet6 addr: ::1/128 Scope:Host\n          UP LOOPBACK RUNNING  MTU:65536  Metric:1\n          RX packets:36185 errors:0 dropped:0 overruns:0 frame:0\n          TX packets:36185 errors:0 dropped:0 overruns:0 carrier:0\n          collisions:0 txqueuelen:0\n          RX bytes:18382121 (18.4 MB)  TX bytes:18382121 (18.4 MB)"
+  },
+  {
+    "cmd": "ifconfig -a",
+    "response": "\u001b[4leth0      Link encap:Ethernet  HWaddr 9f:60:46:a8:7e:36\n          inet addr:172.18.0.2  Bcast:172.18.0.255  Mask:255.255.255.0\n          inet6 addr: fedb::2eb:c1ff:fe4e:3401/64 Scope:Link\n          UP BROADCAST RUNNING MULTICAST  MTU:1500  Metric:1\n          RX packets:280066 errors:0 dropped:0 overruns:0 frame:0\n          TX packets:44227 errors:0 dropped:0 overruns:0 carrier:0\n          collisions:0 txqueuelen:1000\n          RX bytes:142273549 (142.3 MB)  TX bytes:22467612 (22.5 MB)\nlo        Link encap:Local Loopback\n          inet addr:127.0.0.1  Mask:255.0.0.0\n          inet6 addr: ::1/128 Scope:Host\n          UP LOOPBACK RUNNING  MTU:65536  Metric:1\n          RX packets:36185 errors:0 dropped:0 overruns:0 frame:0\n          TX packets:36185 errors:0 dropped:0 overruns:0 carrier:0\n          collisions:0 txqueuelen:0\n          RX bytes:18382132 (18.4 MB)  TX bytes:18382132 (18.4 MB)"
+  },
+  {
+    "cmd": "iostat",
+    "response": "-bash: iostat: command not found"
+  },
+  {
+    "cmd": "iostat -c",
+    "response": "-bash: iostat: command not found"
+  },
+  {
+    "cmd": "iostat -c; ip a l",
+    "response": "-bash: iostat: command not found\n\u001b[4l-bash: /sbin/ip: cannot execute binary file: Exec format error"
+  },
+  {
+    "cmd": "iostat -d",
+    "response": "-bash: iostat: command not found"
+  },
+  {
+    "cmd": "iostat -k",
+    "response": "-bash: iostat: command not found"
+  },
+  {
+    "cmd": "iostat -N",
+    "response": "-bash: iostat: command not found"
+  },
+  {
+    "cmd": "iostat -N; ifconfig",
+    "response": "-bash: iostat: command not found\n\u001b[4leth0      Link encap:Ethernet  HWaddr 9f:60:46:a8:7e:36\n          inet addr:172.18.0.2  Bcast:172.18.0.255  Mask:255.255.255.0\n          inet6 addr: fedb::2eb:c1ff:fe4e:3401/64 Scope:Link\n          UP BROADCAST RUNNING MULTICAST  MTU:1500  Metric:1\n          RX packets:280068 errors:0 dropped:0 overruns:0 frame:0\n          TX packets:44229 errors:0 dropped:0 overruns:0 carrier:0\n          collisions:0 txqueuelen:1000\n          RX bytes:142274681 (142.3 MB)  TX bytes:22468626 (22.5 MB)\nlo        Link encap:Local Loopback\n          inet addr:127.0.0.1  Mask:255.0.0.0\n          inet6 addr: ::1/128 Scope:Host\n          UP LOOPBACK RUNNING  MTU:65536  Metric:1\n          RX packets:36185 errors:0 dropped:0 overruns:0 frame:0\n          TX packets:36185 errors:0 dropped:0 overruns:0 carrier:0\n          collisions:0 txqueuelen:0\n          RX bytes:18382215 (18.4 MB)  TX bytes:18382215 (18.4 MB)"
+  },
+  {
+    "cmd": "iostat -p",
+    "response": "-bash: iostat: command not found"
+  },
+  {
+    "cmd": "iostat -x",
+    "response": "-bash: iostat: command not found"
+  },
+  {
+    "cmd": "iostat -xd",
+    "response": "-bash: iostat: command not found"
+  },
+  {
+    "cmd": "iostat -x; getconf FILESIZEBITS",
+    "response": "-bash: iostat: command not found\n\u001b[4l32"
+  },
+  {
+    "cmd": "ip a",
+    "response": "\u001b[4l-bash: /sbin/ip: cannot execute binary file: Exec format error"
+  },
+  {
+    "cmd": "ip a; getent -A rpc",
+    "response": "\u001b[4l-bash: /sbin/ip: cannot execute binary file: Exec format error\n\u001b[4h\u001b[4l-bash: /usr/bin/getent: cannot execute binary file: Exec format error"
+  },
+  {
+    "cmd": "ip a l",
+    "response": "\u001b[4l-bash: /sbin/ip: cannot execute binary file: Exec format error"
+  },
+  {
+    "cmd": "ip a lw",
+    "response": "\u001b[4l-bash: /sbin/ip: cannot execute binary file: Exec format error"
+  },
+  {
+    "cmd": "ipcs",
+    "response": "\u001b[4l-bash: /usr/bin/ipcs: cannot execute binary file: Exec format error"
+  },
+  {
+    "cmd": "ip m",
+    "response": "\u001b[4l-bash: /sbin/ip: cannot execute binary file: Exec format error"
+  },
+  {
+    "cmd": "ip neigh flush all",
+    "response": "\u001b[4l-bash: /sbin/ip: cannot execute binary file: Exec format error"
+  },
+  {
+    "cmd": "iwconfig",
+    "response": "-bash: iwconfig: command not found"
+  },
+  {
+    "cmd": "iwconfig; env",
+    "response": "-bash: iwconfig: command not found\n\u001b[4lHOME=/root\nLOGNAME=root\nSHELL=/bin/bash\nSHLVL=1\nTMOUT=1800\nUID=0\nUSER=root\nPATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\nTERM=vt100\nCOLUMNS=80\nLINES=24"
+  },
+  {
+    "cmd": "journalctl --no-pager | head -30",
+    "response": "-bash: journalctl: command not found"
+  },
+  {
+    "cmd": "kmod list",
+    "response": "\u001b[4l-bash: /bin/kmod: cannot execute binary file: Exec format error"
+  },
+  {
+    "cmd": "kmod static-nodes",
+    "response": "\u001b[4l-bash: /bin/kmod: cannot execute binary file: Exec format error"
+  },
+  {
+    "cmd": "laptop-detect -v",
+    "response": "\u001b[4l-bash: /usr/sbin/laptop-detect: cannot execute binary file: Exec format error"
+  },
+  {
+    "cmd": "lastlog",
+    "response": "\u001b[4l-bash: /usr/bin/lastlog: cannot execute binary file: Exec format error"
+  },
+  {
+    "cmd": "lastlog -t 100",
+    "response": "\u001b[4l-bash: /usr/bin/lastlog: cannot execute binary file: Exec format error"
+  },
+  {
+    "cmd": "lastlog -t 100; sensors -h",
+    "response": "\u001b[4l-bash: /usr/bin/lastlog: cannot execute binary file: Exec format error\n\u001b[4h-bash: sensors: command not found"
+  },
+  {
+    "cmd": "lastlog; traceroute -p 8888 8.8.8.8",
+    "response": "\u001b[4l-bash: /usr/bin/lastlog: cannot execute binary file: Exec format error\n\u001b[4h\u001b[4l-bash: /usr/sbin/traceroute: cannot execute binary file: Exec format error"
+  },
+  {
+    "cmd": "lastlog -u root",
+    "response": "\u001b[4l-bash: /usr/bin/lastlog: cannot execute binary file: Exec format error"
+  },
+  {
+    "cmd": "ldapwhoami",
+    "response": "-bash: ldapwhoami: command not found"
+  },
+  {
+    "cmd": "libnetcfg",
+    "response": "-bash: libnetcfg: command not found"
+  },
+  {
+    "cmd": "libtool --config",
+    "response": "-bash: libtool: command not found"
+  },
+  {
+    "cmd": "linux-version list",
+    "response": "\u001b[4l-bash: /usr/bin/linux-version: cannot execute binary file: Exec format error"
+  },
+  {
+    "cmd": "linux-version list; dig geeksforgeeks.org +noall +answer",
+    "response": "\u001b[4l-bash: /usr/bin/linux-version: cannot execute binary file: Exec format error\n\u001b[4h\u001b[4l; <<>> DiG 9.10.6 <<>> geeksforgeeks.org\n;; global options: +cmd\n;; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 3499\n;; flags: qr rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 1\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 512\n;; QUESTION SECTION:\n;geeksforgeeks.org.\t\tIN\tA\n;; ANSWER SECTION:\ngeeksforgeeks.org.\t\t34\tIN\tA\t191.192.244.55\n;; Query time: 50 msec\n;; SERVER: 2001:730:3ef2::10#53(2001:730:3ef2::10)\n;; WHEN: Fri Mar 20 11:56:57 UTC 2026\n;; MSG SIZE  rcvd: 173"
+  },
+  {
+    "cmd": "listres",
+    "response": "-bash: listres: command not found"
+  },
+  {
+    "cmd": "listres -all",
+    "response": "-bash: listres: command not found"
+  },
+  {
+    "cmd": "listres -nosuper",
+    "response": "-bash: listres: command not found"
+  },
+  {
+    "cmd": "loginctl",
+    "response": "-bash: loginctl: command not found"
+  },
+  {
+    "cmd": "loginctl -a",
+    "response": "-bash: loginctl: command not found"
+  },
+  {
+    "cmd": "loginctl -a list-seats",
+    "response": "-bash: loginctl: command not found"
+  }
+]

@@ -1,0 +1,152 @@
+[
+  {
+    "cmd": "crontab -l"
+  },
+  {
+    "cmd": "curl http://www.google.com"
+  },
+  {
+    "cmd": "curl http://www.google.com; uuidparse 58db5e87-604d-4bf3-9374-167f43545aa2"
+  },
+  {
+    "cmd": "echo AAA | sha384sum"
+  },
+  {
+    "cmd": "echo AAA | sha512sum"
+  },
+  {
+    "cmd": "echo AAA | shasum"
+  },
+  {
+    "cmd": "echo AAA | sum"
+  },
+  {
+    "cmd": "echo dsdsdda"
+  },
+  {
+    "cmd": "echo -n aaa| cksum"
+  },
+  {
+    "cmd": "echo -n AAA | md5sum"
+  },
+  {
+    "cmd": "echo -n AAA | md5sum; loginctl"
+  },
+  {
+    "cmd": "echo -n AAA | sha256sum"
+  },
+  {
+    "cmd": "echo ooooo"
+  },
+  {
+    "cmd": "echo RESULT=$?"
+  },
+  {
+    "cmd": "echo $SHELL"
+  },
+  {
+    "cmd": "lnstat -c 1"
+  },
+  {
+    "cmd": "lnstat -dc 1"
+  },
+  {
+    "cmd": "lnstat -j -c 1"
+  },
+  {
+    "cmd": "nmap 8.8.8.8"
+  },
+  {
+    "cmd": "nmap -PN -n -p80,22 8.8.8.8"
+  },
+  {
+    "cmd": "ssh-keygen -f ~/.ssh/mykey"
+  },
+  {
+    "cmd": "ssh-keygen -l -f ~/.ssh/id_rsa.pub"
+  },
+  {
+    "cmd": "ssh-keygen -p -f ~/.ssh/id_rsa"
+  },
+  {
+    "cmd": "ssh-keygen -R hostname"
+  },
+  {
+    "cmd": "ssh-keygen -R hostname; uname -i"
+  },
+  {
+    "cmd": "ssh-keygen -s ca_key -I key_id -n user1,user2 id_rsa.pub"
+  },
+  {
+    "cmd": "ssh-keygen -t ecdsa -b 521"
+  },
+  {
+    "cmd": "ssh-keygen -t ed25519"
+  },
+  {
+    "cmd": "ssh-keygen -t ed25519 -a 100"
+  },
+  {
+    "cmd": "ssh-keygen -t rsa -b 2048 -C \"your_email@example.com\""
+  },
+  {
+    "cmd": "ssh-keygen -t rsa -b 4096"
+  },
+  {
+    "cmd": "ssh-keygen -t rsa -b 4096 -f mykey -N \"\" -q"
+  },
+  {
+    "cmd": "ssh-keygen -t rsa -b 4096 -f mykey -N \"\" -q; getfacl /etc/passwd"
+  },
+  {
+    "cmd": "ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa_work -C \"work_email@company.com\""
+  },
+  {
+    "cmd": "ssh-keygen -t rsa -N \"passphrase\""
+  },
+  {
+    "cmd": "ssh-keygen -y -f ~/.ssh/id_rsa"
+  },
+  {
+    "cmd": "sudo apt-get update"
+  },
+  {
+    "cmd": "sudo apt-get upgrade"
+  },
+  {
+    "cmd": "sudo debconf-show --listowners bash"
+  },
+  {
+    "cmd": "sudo hping3  -c 3 -1 www.example.com"
+  },
+  {
+    "cmd": "sudo hping3  -c 3 -S www.example.com -p 80"
+  },
+  {
+    "cmd": "sudo hping3 -c 3 www.example.com"
+  },
+  {
+    "cmd": "sudo hping3 -c 4 -A --ttl 64 www.example.com"
+  },
+  {
+    "cmd": "sudo hping3 -c 5 -6 ipv6.example.com"
+  },
+  {
+    "cmd": "sudo hping3  -c 5 -A www.example.com"
+  },
+  {
+    "cmd": "sudo hping3 -c 5 -i u1000 www.example.com"
+  },
+  {
+    "cmd": "sudo hping3 -c 5 -S www.example.com -p 80 --data \"Hello\""
+  },
+  {
+    "cmd": "sudo hping3 -c 5 www.example.com"
+  },
+  {
+    "cmd": "sudo nmap -O -p53,80 8.8.8.8"
+  },
+  {
+    "cmd": "sudo nmap -O -p53,80 8.8.8.8; getent -A ahosts"
+  }
+]

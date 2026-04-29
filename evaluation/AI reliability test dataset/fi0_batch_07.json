@@ -1,0 +1,202 @@
+[
+  {
+    "cmd": "sensors -f",
+    "response": "bash: line 1: sensors: command not found"
+  },
+  {
+    "cmd": "sensors -h",
+    "response": "bash: line 1: sensors: command not found"
+  },
+  {
+    "cmd": "sensors -j",
+    "response": "bash: line 1: sensors: command not found"
+  },
+  {
+    "cmd": "sensors k10temp-pci-00c3",
+    "response": "bash: line 1: sensors: command not found"
+  },
+  {
+    "cmd": "sensors k10temp-pci-00c3; cat /proc/meminfo",
+    "response": "bash: line 1: sensors: command not found\n\nMemTotal:        4009492 kB\nMemFree:         1804712 kB\nMemAvailable:    2641012 kB\nBuffers:           39148 kB\nCached:           992696 kB\nSwapCached:            0 kB\nActive:           461180 kB\nInactive:        1498012 kB\nActive(anon):       1480 kB\nInactive(anon):   944796 kB\nActive(file):     459700 kB\nInactive(file):   553216 kB\nUnevictable:        5596 kB\nMlocked:            5596 kB\nSwapTotal:        998396 kB\nSwapFree:         998396 kB\nZswap:                 0 kB\nZswapped:              0 kB\nDirty:               420 kB\nWriteback:             0 kB\nAnonPages:        904300 kB\nMapped:           364028 kB\nShmem:             13896 kB\nKReclaimable:      51904 kB\nSlab:              99736 kB\nSReclaimable:      51904 kB\nSUnreclaim:        47832 kB\nKernelStack:        6640 kB\nPageTables:        14184 kB\nSecPageTables:         0 kB\nNFS_Unstable:          0 kB\nBounce:                0 kB\nWritebackTmp:          0 kB\nCommitLimit:     3003140 kB\nCommitted_AS:    3826360 kB\nVmallocTotal:   34359738367 kB\nVmallocUsed:       29656 kB\nVmallocChunk:          0 kB\nPercpu:              652 kB\nHardwareCorrupted:     0 kB\nAnonHugePages:    337920 kB\nShmemHugePages:        0 kB\nShmemPmdMapped:        0 kB\nFileHugePages:         0 kB\nFilePmdMapped:         0 kB\nHugePages_Total:       0\nHugePages_Free:        0\nHugePages_Rsvd:        0\nHugePages_Surp:        0\nHugepagesize:       2048 kB\nHugetlb:               0 kB\nDirectMap4k:      143296 kB\nDirectMap2M:     4050944 kB"
+  },
+  {
+    "cmd": "sensors -s",
+    "response": "bash: line 1: sensors: command not found"
+  },
+  {
+    "cmd": "sensors -u",
+    "response": "bash: line 1: sensors: command not found"
+  },
+  {
+    "cmd": "sensors -v",
+    "response": "bash: line 1: sensors: command not found"
+  },
+  {
+    "cmd": "sensors -w",
+    "response": "bash: line 1: sensors: command not found"
+  },
+  {
+    "cmd": "sensors -w; uuidgen --name aaa",
+    "response": "bash: line 1: sensors: command not found\n\nuuidgen: --name requires --namespace argument\nTry 'uuidgen --help' for more information."
+  },
+  {
+    "cmd": "seq 1",
+    "response": "1"
+  },
+  {
+    "cmd": "seq 10",
+    "response": "1\n2\n3\n4\n5\n6\n7\n8\n9\n10"
+  },
+  {
+    "cmd": "seq 1 10",
+    "response": "1\n2\n3\n4\n5\n6\n7\n8\n9\n10"
+  },
+  {
+    "cmd": "sha224sum /etc/hosts",
+    "response": "a9b59b6f323ce9e5508b4f935c35bcc4084937d1235934c61104f27c  /etc/hosts"
+  },
+  {
+    "cmd": "sha384sum /etc/hosts",
+    "response": "24aeb94f19f70ebca9e259553bcd35cbe3d7567f20df8b141327233a148db6569ace275e78fd46014717d48ec61c1d67  /etc/hosts"
+  },
+  {
+    "cmd": "sha512sum /etc/hosts",
+    "response": "b695a91295293d57b3d359f4d6f39325fd937a0481830e1f979520bd192e29a0aa7858d497584823225af7f9dfdaa665ebe50481a4e0e97cf02f2e4bf1715029  /etc/hosts"
+  },
+  {
+    "cmd": "shasum /etc/hosts",
+    "response": "b98a783ddb7e7e0fbf451f0751674e99ec5057d1  /etc/hosts"
+  },
+  {
+    "cmd": "stat /etc/hosts",
+    "response": "File: /etc/hosts\n  Size: 210       \tBlocks: 8          IO Block: 4096   regular file\nDevice: 8,1\tInode: 783644      Links: 1\nAccess: (0644/-rw-r--r--)  Uid: (    0/    root)   Gid: (    0/    root)\nAccess: 2024-10-12 16:00:43.136000375 +0200\nModify: 2024-10-02 15:05:26.828580221 +0200\nChange: 2024-10-02 15:05:26.828580221 +0200\n Birth: 2024-10-02 15:05:24.616580135 +0200"
+  },
+  {
+    "cmd": "stat /etc/passwd",
+    "response": "File: /etc/passwd\n  Size: 2180      \tBlocks: 8          IO Block: 4096   regular file\nDevice: 8,1\tInode: 787872      Links: 1\nAccess: (0644/-rw-r--r--)  Uid: (    0/    root)   Gid: (    0/    root)\nAccess: 2024-10-12 16:00:35.860000091 +0200\nModify: 2024-10-02 19:52:26.367379372 +0200\nChange: 2024-10-02 19:52:26.375379460 +0200\n Birth: 2024-10-02 19:52:26.367379372 +0200"
+  },
+  {
+    "cmd": "strace -f ls",
+    "response": "execve(\"/usr/bin/ls\", [\"ls\"], 0x7ffcf8264278 /* 42 vars */) = 0\nbrk(NULL)                               = 0x5651bb643000\nmmap(NULL, 8192, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0) = 0x7f7614b5c000\naccess(\"/etc/ld.so.preload\", R_OK)      = -1 ENOENT (No such file or directory)\nopenat(AT_FDCWD, \"/etc/ld.so.cache\", O_RDONLY|O_CLOEXEC) = 3\nnewfstatat(3, \"\", {st_mode=S_IFREG|0644, st_size=72550, ...}, AT_EMPTY_PATH) = 0\nmmap(NULL, 72550, PROT_READ, MAP_PRIVATE, 3, 0) = 0x7f7614b4a000\nclose(3)                                = 0\nopenat(AT_FDCWD, \"/lib/x86_64-linux-gnu/libselinux.so.1\", O_RDONLY|O_CLOEXEC) = 3\nread(3, \"\\177ELF\\2\\1\\1\\0\\0\\0\\0\\0\\0\\0\\0\\0\\3\\0>\\0\\1\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\"..., 832) = 832\nnewfstatat(3, \"\", {st_mode=S_IFREG|0644, st_size=174312, ...}, AT_EMPTY_PATH) = 0\nmmap(NULL, 186064, PROT_READ, MAP_PRIVATE|MAP_DENYWRITE, 3, 0) = 0x7f7614b1c000\nmmap(0x7f7614b23000, 110592, PROT_READ|PROT_EXEC, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3, 0x7000) = 0x7f7614b23000\nmmap(0x7f7614b3e000, 32768, PROT_READ, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3, 0x22000) = 0x7f7614b3e000\nmmap(0x7f7614b46000, 8192, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3, 0x29000) = 0x7f7614b46000\nmmap(0x7f7614b48000, 5840, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_FIXED|MAP_ANONYMOUS, -1, 0) = 0x7f7614b48000\nclose(3)                                = 0\nopenat(AT_FDCWD, \"/lib/x86_64-linux-gnu/libc.so.6\", O_RDONLY|O_CLOEXEC) = 3\nread(3, \"\\177ELF\\2\\1\\1\\3\\0\\0\\0\\0\\0\\0\\0\\0\\3\\0>\\0\\1\\0\\0\\0\\20t\\2\\0\\0\\0\\0\\0\"..., 832) = 832\npread64(3, \"\\6\\0\\0\\0\\4\\0\\0\\0@\\0\\0\\0\\0\\0\\0\\0@\\0\\0\\0\\0\\0\\0\\0@\\0\\0\\0\\0\\0\\0\\0\"..., 784, 64) = 784\nnewfstatat(3, \"\", {st_mode=S_IFREG|0755, st_size=1922136, ...}, AT_EMPTY_PATH) = 0\npread64(3, \"\\6\\0\\0\\0\\4\\0\\0\\0@\\0\\0\\0\\0\\0\\0\\0@\\0\\0\\0\\0\\0\\0\\0@\\0\\0\\0\\0\\0\\0\\0\"..., 784, 64) = 784\nmmap(NULL, 1970000, PROT_READ, MAP_PRIVATE|MAP_DENYWRITE, 3, 0) = 0x7f761493b000\nmmap(0x7f7614961000, 1396736, PROT_READ|PROT_EXEC, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3, 0x26000) = 0x7f7614961000\nmmap(0x7f7614ab6000, 339968, PROT_READ, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3, 0x17b000) = 0x7f7614ab6000\nmmap(0x7f7614b09000, 24576, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3, 0x1ce000) = 0x7f7614b09000\nmmap(0x7f7614b0f000, 53072, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_FIXED|MAP_ANONYMOUS, -1, 0) = 0x7f7614b0f000\nclose(3)                                = 0\nopenat(AT_FDCWD, \"/lib/x86_64-linux-gnu/libpcre2-8.so.0\", O_RDONLY|O_CLOEXEC) = 3\nread(3, \"\\177ELF\\2\\1\\1\\0\\0\\0\\0\\0\\0\\0\\0\\0\\3\\0>\\0\\1\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\"..., 832) = 832\nnewfstatat(3, \"\", {st_mode=S_IFREG|0644, st_size=629384, ...}, AT_EMPTY_PATH) = 0\nmmap(NULL, 627592, PROT_READ, MAP_PRIVATE|MAP_DENYWRITE, 3, 0) = 0x7f76148a1000\nmmap(0x7f76148a3000, 438272, PROT_READ|PROT_EXEC, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3, 0x2000) = 0x7f76148a3000\nmmap(0x7f761490e000, 176128, PROT_READ, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3, 0x6d000) = 0x7f761490e000\nmmap(0x7f7614939000, 8192, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3, 0x98000) = 0x7f7614939000\nclose(3)                                = 0\nmmap(NULL, 12288, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0) = 0x7f761489e000\narch_prctl(ARCH_SET_FS, 0x7f761489e800) = 0\nset_tid_address(0x7f761489ead0)         = 4831\nset_robust_list(0x7f761489eae0, 24)     = 0\nrseq(0x7f761489f120, 0x20, 0, 0x53053053) = 0\nmprotect(0x7f7614b09000, 16384, PROT_READ) = 0\nmprotect(0x7f7614939000, 4096, PROT_READ) = 0\nmprotect(0x7f7614b46000, 4096, PROT_READ) = 0\nmprotect(0x5651b9b5f000, 4096, PROT_READ) = 0\nmprotect(0x7f7614b8e000, 8192, PROT_READ) = 0\nprlimit64(0, RLIMIT_STACK, NULL, {rlim_cur=8192*1024, rlim_max=RLIM64_INFINITY}) = 0\nmunmap(0x7f7614b4a000, 72550)           = 0\nstatfs(\"/sys/fs/selinux\", 0x7ffecaa439c0) = -1 ENOENT (No such file or directory)\nstatfs(\"/selinux\", 0x7ffecaa439c0)      = -1 ENOENT (No such file or directory)\ngetrandom(\"\\x6b\\x84\\x1d\\xe8\\xf3\\x77\\x86\\xeb\", 8, GRND_NONBLOCK) = 8\nbrk(NULL)                               = 0x5651bb643000\nbrk(0x5651bb664000)                     = 0x5651bb664000\nopenat(AT_FDCWD, \"/proc/filesystems\", O_RDONLY|O_CLOEXEC) = 3\nnewfstatat(3, \"\", {st_mode=S_IFREG|0444, st_size=0, ...}, AT_EMPTY_PATH) = 0\nread(3, \"nodev\\tsysfs\\nnodev\\ttmpfs\\nnodev\\tbd\"..., 1024) = 361\nread(3, \"\", 1024)                       = 0\nclose(3)                                = 0\naccess(\"/etc/selinux/config\", F_OK)     = -1 ENOENT (No such file or directory)\nopenat(AT_FDCWD, \"/usr/lib/locale/locale-archive\", O_RDONLY|O_CLOEXEC) = 3\nnewfstatat(3, \"\", {st_mode=S_IFREG|0644, st_size=3048928, ...}, AT_EMPTY_PATH) = 0\nmmap(NULL, 3048928, PROT_READ, MAP_PRIVATE, 3, 0) = 0x7f7614400000\nclose(3)                                = 0\nioctl(1, TCGETS, 0x7ffecaa43900)        = -1 ENOTTY (Inappropriate ioctl for device)\nopenat(AT_FDCWD, \".\", O_RDONLY|O_NONBLOCK|O_CLOEXEC|O_DIRECTORY) = 3\nnewfstatat(3, \"\", {st_mode=S_IFDIR|0775, st_size=4096, ...}, AT_EMPTY_PATH) = 0\ngetdents64(3, 0x5651bb649ce0 /* 23 entries */, 32768) = 768\ngetdents64(3, 0x5651bb649ce0 /* 0 entries */, 32768) = 0\nclose(3)                                = 0\nnewfstatat(1, \"\", {st_mode=S_IFIFO|0600, st_size=0, ...}, AT_EMPTY_PATH) = 0\nwrite(1, \"5\\ncert.pem\\ncmd\\ncommands-manual.t\"..., 1715\ncert.pem\ncmd\ncommands-manual.txt\ncommands.txt\nds.json\nindex.html\nindex.html.1\nkey.pem\nmanual-commands-output\nmanual-output\nmerge.sh\nmykey\nmykey.pub\noutput\npkgs-deps.txt\n) = 171\nclose(1)                                = 0\nclose(2)                                = 0\nexit_group(0)                           = ?\n+++ exited with 0 +++"
+  },
+  {
+    "cmd": "strace ls",
+    "response": "execve(\"/usr/bin/ls\", [\"ls\"], 0x7ffd6d6a1210 /* 42 vars */) = 0\nbrk(NULL)                               = 0x561182f2d000\nmmap(NULL, 8192, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0) = 0x7ffa49914000\naccess(\"/etc/ld.so.preload\", R_OK)      = -1 ENOENT (No such file or directory)\nopenat(AT_FDCWD, \"/etc/ld.so.cache\", O_RDONLY|O_CLOEXEC) = 3\nnewfstatat(3, \"\", {st_mode=S_IFREG|0644, st_size=72550, ...}, AT_EMPTY_PATH) = 0\nmmap(NULL, 72550, PROT_READ, MAP_PRIVATE, 3, 0) = 0x7ffa49902000\nclose(3)                                = 0\nopenat(AT_FDCWD, \"/lib/x86_64-linux-gnu/libselinux.so.1\", O_RDONLY|O_CLOEXEC) = 3\nread(3, \"\\177ELF\\2\\1\\1\\0\\0\\0\\0\\0\\0\\0\\0\\0\\3\\0>\\0\\1\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\"..., 832) = 832\nnewfstatat(3, \"\", {st_mode=S_IFREG|0644, st_size=174312, ...}, AT_EMPTY_PATH) = 0\nmmap(NULL, 186064, PROT_READ, MAP_PRIVATE|MAP_DENYWRITE, 3, 0) = 0x7ffa498d4000\nmmap(0x7ffa498db000, 110592, PROT_READ|PROT_EXEC, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3, 0x7000) = 0x7ffa498db000\nmmap(0x7ffa498f6000, 32768, PROT_READ, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3, 0x22000) = 0x7ffa498f6000\nmmap(0x7ffa498fe000, 8192, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3, 0x29000) = 0x7ffa498fe000\nmmap(0x7ffa49900000, 5840, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_FIXED|MAP_ANONYMOUS, -1, 0) = 0x7ffa49900000\nclose(3)                                = 0\nopenat(AT_FDCWD, \"/lib/x86_64-linux-gnu/libc.so.6\", O_RDONLY|O_CLOEXEC) = 3\nread(3, \"\\177ELF\\2\\1\\1\\3\\0\\0\\0\\0\\0\\0\\0\\0\\3\\0>\\0\\1\\0\\0\\0\\20t\\2\\0\\0\\0\\0\\0\"..., 832) = 832\npread64(3, \"\\6\\0\\0\\0\\4\\0\\0\\0@\\0\\0\\0\\0\\0\\0\\0@\\0\\0\\0\\0\\0\\0\\0@\\0\\0\\0\\0\\0\\0\\0\"..., 784, 64) = 784\nnewfstatat(3, \"\", {st_mode=S_IFREG|0755, st_size=1922136, ...}, AT_EMPTY_PATH) = 0\npread64(3, \"\\6\\0\\0\\0\\4\\0\\0\\0@\\0\\0\\0\\0\\0\\0\\0@\\0\\0\\0\\0\\0\\0\\0@\\0\\0\\0\\0\\0\\0\\0\"..., 784, 64) = 784\nmmap(NULL, 1970000, PROT_READ, MAP_PRIVATE|MAP_DENYWRITE, 3, 0) = 0x7ffa496f3000\nmmap(0x7ffa49719000, 1396736, PROT_READ|PROT_EXEC, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3, 0x26000) = 0x7ffa49719000\nmmap(0x7ffa4986e000, 339968, PROT_READ, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3, 0x17b000) = 0x7ffa4986e000\nmmap(0x7ffa498c1000, 24576, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3, 0x1ce000) = 0x7ffa498c1000\nmmap(0x7ffa498c7000, 53072, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_FIXED|MAP_ANONYMOUS, -1, 0) = 0x7ffa498c7000\nclose(3)                                = 0\nopenat(AT_FDCWD, \"/lib/x86_64-linux-gnu/libpcre2-8.so.0\", O_RDONLY|O_CLOEXEC) = 3\nread(3, \"\\177ELF\\2\\1\\1\\0\\0\\0\\0\\0\\0\\0\\0\\0\\3\\0>\\0\\1\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\"..., 832) = 832\nnewfstatat(3, \"\", {st_mode=S_IFREG|0644, st_size=629384, ...}, AT_EMPTY_PATH) = 0\nmmap(NULL, 627592, PROT_READ, MAP_PRIVATE|MAP_DENYWRITE, 3, 0) = 0x7ffa49659000\nmmap(0x7ffa4965b000, 438272, PROT_READ|PROT_EXEC, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3, 0x2000) = 0x7ffa4965b000\nmmap(0x7ffa496c6000, 176128, PROT_READ, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3, 0x6d000) = 0x7ffa496c6000\nmmap(0x7ffa496f1000, 8192, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3, 0x98000) = 0x7ffa496f1000\nclose(3)                                = 0\nmmap(NULL, 12288, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0) = 0x7ffa49656000\narch_prctl(ARCH_SET_FS, 0x7ffa49656800) = 0\nset_tid_address(0x7ffa49656ad0)         = 4827\nset_robust_list(0x7ffa49656ae0, 24)     = 0\nrseq(0x7ffa49657120, 0x20, 0, 0x53053053) = 0\nmprotect(0x7ffa498c1000, 16384, PROT_READ) = 0\nmprotect(0x7ffa496f1000, 4096, PROT_READ) = 0\nmprotect(0x7ffa498fe000, 4096, PROT_READ) = 0\nmprotect(0x561182070000, 4096, PROT_READ) = 0\nmprotect(0x7ffa49946000, 8192, PROT_READ) = 0\nprlimit64(0, RLIMIT_STACK, NULL, {rlim_cur=8192*1024, rlim_max=RLIM64_INFINITY}) = 0\nmunmap(0x7ffa49902000, 72550)           = 0\nstatfs(\"/sys/fs/selinux\", 0x7fffa8915500) = -1 ENOENT (No such file or directory)\nstatfs(\"/selinux\", 0x7fffa8915500)      = -1 ENOENT (No such file or directory)\ngetrandom(\"\\xe9\\x55\\xce\\x94\\x12\\xf0\\xd1\\x4e\", 8, GRND_NONBLOCK) = 8\nbrk(NULL)                               = 0x561182f2d000\nbrk(0x561182f4e000)                     = 0x561182f4e000\nopenat(AT_FDCWD, \"/proc/filesystems\", O_RDONLY|O_CLOEXEC) = 3\nnewfstatat(3, \"\", {st_mode=S_IFREG|0444, st_size=0, ...}, AT_EMPTY_PATH) = 0\nread(3, \"nodev\\tsysfs\\nnodev\\ttmpfs\\nnodev\\tbd\"..., 1024) = 361\nread(3, \"\", 1024)                       = 0\nclose(3)                                = 0\naccess(\"/etc/selinux/config\", F_OK)     = -1 ENOENT (No such file or directory)\nopenat(AT_FDCWD, \"/usr/lib/locale/locale-archive\", O_RDONLY|O_CLOEXEC) = 3\nnewfstatat(3, \"\", {st_mode=S_IFREG|0644, st_size=3048928, ...}, AT_EMPTY_PATH) = 0\nmmap(NULL, 3048928, PROT_READ, MAP_PRIVATE, 3, 0) = 0x7ffa49200000\nclose(3)                                = 0\nioctl(1, TCGETS, 0x7fffa8915440)        = -1 ENOTTY (Inappropriate ioctl for device)\nopenat(AT_FDCWD, \".\", O_RDONLY|O_NONBLOCK|O_CLOEXEC|O_DIRECTORY) = 3\nnewfstatat(3, \"\", {st_mode=S_IFDIR|0775, st_size=4096, ...}, AT_EMPTY_PATH) = 0\ngetdents64(3, 0x561182f33ce0 /* 23 entries */, 32768) = 768\ngetdents64(3, 0x561182f33ce0 /* 0 entries */, 32768) = 0\nclose(3)                                = 0\nnewfstatat(1, \"\", {st_mode=S_IFIFO|0600, st_size=0, ...}, AT_EMPTY_PATH) = 0\nwrite(1, \"5\\ncert.pem\\ncmd\\ncommands-manual.t\"..., 1715\ncert.pem\ncmd\ncommands-manual.txt\ncommands.txt\nds.json\nindex.html\nindex.html.1\nkey.pem\nmanual-commands-output\nmanual-output\nmerge.sh\nmykey\nmykey.pub\noutput\npkgs-deps.txt\n) = 171\nclose(1)                                = 0\nclose(2)                                = 0\nexit_group(0)                           = ?\n+++ exited with 0 +++"
+  },
+  {
+    "cmd": "sum /etc/hosts",
+    "response": "32490     1 /etc/hosts"
+  },
+  {
+    "cmd": "tempfile --directory=/var/tmp --prefix=myapp_",
+    "response": "WARNING: tempfile is deprecated; consider using mktemp instead.\n/var/tmp/myapp_jQQm2l"
+  },
+  {
+    "cmd": "tempfile -d /tmp",
+    "response": "WARNING: tempfile is deprecated; consider using mktemp instead.\n/tmp/file2PiKok"
+  },
+  {
+    "cmd": "tempfile -d /tmp -p log_ -m 0640 -s .tmp",
+    "response": "WARNING: tempfile is deprecated; consider using mktemp instead.\n/tmp/log_J9kbwI.tmp"
+  },
+  {
+    "cmd": "tempfile -m 0600",
+    "response": "WARNING: tempfile is deprecated; consider using mktemp instead.\n/tmp/file51xpqp"
+  },
+  {
+    "cmd": "tempfile -m 0600; tracepath 8.8.8.8",
+    "response": "WARNING: tempfile is deprecated; consider using mktemp instead.\n/tmp/file51xpqp\n\nbash: line 1: tracepath: command not found"
+  },
+  {
+    "cmd": "tempfile -n 5",
+    "response": "WARNING: tempfile is deprecated; consider using mktemp instead.\nopen: File exists"
+  },
+  {
+    "cmd": "tempfile -p prefix_",
+    "response": "WARNING: tempfile is deprecated; consider using mktemp instead.\n/tmp/prefix_1V0rdD"
+  },
+  {
+    "cmd": "tempfile -p test_ -s .txt -m 0644",
+    "response": "WARNING: tempfile is deprecated; consider using mktemp instead.\n/tmp/test_X4c0gZ.txt"
+  },
+  {
+    "cmd": "tempfile --quiet",
+    "response": "WARNING: tempfile is deprecated; consider using mktemp instead.\ntempfile: unrecognized option '--quiet'\nTry `tempfile --help' for more information."
+  },
+  {
+    "cmd": "tempfile -s .suffix",
+    "response": "WARNING: tempfile is deprecated; consider using mktemp instead.\n/tmp/file4CD2eY.suffix"
+  },
+  {
+    "cmd": "time",
+    "response": "real\t0m0.000s\nuser\t0m0.000s\nsys\t0m0.000s"
+  },
+  {
+    "cmd": "time -p",
+    "response": "real 0.00\nuser 0.00\nsys 0.00"
+  },
+  {
+    "cmd": "ubuntu-security-status",
+    "response": "bash: line 1: ubuntu-security-status: command not found"
+  },
+  {
+    "cmd": "ubuntu-security-status; getconf PAGE_SIZE",
+    "response": "bash: line 1: ubuntu-security-status: command not found\n\n4096"
+  },
+  {
+    "cmd": "uname",
+    "response": "Linux"
+  },
+  {
+    "cmd": "uname -a",
+    "response": "Linux elf 6.1.0-25-amd64 #1 SMP PREEMPT_DYNAMIC Debian 6.1.106-3 (2024-08-26) x86_64 GNU/Linux"
+  },
+  {
+    "cmd": "uname -i",
+    "response": "unknown"
+  },
+  {
+    "cmd": "uname -m",
+    "response": "x86_64"
+  },
+  {
+    "cmd": "uname -n",
+    "response": "elf"
+  },
+  {
+    "cmd": "uname -n; dig google.com",
+    "response": "elf\n\n\n; <<>> DiG 9.18.28-1~deb12u2-Debian <<>> google.com\n;; global options: +cmd\n;; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 59347\n;; flags: qr rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 512\n;; QUESTION SECTION:\n;google.com.\t\t\tIN\tA\n\n;; ANSWER SECTION:\ngoogle.com.\t\t178\tIN\tA\t142.251.36.14\n\n;; Query time: 20 msec\n;; SERVER: 89.101.251.229#53(89.101.251.229) (UDP)\n;; WHEN: Sat Oct 12 16:15:58 CEST 2024\n;; MSG SIZE  rcvd: 55"
+  },
+  {
+    "cmd": "uname -o",
+    "response": "GNU/Linux"
+  },
+  {
+    "cmd": "uname -p",
+    "response": "unknown"
+  },
+  {
+    "cmd": "uname -r",
+    "response": "6.1.0-25-amd64"
+  },
+  {
+    "cmd": "uname -s",
+    "response": "Linux"
+  },
+  {
+    "cmd": "uname -v",
+    "response": "#1 SMP PREEMPT_DYNAMIC Debian 6.1.106-3 (2024-08-26)"
+  },
+  {
+    "cmd": "uptime",
+    "response": "16:17:35 up 17 min,  2 users,  load average: 0.18, 0.13, 0.15"
+  },
+  {
+    "cmd": "uptime -p",
+    "response": "up 17 minutes"
+  },
+  {
+    "cmd": "uptime -s",
+    "response": "2024-10-12 16:00:35"
+  }
+]

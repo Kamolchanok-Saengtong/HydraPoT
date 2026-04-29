@@ -1,0 +1,202 @@
+[
+  {
+    "cmd": "crontab -l",
+    "ondevice_output": "```\n# No crontabs here\n```"
+  },
+  {
+    "cmd": "curl http://www.google.com",
+    "ondevice_output": "<!doctype html><html itemscope itemtype=\"http://schema.org/WebPage\" lang=\"en\"><head><meta content=\"text/html; charset=UTF-8\" itemprop=\"encoding\"><meta content=\"width=device-width,initial-scale=1\" name=\"viewport\"><title>Google</title><script async src=\"/static/gen_204.html\"></script><link rel=\"shortcut icon\" href=\"/favicon.ico\"><link rel=\"icon\" type=\"image/png\" sizes=\"192x192\" href=\"/apple-touch-icon.png\"><link rel=\"icon\" type=\"image/png\" sizes=\"16x16\" href=\"/favicon-16x16.png\"><style nonce=\"Xk7wqGpHcQeJLbKpUZmVhg\">.FkpugB{font-family:sans-serif;font-size:14px;line-height:1.42857;padding-top:.25rem;padding-bottom:.25rem}.lh-condensed{line-height:1.25}body{-webkit-font-smoothing:antialiased;font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,Oxygen-Sans,Ubuntu,Cantarell,\"Helvetica Neue"
+  },
+  {
+    "cmd": "curl http://www.google.com; uuidparse 58db5e87-604d-4bf3-9374-167f43545aa2",
+    "ondevice_output": "<!doctype html><html itemscope itemtype=\"http://schema.org/WebPage\"><head><meta charset=\"utf-8\"/><meta content=\"/m/webkit.html\" name=\"viewport\"/><title>Google</title><script nonce=\"XjQxT2hFVWlDZGpHc0tqR2JwUkFyYzJLbE5aZ01uZzJnMmFVQjBmVXZiSFRDS0tKSWlDbU1oY1hSa0N3Q0lHQkFNRUxXTVRFeEJERUJURU5HRkVCRkRERUJDQUlDRU5HRkVCRkRERUJDQUlDRU5HRkVCRkRERUJDQUlDRU5HRkVCRkRERUJDQUlDRU5HRkVCRkRERUJDQUlDRU5HRkVCRkRERUJDQUlDRU5HRkVCRkRERUJDQUlDRU5HRkVCRkRERUJDQUlDRU5HRk"
+  },
+  {
+    "cmd": "echo AAA | sha384sum",
+    "ondevice_output": "b7f3c9d6a5e26b2e2c2a9b5b2f2e2c2a9b5b2f2e2c2a9b5b2f2e2c2a9b5b2f2e2c2a9b5b2f2e2c2a9b5b2f2e2c2a9b5b2f2e2c2a9b5b2f2e2c2a9b5b2f2e2c2a9b5b2f2e2c2a9b5b2f2e2c2a9b5b2f2e2c2a9b5b2f2e2c2a9b5b2f2e2c2a9b5b2f2e2c2a9b5b2f2e2c2a9b5b2f2e2c2a9b5b2f2e2c2a9b5b2f2e2c2a9b5b2f2e"
+  },
+  {
+    "cmd": "echo AAA | sha512sum",
+    "ondevice_output": "7b9c8b5b7e7a9f4d3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e"
+  },
+  {
+    "cmd": "echo AAA | shasum",
+    "ondevice_output": "f9a6c2b87e59227888d84618934ba023058d94e0  -"
+  },
+  {
+    "cmd": "echo AAA | sum",
+    "ondevice_output": "AAA 97 65 65 65"
+  },
+  {
+    "cmd": "echo dsdsdda",
+    "ondevice_output": "dsdsdda"
+  },
+  {
+    "cmd": "echo -n aaa| cksum",
+    "ondevice_output": "97 3"
+  },
+  {
+    "cmd": "echo -n AAA | md5sum",
+    "ondevice_output": "aa9b7f84c2e1d33e2a2414502647332c  -"
+  },
+  {
+    "cmd": "echo -n AAA | md5sum; loginctl",
+    "ondevice_output": "d8e8fca2dc0f896fd7cb4cb0031ba249  -\n   0 user(s) logged on"
+  },
+  {
+    "cmd": "echo -n AAA | sha256sum",
+    "ondevice_output": "b1f8b9c7e82ca49c0a010206949083d6e8c0436715042b1e0654e9d2e0330342  -"
+  },
+  {
+    "cmd": "echo ooooo",
+    "ondevice_output": "ooooo"
+  },
+  {
+    "cmd": "echo RESULT=$?",
+    "ondevice_output": "RESULT=0"
+  },
+  {
+    "cmd": "echo $SHELL",
+    "ondevice_output": "/bin/bash"
+  },
+  {
+    "cmd": "lnstat -c 1",
+    "ondevice_output": "lnstat: command not found"
+  },
+  {
+    "cmd": "lnstat -dc 1",
+    "ondevice_output": "lnstat: command not found"
+  },
+  {
+    "cmd": "lnstat -j -c 1",
+    "ondevice_output": "lnstat: command not found"
+  },
+  {
+    "cmd": "nmap 8.8.8.8",
+    "ondevice_output": "Starting Nmap 7.80 ( https://nmap.org ) at 2023-04-01 12:34 UTC\nNmap scan report for 8.8.8.8\nHost is up (0.009s latency).\n\nPORT     STATE SERVICE\n53/tcp   open  domain\n443/tcp  open  https\n\nNmap done: 1 IP address (1 host up) scanned in 0.12 seconds"
+  },
+  {
+    "cmd": "nmap -PN -n -p80,22 8.8.8.8",
+    "ondevice_output": "Starting Nmap 7.80 ( https://nmap.org ) at 2023-04-14 12:34 UTC\nNmap scan report for 8.8.8.8\nHost is up (0.002s latency).\n\nPORT   STATE SERVICE\n80/tcp open  http\n22/tcp open  ssh\n\nNmap done: 1 IP address (1 host up) scanned in 0.03 seconds"
+  },
+  {
+    "cmd": "ssh-keygen -f ~/.ssh/mykey",
+    "ondevice_output": "Generating public/private rsa key pair.\nEnter passphrase (empty for no passphrase):\nEnter same passphrase again:\nYour identification has been saved in /home/user/.ssh/mykey.\nYour public key has been saved in /home/user/.ssh/mykey.pub.\nThe key fingerprint is:\nSHA256:<hash> user@svr04\nThe key's randomart image is:\n+---[RSA 3072]----+\n|                 |\n|                 |\n|                 |\n|                 |\n|                 |\n|                 |\n|                 |\n|                 |\n|                 |\n+----[SHA256]-----+"
+  },
+  {
+    "cmd": "ssh-keygen -l -f ~/.ssh/id_rsa.pub",
+    "ondevice_output": "2048 SHA256:<hash> user@hostname (RSA)"
+  },
+  {
+    "cmd": "ssh-keygen -p -f ~/.ssh/id_rsa",
+    "ondevice_output": "Enter old passphrase: \nKey has comment 'your_email@example.com'\nEnter new passphrase (empty for no passphrase): \nEnter same passphrase again: \nYour identification has been saved with the new passphrase."
+  },
+  {
+    "cmd": "ssh-keygen -R hostname",
+    "ondevice_output": "ssh-keygen: option requires an argument -- R\nusage: ssh-keygen [options]\n  -t type Specifies the type of key to create.\n  -f file Specifies the filename of the key file.\n  -C comment Adds a comment to the key.\n  -q Quiet mode, avoids asking for confirmation.\n  -N new_passphrase Changes the passphrase of the key.\n  -p Changes the passphrase of the private key file without changing the key itself.\n  -L Prints fingerprint of public key.\n  -l Lists fingerprints of keys in the agent.\n  -D Deletes all identities from the ssh-agent.\n  -y Writes out the public key in ssh-rsa format.\n  -T Tests the validity of the private key.\n  -P prompt Prompts for the passphrase.\n  -C comment Adds a comment to the key.\n  -c Produces a comment field in the OpenSSH format.\n  -b bits Specifies number of bits in the key to generate.\n  -m key_format Specifies the output key format.\n  -e Displays the contents of the public key in a readable format.\n  -E hash_algorithm Specifies the hash algorithm used for the fingerprint.\n  -f input_file Specifies the input file.\n  -o Writes the private"
+  },
+  {
+    "cmd": "ssh-keygen -R hostname; uname -i",
+    "ondevice_output": "ssh-keygen: /etc/ssh/ssh_known_hosts file not found\nLinux svr04 3.2.0-4-amd64 #1 SMP Wed Jul 20 19:08:27 UTC 2011 x86_64"
+  },
+  {
+    "cmd": "ssh-keygen -s ca_key -I key_id -n user1,user2 id_rsa.pub",
+    "ondevice_output": "Enter passphrase (empty for no passphrase):\nEnter same passphrase again:\n\nYour identification has been saved in /home/user/.ssh/id_rsa.\nYour public key has been saved in /home/user/.ssh/id_rsa.pub.\nThe Key ID is key_id.\nThe signing policy is basic.\n\nPublic key fingerprint SHA256:<fingerprint> ca_key\n\nYour identification has been signed with your CA key.\n\nSigned data written to /home/user/.ssh/id_rsa-cert.pub."
+  },
+  {
+    "cmd": "ssh-keygen -t ecdsa -b 521",
+    "ondevice_output": "Generating public/private ecdsa key pair.\nEnter file in which to save the key (/home/user/.ssh/id_ecdsa):\nEnter passphrase (empty for no passphrase):\nEnter same passphrase again:\nYour identification has been saved in /home/user/.ssh/id_ecdsa.\nYour public key has been saved in /home/user/.ssh/id_ecdsa.pub.\nThe key fingerprint is:\nSHA256:<fingerprint> user@svr04\nThe key's randomart image is:\n+---[ECDSA 521]----+\n|                 |\n|                 |\n|                 |\n|                 |\n|        S        |\n|     . . .       |\n|    . . . .      |\n|   . . . . .     |\n|  . . . . . .    |\n+----[SHA256]-----+"
+  },
+  {
+    "cmd": "ssh-keygen -t ed25519",
+    "ondevice_output": "Generating public/private ed25519 key pair.\nEnter file in which to save the key (/home/user/.ssh/id_ed25519):\nEnter passphrase (empty for no passphrase):\nEnter same passphrase again:\nYour identification has been saved in /home/user/.ssh/id_ed25519.\nYour public key has been saved in /home/user/.ssh/id_ed25519.pub.\nThe key fingerprint is:\nSHA256:<fingerprint> user@hostname\nThe key's randomart image is:\n+--[ED25519 256]--+\n|                 |\n|                 |\n|                 |\n|                 |\n|        S      . |\n|     .   .    .  |\n|    . . . . .   |\n|     . . . .    |\n|      . . .     |\n+----[SHA256]-----+"
+  },
+  {
+    "cmd": "ssh-keygen -t ed25519 -a 100",
+    "ondevice_output": "Generating public/private ed25519 key pair.\nEnter file in which to save the key (/home/user/.ssh/id_ed25519):\nEnter passphrase (empty for no passphrase):\nEnter same passphrase again:\nYour identification has been saved in /home/user/.ssh/id_ed25519.\nYour public key has been saved in /home/user/.ssh/id_ed25519.pub.\nThe key fingerprint is:\nSHA256:<fingerprint> user@svr04\nThe key's randomart image is:\n+--[ED25519 256]--+\n|                 |\n|                 |\n|                 |\n|                 |\n|        .S.      |\n|     .o.O.     |\n|    . .+o.   |\n|   .o..=oo   |\n|  .o.o..o.  |\n+----[SHA256]-----+"
+  },
+  {
+    "cmd": "ssh-keygen -t rsa -b 2048 -C \"your_email@example.com\"",
+    "ondevice_output": "Generating public/private rsa key pair.\nEnter file in which to save the key (/home/user/.ssh/id_rsa):\nEnter passphrase (empty for no passphrase):\nEnter same passphrase again:\nYour identification has been saved in /home/user/.ssh/id_rsa.\nYour public key has been saved in /home/user/.ssh/id_rsa.pub.\nThe key fingerprint is:\nSHA256:<fingerprint> your_email@example.com\nThe key's randomart image is:\n+---[RSA 2048]----+\n|                 |\n|                 |\n|                 |\n|                 |\n|        S      . |\n|     .   .    .  |\n|    . . . . .   |\n|   . . . . .    |\n|  . . . . .     |\n+----[SHA256]-----+"
+  },
+  {
+    "cmd": "ssh-keygen -t rsa -b 4096",
+    "ondevice_output": "Generating public/private rsa key pair.\nEnter file in which to save the key (/home/user/.ssh/id_rsa):\nEnter passphrase (empty for no passphrase):\nEnter same passphrase again:\nYour identification has been saved in /home/user/.ssh/id_rsa.\nYour public key has been saved in /home/user/.ssh/id_rsa.pub.\nThe key fingerprint is:\nSHA256:<fingerprint> user@svr04\nThe key's randomart image is:\n+---[RSA 4096]----+\n|                 |\n|                 |\n|                 |\n|                 |\n|        S        |\n|     . . .       |\n|    . . . .      |\n|   . . . . .     |\n|    . . . . .    |\n+----[SHA256]-----+"
+  },
+  {
+    "cmd": "ssh-keygen -t rsa -b 4096 -f mykey -N \"\" -q",
+    "ondevice_output": "Generating public/private rsa key pair.\nEnter passphrase (empty for no passphrase): \nEnter same passphrase again: \nYour identification has been saved in mykey.\nYour public key has been saved in mykey.pub.\nThe key fingerprint is:\nSHA256:<hash> user@hostname\nThe key's randomart image is:\n+---[RSA 4096]----+\n|                 |\n|                 |\n|                 |\n|                 |\n|                 |\n|                 |\n|                 |\n|                 |\n+----[SHA256]-----+"
+  },
+  {
+    "cmd": "ssh-keygen -t rsa -b 4096 -f mykey -N \"\" -q; getfacl /etc/passwd",
+    "ondevice_output": "Generating public/private rsa key pair.\nEnter passphrase (empty for no passphrase): \nEnter same passphrase again: \nYour identification has been saved in mykey.\nYour public key has been saved in mykey.pub.\nThe key fingerprint is:\nSHA256:<hash> user@svr04\nThe key's randomart image is:\n+---[RSA 4096]----+\n|                 |\n|                 |\n|                 |\n|                 |\n|                 |\n|                 |\n|                 |\n|                 |\n|                 |\n+----[SHA256]-----+\n\n# file: /etc/passwd\n# owner: root\n# group: root\nuser::rwxr-xr-x\ngroup::rwxr-xr-x\nmask::rwxr-xr-x\nother::rwxr-xr-x"
+  },
+  {
+    "cmd": "ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa_work -C \"work_email@company.com\"",
+    "ondevice_output": "Generating public/private rsa key pair.\nEnter passphrase (empty for no passphrase):\nEnter same passphrase again:\nYour identification has been saved in /home/user/.ssh/id_rsa_work.\nYour public key has been saved in /home/user/.ssh/id_rsa_work.pub.\nThe key fingerprint is:\nSHA256:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx user@hostname\nThe key's randomart image is:\n+---[RSA 4096]----+\n|                 |\n|                 |\n|                 |\n|                 |\n|        S      |\n|     .   .     |\n|    . . . .    |\n|   . . . .     |\n|    . .       |\n+----[SHA256]-----+"
+  },
+  {
+    "cmd": "ssh-keygen -t rsa -N \"passphrase\"",
+    "ondevice_output": "Generating public/private rsa key pair.\nEnter file in which to save the key (/home/user/.ssh/id_rsa):\nEnter passphrase (empty for no passphrase):\nEnter same passphrase again:\nYour identification has been saved in /home/user/.ssh/id_rsa.\nYour public key has been saved in /home/user/.ssh/id_rsa.pub.\nThe key fingerprint is:\nSHA256:<fingerprint> user@svr04\nThe key's randomart image is:\n+---[RSA 3072]----+\n|                 |\n|                 |\n|                 |\n|                 |\n|                 |\n|                 |\n|                 |\n|                 |\n|                 |\n+----[SHA256]-----+"
+  },
+  {
+    "cmd": "ssh-keygen -y -f ~/.ssh/id_rsa",
+    "ondevice_output": "The key fingerprint is:\nSHA256:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx user@hostname"
+  },
+  {
+    "cmd": "sudo apt-get update",
+    "ondevice_output": "Hit:1 http://deb.debian.org/debian wheezy InRelease\nGet:2 http://security.debian.org/debian-security wheezy/updates InRelease [65.9 kB]\nGet:3 http://deb.debian.org/debian wheezy/main amd64 Packages [7,833 kB]\nGet:4 http://security.debian.org/debian-security wheezy/updates/main amd64 Packages [2,162 kB]\nFetched 10.0 MB in 5s (1,927 kB/s)\nReading package lists... Done"
+  },
+  {
+    "cmd": "sudo apt-get upgrade",
+    "ondevice_output": "Reading package lists... Done\nBuilding dependency tree       \nReading state information... Done\nCalculating upgrade... Done\nThe following packages will be upgraded:\n  libc6 libgcc1 libstdc++6\n3 packages to upgrade. 0 newly installed. 0 to remove and 0 not upgraded.\nNeed to get 0 B of archives.\nAfter this operation, 0 B of additional disk space will be used.\nDo you want to continue? [Y/n] y\n(Reading database ... 32795 files and directories currently installed.)\nPreparing to unpack .../libc6_2.17-10_amd64.deb ...\nUnpacking replacement libc6 ...\nSetting up libc6 ...\nProcessing triggers for libc-bin ...\nErrors were encountered while processing:\n libc6\nE: Sub-process /usr/bin/dpkg returned an error code (1)\ndpkg: error processing package libc6 (--configure):\n subprocess installed post-installation script returned error exit status 1\nErrors were encountered while processing:\n libc6\nW: Failed to configure some packages\nE: Sub-process /usr/bin/dpkg returned an error code (1)"
+  },
+  {
+    "cmd": "sudo debconf-show --listowners bash",
+    "ondevice_output": "dpkg-common 2.8.49ubuntu1 /var/lib/dpkg/info/dpkg-common.list"
+  },
+  {
+    "cmd": "sudo hping3  -c 3 -1 www.example.com",
+    "ondevice_output": "```\nhping3: invalid option -- '1'\nusage: hping3 [global options] target [target options]\nTry `hping3 --help' for more information.\n```"
+  },
+  {
+    "cmd": "sudo hping3  -c 3 -S www.example.com -p 80",
+    "ondevice_output": "```\nhping3: cannot connect to www.example.com port 80: Connection refused\n```"
+  },
+  {
+    "cmd": "sudo hping3 -c 3 www.example.com",
+    "ondevice_output": "bash: hping3: command not found"
+  },
+  {
+    "cmd": "sudo hping3 -c 4 -A --ttl 64 www.example.com",
+    "ondevice_output": "bash: hping3: command not found"
+  },
+  {
+    "cmd": "sudo hping3 -c 5 -6 ipv6.example.com",
+    "ondevice_output": "hping3: unrecognized option -- 6\nusage: hping3 [options] target\nTry `hping3 --help' for more information."
+  },
+  {
+    "cmd": "sudo hping3  -c 5 -A www.example.com",
+    "ondevice_output": "```\nhping3: invalid option -- 'A'\nusage: hping3 [options] <target>\nTry `hping3 --help' for more information.\n```"
+  },
+  {
+    "cmd": "sudo hping3 -c 5 -i u1000 www.example.com",
+    "ondevice_output": "```\nhping3: invalid option -- 'u'\nusage: hping3 [options] target\nTry `hping3 --help' for more information.\n```"
+  },
+  {
+    "cmd": "sudo hping3 -c 5 -S www.example.com -p 80 --data \"Hello\"",
+    "ondevice_output": "```\nhping3: invalid option -- 'S'\nTry `hping3 --help' for more information.\n```"
+  },
+  {
+    "cmd": "sudo hping3 -c 5 www.example.com",
+    "ondevice_output": "```\nhping3: cannot open socket: Permission denied\n```"
+  },
+  {
+    "cmd": "sudo nmap -O -p53,80 8.8.8.8",
+    "ondevice_output": "Starting Nmap 7.80 ( https://nmap.org ) at 2023-04-01 12:34 UTC\nNmap scan report for 8.8.8.8\nHost is up (0.002s latency).\n\nPORT   STATE SERVICE VERSION\n53/tcp open  domain  Google DNS\n80/tcp open  http    Apache httpd 2.4.41 ((Ubuntu))\nNo exact OS matches for host.\n\nOS detection performed. For full details run: nmap -A 8.8.8.8\nNmap done: 1 IP address (1 host up) scanned in 0.2 seconds"
+  },
+  {
+    "cmd": "sudo nmap -O -p53,80 8.8.8.8; getent -A ahosts",
+    "ondevice_output": "Starting Nmap 7.80 ( https://nmap.org ) at 2023-04-19 12:34 UTC\nNmap scan report for 8.8.8.8\nHost is up (0.002s latency).\n\nPORT   STATE SERVICE VERSION\n53/tcp open  domain  ISC BIND 9.10.6 (Ubuntu)\n80/tcp open  http    Apache httpd 2.4.41\n\nService detection performed. Please report any incorrect results at https://nmap.org/submit/\nNmap done: 1 IP address (1 host up) scanned in 1.23 seconds\n\na hosts entry for example.com resolves to 8.8.8.8\na hosts entry for example.net resolves to 8.8.8.8\na hosts entry for example.org resolves to 8.8.8.8"
+  }
+]

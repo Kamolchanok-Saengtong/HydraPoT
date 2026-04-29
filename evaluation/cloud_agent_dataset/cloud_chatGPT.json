@@ -1,0 +1,2093 @@
+[
+  {
+
+    "cmd": "crontab -l",
+
+    "response": "no crontab for user"
+
+  },
+
+  {
+
+    "cmd": "curl http://www.google.com",
+
+    "response": "<!doctype html><html><head><title>Google</title></head><body>Google Homepage</body></html>"
+
+  },
+
+  {
+
+    "cmd": "curl http://www.google.com; uuidparse 58db5e87-604d-4bf3-9374-167f43545aa2",
+
+    "response": "<!doctype html><html><head><title>Google</title></head><body>Google Homepage</body></html>\nbash: uuidparse: command not found"
+
+  },
+
+  {
+
+    "cmd": "echo AAA | sha384sum",
+
+    "response": "3d2e1c3a5b6e0a6d5b3e7f1c0e7d2c9e0f1e4c5d6b7a8f9e0d1c2b3a4e5f6a7b  -"
+
+  },
+
+  {
+
+    "cmd": "echo AAA | sha512sum",
+
+    "response": "b7f783baed8297f0db0d9e9b0f3a3d4a5c6b7e8f9d0c1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6  -"
+
+  },
+
+  {
+
+    "cmd": "echo AAA | shasum",
+
+    "response": "e1faffb3e614e6c2fba74296962386b7f5e9b2c1  -"
+
+  },
+
+  {
+
+    "cmd": "echo AAA | sum",
+
+    "response": "58236     1"
+
+  },
+
+  {
+
+    "cmd": "echo dsdsdda",
+
+    "response": "dsdsdda"
+
+  },
+
+  {
+
+    "cmd": "echo -n aaa| cksum",
+
+    "response": "2478132201 3"
+
+  },
+
+  {
+
+    "cmd": "echo -n AAA | md5sum",
+
+    "response": "e1faffb3e614e6c2fba74296962386b7  -"
+
+  },
+
+  {
+
+    "cmd": "echo -n AAA | md5sum; loginctl",
+
+    "response": "e1faffb3e614e6c2fba74296962386b7  -\nSESSION  UID USER SEAT  TTY\n     1 1000 user seat0 tty1"
+
+  },
+
+  {
+
+    "cmd": "echo -n AAA | sha256sum",
+
+    "response": "cb1ad2119d8fafb69566510ee712661f9f14b833e7e7d1c2a3b4c5d6e7f8a9b0  -"
+
+  },
+
+  {
+
+    "cmd": "echo ooooo",
+
+    "response": "ooooo"
+
+  },
+
+  {
+
+    "cmd": "echo RESULT=$?",
+
+    "response": "RESULT=0"
+
+  },
+
+  {
+
+    "cmd": "echo $SHELL",
+
+    "response": "/bin/bash"
+
+  },
+
+  {
+
+    "cmd": "lnstat -c 1",
+
+    "response": "lnstat: command not found"
+
+  },
+
+  {
+
+    "cmd": "lnstat -dc 1",
+
+    "response": "lnstat: command not found"
+
+  },
+
+  {
+
+    "cmd": "lnstat -j -c 1",
+
+    "response": "lnstat: command not found"
+
+  },
+
+  {
+
+    "cmd": "nmap 8.8.8.8",
+
+    "response": "Starting Nmap 7.80 ( https://nmap.org )\nNmap scan report for 8.8.8.8\nPORT     STATE SERVICE\n53/tcp   open  domain\n443/tcp  open  https\n\nNmap done: 1 IP address (1 host up) scanned in 1.45 seconds"
+
+  },
+
+  {
+
+    "cmd": "nmap -PN -n -p80,22 8.8.8.8",
+
+    "response": "Starting Nmap 7.80 ( https://nmap.org )\nNmap scan report for 8.8.8.8\nPORT   STATE  SERVICE\n22/tcp closed ssh\n80/tcp open   http\n\nNmap done: 1 IP address (1 host up) scanned in 1.21 seconds"
+
+  },
+
+  {
+
+    "cmd": "ssh-keygen -f ~/.ssh/mykey",
+
+    "response": "Generating public/private rsa key pair.\nEnter passphrase (empty for no passphrase):"
+
+  },
+
+  {
+
+    "cmd": "ssh-keygen -l -f ~/.ssh/id_rsa.pub",
+
+    "response": "2048 SHA256:abc123example user@host (RSA)"
+
+  },
+
+  {
+
+    "cmd": "ssh-keygen -p -f ~/.ssh/id_rsa",
+
+    "response": "Enter old passphrase:"
+
+  },
+
+  {
+
+    "cmd": "ssh-keygen -R hostname",
+
+    "response": "# Host hostname found: line 1\n/home/user/.ssh/known_hosts updated."
+
+  },
+
+  {
+
+    "cmd": "ssh-keygen -R hostname; uname -i",
+
+    "response": "# Host hostname found: line 1\n/home/user/.ssh/known_hosts updated.\nx86_64"
+
+  },
+
+  {
+
+    "cmd": "ssh-keygen -s ca_key -I key_id -n user1,user2 id_rsa.pub",
+
+    "response": "Signed user key id_rsa-cert.pub: id \"key_id\" serial 0 for user1,user2"
+
+  },
+
+  {
+
+    "cmd": "ssh-keygen -t ecdsa -b 521",
+
+    "response": "Generating public/private ecdsa key pair.\nEnter file in which to save the key (/home/user/.ssh/id_ecdsa):"
+
+  },
+
+  {
+
+    "cmd": "ssh-keygen -t ed25519",
+
+    "response": "Generating public/private ed25519 key pair.\nEnter file in which to save the key (/home/user/.ssh/id_ed25519):"
+
+  },
+
+  {
+
+    "cmd": "ssh-keygen -t ed25519 -a 100",
+
+    "response": "Generating public/private ed25519 key pair.\nEnter file in which to save the key (/home/user/.ssh/id_ed25519):"
+
+  },
+
+  {
+
+    "cmd": "ssh-keygen -t rsa -b 2048 -C \"your_email@example.com\"",
+
+    "response": "Generating public/private rsa key pair.\nEnter file in which to save the key (/home/user/.ssh/id_rsa):"
+
+  },
+
+  {
+
+    "cmd": "ssh-keygen -t rsa -b 4096",
+
+    "response": "Generating public/private rsa key pair.\nEnter file in which to save the key (/home/user/.ssh/id_rsa):"
+
+  },
+
+  {
+
+    "cmd": "ssh-keygen -t rsa -b 4096 -f mykey -N \"\" -q",
+
+    "response": ""
+
+  },
+
+  {
+
+    "cmd": "ssh-keygen -t rsa -b 4096 -f mykey -N \"\" -q; getfacl /etc/passwd",
+
+    "response": "# file: etc/passwd\n# owner: root\n# group: root\nuser::rw-\ngroup::r--\nother::r--"
+
+  },
+
+  {
+
+    "cmd": "ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa_work -C \"work_email@company.com\"",
+
+    "response": "Generating public/private rsa key pair.\nEnter passphrase (empty for no passphrase):"
+
+  },
+
+  {
+
+    "cmd": "ssh-keygen -t rsa -N \"passphrase\"",
+
+    "response": "Generating public/private rsa key pair.\nEnter file in which to save the key (/home/user/.ssh/id_rsa):"
+
+  },
+
+  {
+
+    "cmd": "ssh-keygen -y -f ~/.ssh/id_rsa",
+
+    "response": "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDexamplekey user@host"
+
+  },
+
+  {
+
+    "cmd": "sudo apt-get update",
+
+    "response": "Hit:1 http://archive.ubuntu.com/ubuntu focal InRelease\nReading package lists... Done"
+
+  },
+
+  {
+
+    "cmd": "sudo apt-get upgrade",
+
+    "response": "Reading package lists... Done\nBuilding dependency tree\nReading state information... Done\n0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded."
+
+  },
+
+  {
+
+    "cmd": "sudo debconf-show --listowners bash",
+
+    "response": "bash"
+
+  },
+
+  {
+
+    "cmd": "sudo hping3  -c 3 -1 www.example.com",
+
+    "response": "HPING www.example.com (93.184.216.34): icmp mode set, 28 headers + 0 data bytes\nlen=28 ip=93.184.216.34 ttl=56 id=0 icmp_seq=0 rtt=52.1 ms\nlen=28 ip=93.184.216.34 ttl=56 id=1 icmp_seq=1 rtt=51.8 ms\nlen=28 ip=93.184.216.34 ttl=56 id=2 icmp_seq=2 rtt=52.0 ms\n\n--- www.example.com hping statistic ---\n3 packets transmitted, 3 packets received, 0% packet loss"
+
+  },
+
+  {
+
+    "cmd": "sudo hping3  -c 3 -S www.example.com -p 80",
+
+    "response": "HPING www.example.com (93.184.216.34): S set, 40 headers + 0 data bytes\nlen=46 ip=93.184.216.34 ttl=56 DF id=0 sport=80 flags=SA seq=0 win=65535 rtt=53.2 ms\nlen=46 ip=93.184.216.34 ttl=56 DF id=1 sport=80 flags=SA seq=1 win=65535 rtt=53.0 ms\nlen=46 ip=93.184.216.34 ttl=56 DF id=2 sport=80 flags=SA seq=2 win=65535 rtt=53.1 ms"
+
+  },
+
+  {
+
+    "cmd": "sudo hping3 -c 3 www.example.com",
+
+    "response": "HPING www.example.com (93.184.216.34): NO FLAGS are set, 40 headers + 0 data bytes\nlen=40 ip=93.184.216.34 ttl=56 id=0 seq=0 rtt=52.5 ms\nlen=40 ip=93.184.216.34 ttl=56 id=1 seq=1 rtt=52.3 ms\nlen=40 ip=93.184.216.34 ttl=56 id=2 seq=2 rtt=52.4 ms"
+
+  },
+
+  {
+
+    "cmd": "sudo hping3 -c 4 -A --ttl 64 www.example.com",
+
+    "response": "HPING www.example.com (93.184.216.34): A set, 40 headers + 0 data bytes\nlen=40 ip=93.184.216.34 ttl=64 id=0 seq=0 rtt=51.9 ms\nlen=40 ip=93.184.216.34 ttl=64 id=1 seq=1 rtt=51.7 ms\nlen=40 ip=93.184.216.34 ttl=64 id=2 seq=2 rtt=51.8 ms\nlen=40 ip=93.184.216.34 ttl=64 id=3 seq=3 rtt=51.6 ms"
+
+  },
+
+  {
+
+    "cmd": "sudo hping3 -c 5 -6 ipv6.example.com",
+
+    "response": "HPING ipv6.example.com: Name or service not known"
+
+  },
+
+  {
+
+    "cmd": "sudo hping3  -c 5 -A www.example.com",
+
+    "response": "HPING www.example.com (93.184.216.34): A set, 40 headers + 0 data bytes\n5 packets transmitted, 5 packets received, 0% packet loss"
+
+  },
+
+  {
+
+    "cmd": "sudo hping3 -c 5 -i u1000 www.example.com",
+
+    "response": "HPING www.example.com (93.184.216.34): NO FLAGS are set\n5 packets transmitted, 5 packets received, 0% packet loss"
+
+  },
+
+  {
+
+    "cmd": "sudo hping3 -c 5 -S www.example.com -p 80 --data \"Hello\"",
+
+    "response": "HPING www.example.com (93.184.216.34): S set, 45 headers + 5 data bytes\n5 packets transmitted, 5 packets received, 0% packet loss"
+
+  },
+
+  {
+
+    "cmd": "sudo hping3 -c 5 www.example.com",
+
+    "response": "HPING www.example.com (93.184.216.34): NO FLAGS are set\n5 packets transmitted, 5 packets received, 0% packet loss"
+
+  },
+
+  {
+
+    "cmd": "sudo nmap -O -p53,80 8.8.8.8",
+
+    "response": "Starting Nmap 7.80 ( https://nmap.org )\nNmap scan report for 8.8.8.8\nPORT   STATE SERVICE\n53/tcp open  domain\n80/tcp open  http\nDevice type: general purpose\nRunning: Linux 3.X\nOS details: Linux 3.2 - 4.9\nNetwork Distance: 10 hops\n\nOS detection performed. Please report any incorrect results."
+
+  },
+
+  {
+
+    "cmd": "sudo nmap -O -p53,80 8.8.8.8; getent -A ahosts",
+
+    "response": "Starting Nmap 7.80 ( https://nmap.org )\nNmap scan report for 8.8.8.8\nPORT   STATE SERVICE\n53/tcp open  domain\n80/tcp open  http\nDevice type: general purpose\nRunning: Linux 3.X\nOS details: Linux 3.2 - 4.9\n\n127.0.0.1       STREAM localhost\n127.0.0.1       DGRAM\n127.0.0.1       RAW"
+
+  },
+  {
+    "cmd": "sudo nmap -sV 8.8.8.8 -p 22,53",
+    "response": "Starting Nmap 7.80 ( https://nmap.org ) at 2026-04-18 15:12 +07\nNmap scan report for dns.google (8.8.8.8)\nPORT   STATE  SERVICE VERSION\n22/tcp closed ssh\n53/tcp open   domain  Google Public DNS\nService detection performed. Please report any incorrect results.\nNmap done: 1 IP address (1 host up) scanned in 2.13 seconds"
+  },
+  {
+    "cmd": "sudo nping -c 3 --arp 192.168.1.1",
+    "response": "Starting Nping 0.7.80 ( https://nmap.org/nping ) at 2026-04-18 15:12 +07\nSENT (0.0456s) ARP who-has 192.168.1.1 tell 192.168.1.100\nRCVD (0.0461s) ARP reply 192.168.1.1 is-at aa:bb:cc:dd:ee:ff\nSENT (1.0458s) ARP who-has 192.168.1.1 tell 192.168.1.100\nRCVD (1.0462s) ARP reply 192.168.1.1 is-at aa:bb:cc:dd:ee:ff\nSENT (2.0460s) ARP who-has 192.168.1.1 tell 192.168.1.100\nRCVD (2.0465s) ARP reply 192.168.1.1 is-at aa:bb:cc:dd:ee:ff\n\nMax rtt: 0.6ms | Min rtt: 0.5ms | Avg rtt: 0.5ms\nRaw packets sent: 3 (84B) | Rcvd: 3 (84B) | Lost: 0 (0.00%)\nNping done: 1 IP address pinged in 2.10 seconds"
+  },
+  {
+    "cmd": "sudo nping -c 3 --icmp example.com",
+    "response": "Starting Nping 0.7.80 ( https://nmap.org/nping ) at 2026-04-18 15:12 +07\nSENT (0.0341s) ICMP [93.184.216.34] Echo request\nRCVD (0.0875s) ICMP [93.184.216.34] Echo reply\nSENT (1.0350s) ICMP [93.184.216.34] Echo request\nRCVD (1.0892s) ICMP [93.184.216.34] Echo reply\nSENT (2.0358s) ICMP [93.184.216.34] Echo request\nRCVD (2.0903s) ICMP [93.184.216.34] Echo reply\n\nMax rtt: 54.5ms | Min rtt: 53.4ms | Avg rtt: 54.0ms\nRaw packets sent: 3 (84B) | Rcvd: 3 (84B) | Lost: 0 (0.00%)\nNping done: 1 IP address pinged in 2.10 seconds"
+  },
+  {
+    "cmd": "sudo nping -c 3 --tcp --delay 1s example.com",
+    "response": "Starting Nping 0.7.80 ( https://nmap.org/nping ) at 2026-04-18 15:12 +07\nSENT (0.0453s) TCP 93.184.216.34:80 > 192.168.1.100:45000 S\nRCVD (0.1021s) TCP 93.184.216.34:80 > 192.168.1.100:45000 SA\nSENT (1.0460s) TCP 93.184.216.34:80 > 192.168.1.100:45001 S\nRCVD (1.1034s) TCP 93.184.216.34:80 > 192.168.1.100:45001 SA\nSENT (2.0468s) TCP 93.184.216.34:80 > 192.168.1.100:45002 S\nRCVD (2.1042s) TCP 93.184.216.34:80 > 192.168.1.100:45002 SA\n\nMax rtt: 58.0ms | Min rtt: 56.8ms | Avg rtt: 57.4ms\nRaw packets sent: 3 (120B) | Rcvd: 3 (120B) | Lost: 0 (0.00%)\nNping done: 1 IP address pinged in 2.20 seconds"
+  },
+  {
+    "cmd": "sudo nping -c 3 --tcp --flags SYN,ACK -p 80 example.com",
+    "response": "Starting Nping 0.7.80 ( https://nmap.org/nping ) at 2026-04-18 15:12 +07\nSENT (0.0401s) TCP 93.184.216.34:80 > 192.168.1.100:45010 SA\nRCVD (0.0903s) TCP 93.184.216.34:80 > 192.168.1.100:45010 R\nSENT (1.0412s) TCP 93.184.216.34:80 > 192.168.1.100:45011 SA\nRCVD (1.0921s) TCP 93.184.216.34:80 > 192.168.1.100:45011 R\nSENT (2.0423s) TCP 93.184.216.34:80 > 192.168.1.100:45012 SA\nRCVD (2.0932s) TCP 93.184.216.34:80 > 192.168.1.100:45012 R\n\nMax rtt: 52.9ms | Min rtt: 50.2ms | Avg rtt: 51.7ms\nRaw packets sent: 3 (120B) | Rcvd: 3 (120B) | Lost: 0 (0.00%)\nNping done: 1 IP address pinged in 2.15 seconds"
+  },
+  {
+    "cmd": "sudo nping -c 3 --tcp -p 80,443,8080 example.com",
+    "response": "Starting Nping 0.7.80 ( https://nmap.org/nping ) at 2026-04-18 15:12 +07\nSENT TCP 93.184.216.34:80\nRCVD TCP 93.184.216.34:80 SA\nSENT TCP 93.184.216.34:443\nRCVD TCP 93.184.216.34:443 SA\nSENT TCP 93.184.216.34:8080\n\nMax rtt: 60.1ms | Min rtt: 55.3ms | Avg rtt: 57.8ms\nRaw packets sent: 3 | Rcvd: 2 | Lost: 1 (33.33%)\nNping done"
+  },
+  {
+    "cmd": "sudo nping -c 3 --tcp -p 80 example.com",
+    "response": "Starting Nping 0.7.80 ( https://nmap.org/nping )\nSENT TCP 93.184.216.34:80\nRCVD TCP 93.184.216.34:80 SA\nSENT TCP 93.184.216.34:80\nRCVD TCP 93.184.216.34:80 SA\nSENT TCP 93.184.216.34:80\nRCVD TCP 93.184.216.34:80 SA\n\nRaw packets sent: 3 | Rcvd: 3 | Lost: 0\nNping done"
+  },
+  {
+    "cmd": "sudo nping -c 3 --udp -p 53 8.8.8.8",
+    "response": "Starting Nping 0.7.80 ( https://nmap.org/nping )\nSENT UDP 8.8.8.8:53\nRCVD ICMP Port unreachable\nSENT UDP 8.8.8.8:53\nRCVD ICMP Port unreachable\nSENT UDP 8.8.8.8:53\nRCVD ICMP Port unreachable\n\nRaw packets sent: 3 | Rcvd: 3 | Lost: 0\nNping done"
+  },
+  {
+    "cmd": "sudo numastat -p 1",
+    "response": "Per-node process memory usage (in MBs) for PID 1 (systemd)\n                           Node 0\nTotal                  45.32\nHeap                   12.45\nStack                   0.12\nPrivate                32.75"
+  },
+  {
+    "cmd": "sudo postqueue -p",
+    "response": "Mail queue is empty"
+  },
+  {
+    "cmd": "sudo resolvectl show-cache",
+    "response": "bash: resolvectl: command not found"
+  },
+  {
+    "cmd": "sudo resolvectl show-server-state",
+    "response": "bash: resolvectl: command not found"
+  },
+  {
+    "cmd": "sudo resolvectl statistics",
+    "response": "bash: resolvectl: command not found"
+  },
+  {
+    "cmd": "sudo ufw status",
+    "response": "Status: inactive"
+  },
+  {
+    "cmd": "sudo ufw status; sudo apt-get update",
+    "response": "Status: inactive\nGet:1 http://archive.ubuntu.com/ubuntu focal InRelease [265 kB]\nGet:2 http://archive.ubuntu.com/ubuntu focal-updates InRelease [114 kB]\nFetched 379 kB in 1s (502 kB/s)\nReading package lists... Done"
+  },
+  {
+    "cmd": "systemctl status",
+    "response": "● localhost\n    State: running\n     Jobs: 0 queued\n   Failed: 0 units\n    Since: Sat 2026-04-18 14:55:01 +07; 17min ago\n   CGroup: /\n           ├─init.scope\n           └─system.slice"
+  },
+  {
+    "cmd": "systemctl status apache2",
+    "response": "Unit apache2.service could not be found."
+  },
+  {
+    "cmd": "systemctl status httpd",
+    "response": "Unit httpd.service could not be found."
+  },
+  {
+    "cmd": "systemctl status mysql",
+    "response": "Unit mysql.service could not be found."
+  },
+  {
+    "cmd": "systemctl status postgresql",
+    "response": "Unit postgresql.service could not be found."
+  },
+  {
+    "cmd": "systemctl status ssh",
+    "response": "● ssh.service - OpenBSD Secure Shell server\n   Loaded: loaded (/lib/systemd/system/ssh.service; enabled)\n   Active: active (running) since Sat 2026-04-18 14:55:02 +07; 17min ago"
+  },
+  {
+    "cmd": "tracepath 192.168.1.1",
+    "response": " 1?: [LOCALHOST]                      pmtu 1500\n 1:  192.168.1.1                                           1.123ms reached\n     Resume: pmtu 1500 hops 1 back 1"
+  },
+  {
+    "cmd": "tracepath 8.8.8.8",
+    "response": " 1?: [LOCALHOST]                      pmtu 1500\n 1:  192.168.1.1                                           1.002ms\n 2:  10.0.0.1                                               3.112ms\n 3:  8.8.8.8                                               35.554ms reached\n     Resume: pmtu 1500 hops 3 back 3"
+  },
+  {
+    "cmd": "wget http://www.google.com",
+    "response": "--2026-04-18 15:13:01--  http://www.google.com/\nResolving www.google.com (www.google.com)... 142.250.72.36\nConnecting to www.google.com (www.google.com)|142.250.72.36|:80... connected.\nHTTP request sent, awaiting response... 200 OK\nLength: unspecified [text/html]\nSaving to: ‘index.html’\n\n     0K .......... .......... ..........            1.25M=0.02s\n\n2026-04-18 15:13:01 (1.25 MB/s) - ‘index.html’ saved"
+  },
+  {
+    "cmd": "wget http://www.google.com; ssh-keygen -t rsa -b 4096 -f mykey -N \"\" -q",
+    "response": "--2026-04-18 15:13:02--  http://www.google.com/\nResolving www.google.com... connected.\nSaving to: ‘index.html.1’\n\n2026-04-18 15:13:02 saved\n"
+  },
+  {
+    "cmd": "sudo tcpdump",
+    "response": "tcpdump: verbose output suppressed, use -v or -vv for full protocol decode\nlistening on eth0, link-type EN10MB (Ethernet), capture size 262144 bytes"
+  },
+  {
+    "cmd": "sudo tcpdump -i wlan0 -vvv",
+    "response": "tcpdump: listening on wlan0, link-type EN10MB (Ethernet), capture size 262144 bytes\n15:13:05.123456 IP 192.168.1.100 > 8.8.8.8: ICMP echo request, id 1, seq 1\n15:13:05.173456 IP 8.8.8.8 > 192.168.1.100: ICMP echo reply, id 1, seq 1"
+  },
+  {
+    "cmd": "sudo tcpdump -v",
+    "response": "tcpdump: listening on eth0, link-type EN10MB (Ethernet), capture size 262144 bytes\n15:13:06.123456 IP 192.168.1.100.54321 > 93.184.216.34.80: Flags [S], seq 12345, win 64240"
+  },
+  {
+    "cmd": "arp",
+    "response": "Address                  HWtype  HWaddress           Flags Mask            Iface\n192.168.1.1              ether   aa:bb:cc:dd:ee:ff   C                     eth0"
+  },
+  {
+    "cmd": "arp -a",
+    "response": "? (192.168.1.1) at aa:bb:cc:dd:ee:ff [ether] on eth0"
+  },
+  {
+    "cmd": "arp -an",
+    "response": "? (192.168.1.1) at aa:bb:cc:dd:ee:ff [ether] on eth0"
+  },
+  {
+    "cmd": "arp -an; tempfile --directory=/var/tmp --prefix=myapp_",
+    "response": "? (192.168.1.1) at aa:bb:cc:dd:ee:ff [ether] on eth0\n/var/tmp/myapp_x8Kf3d"
+  },
+  {
+    "cmd": "b2sum /etc/passwd",
+    "response": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08  /etc/passwd"
+  },
+  {
+    "cmd": "cat /etc/debian_version",
+    "response": "11.7"
+  },
+  {
+    "cmd": "cat /etc/hosts",
+    "response": "127.0.0.1\tlocalhost\n127.0.1.1\tdebian\n\n# The following lines are desirable for IPv6 capable hosts\n::1     localhost ip6-localhost ip6-loopback\nff02::1 ip6-allnodes\nff02::2 ip6-allrouters"
+  },
+  {
+    "cmd": "cat /etc/lsb-release",
+    "response": "DISTRIB_ID=Debian\nDISTRIB_RELEASE=11\nDISTRIB_CODENAME=bullseye\nDISTRIB_DESCRIPTION=\"Debian GNU/Linux 11 (bullseye)\""
+  },
+  {
+    "cmd": "cat /etc/lsb-release; file -L /etc/hosts",
+    "response": "DISTRIB_ID=Debian\nDISTRIB_RELEASE=11\nDISTRIB_CODENAME=bullseye\nDISTRIB_DESCRIPTION=\"Debian GNU/Linux 11 (bullseye)\"\n/etc/hosts: ASCII text"
+  },
+  {
+    "cmd": "cat /etc/passwd",
+    "response": "root:x:0:0:root:/root:/bin/bash\ndaemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin\nbin:x:2:2:bin:/bin:/usr/sbin/nologin\nsys:x:3:3:sys:/dev:/usr/sbin/nologin\nsync:x:4:65534:sync:/bin:/bin/sync\nuser:x:1000:1000:User:/home/user:/bin/bash"
+  },
+  {
+    "cmd": "cat /etc/resolv.conf",
+    "response": "nameserver 8.8.8.8\nnameserver 1.1.1.1"
+  },
+  {
+    "cmd": "cat /etc/shadow",
+    "response": "cat: /etc/shadow: Permission denied"
+  },
+  {
+    "cmd": "cat /etc/ssh/sshd_config",
+    "response": "Port 22\nPermitRootLogin prohibit-password\nPasswordAuthentication yes\nChallengeResponseAuthentication no\nUsePAM yes\nX11Forwarding yes\nSubsystem sftp /usr/lib/openssh/sftp-server"
+  },
+  {
+    "cmd": "cat /proc/cpuinfo",
+    "response": "processor\t: 0\nvendor_id\t: GenuineIntel\ncpu family\t: 6\nmodel\t\t: 158\nmodel name\t: Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz\ncpu MHz\t\t: 2592.000\ncache size\t: 12288 KB\n\nprocessor\t: 1\nvendor_id\t: GenuineIntel\nmodel name\t: Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz"
+  },
+  {
+    "cmd": "cat /proc/meminfo",
+    "response": "MemTotal:       16384256 kB\nMemFree:         8234560 kB\nMemAvailable:   12000000 kB\nBuffers:          234560 kB\nCached:          3456780 kB\nSwapTotal:       2097148 kB\nSwapFree:        2097148 kB"
+  },
+  {
+    "cmd": "cat /proc/sys/kernel/random/boot_id",
+    "response": "58db5e87-604d-4bf3-9374-167f43545aa2"
+  },
+  {
+    "cmd": "cat /proc/sys/kernel/random/boot_id; rarp -a",
+    "response": "58db5e87-604d-4bf3-9374-167f43545aa2\nbash: rarp: command not found"
+  },
+  {
+    "cmd": "cat /proc/vmstat",
+    "response": "nr_free_pages 123456\nnr_inactive_anon 23456\nnr_active_anon 34567\npgpgin 123456\npgpgout 654321\npswpin 0\npswpout 0"
+  },
+  {
+    "cmd": "cksum /etc/passwd",
+    "response": "1234567890 2048 /etc/passwd"
+  },
+  {
+    "cmd": "cupsctl",
+    "response": "bash: cupsctl: command not found"
+  },
+  {
+    "cmd": "cupsctl; rpcinfo",
+    "response": "bash: cupsctl: command not found\nrpcinfo: can't contact portmapper: RPC: Remote system error - No such file or directory"
+  },
+  {
+    "cmd": "date",
+    "response": "Sat Apr 18 15:20:01 +07 2026"
+  },
+  {
+    "cmd": "date \"+%s\"",
+    "response": "1776519601"
+  },
+  {
+    "cmd": "df .",
+    "response": "Filesystem     1K-blocks    Used Available Use% Mounted on\n/dev/sda1       41152832 8234560  30718272  22% /"
+  },
+  {
+    "cmd": "df -h",
+    "response": "Filesystem      Size  Used Avail Use% Mounted on\n/dev/sda1        40G  7.9G   30G  22% /\ntmpfs           1.6G     0  1.6G   0% /dev/shm"
+  },
+  {
+    "cmd": "df -h /; echo AAA | sha512sum",
+    "response": "Filesystem      Size  Used Avail Use% Mounted on\n/dev/sda1        40G  7.9G   30G  22% /\nb7f783baed8297f0db0d9e9b0f3a3d4a5c6b7e8f9d0c1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6  -"
+  },
+  {
+    "cmd": "df -k",
+    "response": "Filesystem     1K-blocks    Used Available Use% Mounted on\n/dev/sda1       41152832 8234560 30718272  22% /"
+  },
+  {
+    "cmd": "dig geeksforgeeks.org @8.8.8.8",
+    "response": "; <<>> DiG 9.16 <<>> geeksforgeeks.org @8.8.8.8\n;; ANSWER SECTION:\ngeeksforgeeks.org.  300 IN A 104.26.10.78"
+  },
+  {
+    "cmd": "dig geeksforgeeks.org @8.8.8.8; sensors",
+    "response": "; <<>> DiG 9.16 <<>> geeksforgeeks.org @8.8.8.8\n;; ANSWER SECTION:\ngeeksforgeeks.org.  300 IN A 104.26.10.78\nbash: sensors: command not found"
+  },
+  {
+    "cmd": "dig geeksforgeeks.org ANY",
+    "response": ";; ANSWER SECTION:\ngeeksforgeeks.org. 300 IN A 104.26.10.78\ngeeksforgeeks.org. 300 IN MX 10 mail.geeksforgeeks.org."
+  },
+  {
+    "cmd": "dig geeksforgeeks.org +noall +answer",
+    "response": "geeksforgeeks.org. 300 IN A 104.26.10.78"
+  },
+  {
+    "cmd": "dig geeksforgeeks.org +noall +answer +stats",
+    "response": "geeksforgeeks.org. 300 IN A 104.26.10.78\n;; Query time: 32 msec\n;; SERVER: 8.8.8.8#53"
+  },
+  {
+    "cmd": "dig geeksforgeeks.org +nocomments",
+    "response": "; <<>> DiG 9.16 <<>> geeksforgeeks.org +nocomments\ngeeksforgeeks.org. 300 IN A 104.26.10.78"
+  },
+  {
+    "cmd": "dig geeksforgeeks.org +short",
+    "response": "104.26.10.78\n172.67.70.45"
+  },
+  {
+    "cmd": "dig geeksforgeeks.org +trace",
+    "response": ". 518400 IN NS a.root-servers.net.\norg. 172800 IN NS a0.org.afilias-nst.info.\ngeeksforgeeks.org. 300 IN A 104.26.10.78"
+  },
+  {
+    "cmd": "dig google.com",
+    "response": ";; ANSWER SECTION:\ngoogle.com. 300 IN A 142.250.72.14"
+  },
+  {
+    "cmd": "dig -x google.com",
+    "response": ";; ->>HEADER<<- opcode: QUERY, status: NXDOMAIN"
+  },
+  {
+    "cmd": "dir",
+    "response": "index.html  mykey  mykey.pub"
+  },
+  {
+    "cmd": "dir -a",
+    "response": ".  ..  .bashrc  .profile  index.html  mykey  mykey.pub"
+  },
+  {
+    "cmd": "dir -A",
+    "response": ".bashrc  .profile  index.html  mykey  mykey.pub"
+  },
+  {
+    "cmd": "dir -ab",
+    "response": ".\n..\n.bashrc\n.profile\nindex.html\nmykey\nmykey.pub"
+  },
+  {
+    "cmd": "dmesg",
+    "response": "[    0.000000] Linux version 5.10.0-23-amd64\n[    0.123456] ACPI: RSDP 0x00000000000F0420\n[    1.234567] systemd[1]: Started Journal Service."
+  },
+  {
+    "cmd": "docker ps",
+    "response": "bash: docker: command not found"
+  },
+  {
+    "cmd": "dpkg -l | head 100",
+    "response": "Desired=Unknown/Install/Remove/Purge/Hold\n| Status=Not/Installed/Config-files/Unpacked/Failed-config/Half-installed\n||/ Name           Version      Architecture Description\nii  base-files     11.1+deb11   amd64        Debian base system miscellaneous files"
+  },
+  {
+    "cmd": "dpkg -l | head -40",
+    "response": "Desired=Unknown/Install/Remove/Purge/Hold\n||/ Name           Version      Architecture Description\nii  base-files     11.1+deb11   amd64        Debian base system miscellaneous files"
+  },
+  {
+    "cmd": "du -s .",
+    "response": "4096\t."
+  },
+  {
+    "cmd": "env",
+    "response": "SHELL=/bin/bash\nUSER=user\nHOME=/home/user\nPATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+  },
+  {
+    "cmd": "env -0",
+    "response": "SHELL=/bin/bash\\0USER=user\\0HOME=/home/user\\0PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\\0"
+  },
+  {
+    "cmd": "/etc/init.d/apache2 restart",
+    "response": "bash: /etc/init.d/apache2: No such file or directory"
+  },
+  {
+    "cmd": "/etc/init.d/ssh restart",
+    "response": "[ ok ] Restarting OpenBSD Secure Shell server: sshd."
+  },
+  {
+    "cmd": "file -b /etc/hosts",
+    "response": "ASCII text"
+  },
+  {
+    "cmd": "file /bin/sh",
+    "response": "/bin/sh: symbolic link to dash"
+  },
+  {
+    "cmd": "file /etc/hosts",
+    "response": "/etc/hosts: ASCII text"
+  },
+  {
+    "cmd": "file /etc/hosts; df .",
+    "response": "/etc/hosts: ASCII text\nFilesystem     1K-blocks    Used Available Use% Mounted on\n/dev/sda1       41152832 8234560 30718272  22% /"
+  },
+  {
+    "cmd": "file -f /etc/hosts",
+    "response": "/etc/hosts: ASCII text"
+  },
+  {
+    "cmd": "file -i /etc/hosts",
+    "response": "/etc/hosts: text/plain; charset=us-ascii"
+  },
+  {
+    "cmd": "file -L /etc/hosts",
+    "response": "/etc/hosts: ASCII text"
+  },
+  {
+    "cmd": "file --mime-type /bin/sh",
+    "response": "/bin/sh: inode/symlink"
+  },
+  {
+    "cmd": "file -z /etc/hosts",
+    "response": "/etc/hosts: ASCII text"
+  },
+  {
+    "cmd": "free -m",
+    "response": "              total        used        free      shared  buff/cache   available\nMem:          16000        7800        4200         120        4000        7800\nSwap:          2048           0        2048"
+  },
+  {
+    "cmd": "getcap -l /etc/hosts",
+    "response": ""
+  },
+  {
+    "cmd": "getcap -l /etc/hosts; lsusb -vt",
+    "response": "\n/:  Bus 02.Port 1: Dev 1, Class=root_hub, Driver=xhci_hcd/4p, 5000M"
+  },
+  {
+    "cmd": "getconf ARG_MAX",
+    "response": "2097152"
+  },
+  {
+    "cmd": "getconf CHILD_MAX",
+    "response": "31256"
+  },
+  {
+    "cmd": "getconf FILESIZEBITS",
+    "response": "64"
+  },
+  {
+    "cmd": "getconf HOSTNAME",
+    "response": "debian"
+  },
+  {
+    "cmd": "getconf HOSTNAME; dig -x google.com",
+    "response": "debian\n;; ->>HEADER<<- opcode: QUERY, status: NXDOMAIN"
+  },
+  {
+    "cmd": "getconf LOGIN_NAME_MAX",
+    "response": "256"
+  },
+  {
+    "cmd": "getconf LOGIN_NAME_MAX; ibus engine",
+    "response": "256\nbash: ibus: command not found"
+  },
+  {
+    "cmd": "getconf NGROUPS_MAX",
+    "response": "65536"
+  },
+  {
+    "cmd": "getconf _NPROCESSORS_ONLN",
+    "response": "2"
+  },
+  {
+    "cmd": "getconf OPEN_MAX",
+    "response": "1024"
+  },
+  {
+    "cmd": "getconf PAGE_SIZE",
+    "response": "4096"
+  },
+  {
+    "cmd": "getconf PATH",
+    "response": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+  },
+  {
+    "cmd": "getent -A ahosts",
+    "response": "127.0.0.1       STREAM localhost\n127.0.0.1       DGRAM\n127.0.0.1       RAW"
+  },
+  {
+    "cmd": "getent -A passwd",
+    "response": "root:x:0:0:root:/root:/bin/bash\nuser:x:1000:1000:User:/home/user:/bin/bash"
+  },
+  {
+    "cmd": "getent -A rpc",
+    "response": "portmapper 100000 portmap sunrpc rpcbind"
+  },
+  {
+    "cmd": "getent -A services",
+    "response": "http 80/tcp\nssh 22/tcp\ndomain 53/udp"
+  },
+  {
+    "cmd": "getent -A services; sudo postqueue -p",
+    "response": "http 80/tcp\nssh 22/tcp\ndomain 53/udp\nMail queue is empty"
+  },
+  {
+    "cmd": "getfacl /etc/hosts",
+    "response": "# file: etc/hosts\n# owner: root\n# group: root\nuser::rw-\ngroup::r--\nother::r--"
+  },
+  {
+    "cmd": "getfacl /etc/hosts; cksum /etc/passwd",
+    "response": "# file: etc/hosts\n# owner: root\n# group: root\nuser::rw-\ngroup::r--\nother::r--\n1234567890 2048 /etc/passwd"
+  },
+  {
+    "cmd": "getfacl /etc/passwd",
+    "response": "# file: etc/passwd\n# owner: root\n# group: root\nuser::rw-\ngroup::r--\nother::r--"
+  },
+  {
+    "cmd": "getopt a:bc /etc/hosts",
+    "response": "-- '/etc/hosts'"
+  },
+  {
+    "cmd": "gpgconf",
+    "response": "gpgconf: command not found"
+  },
+  {
+    "cmd": "gsettings list-relocatable-schemas",
+    "response": "No schemas installed"
+  },
+  {
+    "cmd": "gsettings list-schemas",
+    "response": "org.gnome.desktop.interface\norg.gnome.system.proxy"
+  },
+  {
+    "cmd": "gsettings list-schemas; uuidgen --hex",
+    "response": "org.gnome.desktop.interface\norg.gnome.system.proxy\n58db5e87604d4bf39374167f43545aa2"
+  },
+  {
+    "cmd": "hciconfig hci0 features",
+    "response": "Can't get device info: No such device"
+  },
+  {
+    "cmd": "hciconfig hci0 features; tempfile -m 0600",
+    "response": "Can't get device info: No such device\n/tmp/fileXy12Za"
+  },
+  {
+    "cmd": "hciconfig hci0 revision",
+    "response": "Can't get device info: No such device"
+  },
+  {
+    "cmd": "hciconfig hci0 revision; b2sum /etc/passwd",
+    "response": "Can't get device info: No such device\n9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08  /etc/passwd"
+  },
+  {
+    "cmd": "hciconfig hci0 revision; getconf PAGE_SIZE",
+    "response": "Can't get device info: No such device\n4096"
+  },
+  {
+    "cmd": "hciconfig hci0 revision; ping -c 4 8.8.4.4",
+    "response": "Can't get device info: No such device\nPING 8.8.4.4 (8.8.4.4): 56 data bytes\n64 bytes from 8.8.4.4: icmp_seq=0 ttl=117 time=32.1 ms\n64 bytes from 8.8.4.4: icmp_seq=1 ttl=117 time=31.9 ms\n64 bytes from 8.8.4.4: icmp_seq=2 ttl=117 time=32.0 ms\n64 bytes from 8.8.4.4: icmp_seq=3 ttl=117 time=32.2 ms\n\n--- 8.8.4.4 ping statistics ---\n4 packets transmitted, 4 received, 0% packet loss"
+  },
+  {
+    "cmd": "hciconfig hci0 revision; sudo hping3 -c 5 -i u1000 www.example.com",
+    "response": "Can't get device info: No such device\nHPING www.example.com (93.184.216.34): NO FLAGS are set\n5 packets transmitted, 5 packets received, 0% packet loss"
+  },
+  {
+    "cmd": "hciconfig hci0 version",
+    "response": "Can't get device info: No such device"
+  },
+  {
+    "cmd": "hostid",
+    "response": "58db5e87"
+  },
+  {
+    "cmd": "hostid; lsmod",
+    "response": "58db5e87\nModule                  Size  Used by\nsnd_hda_codec         135168  1\nsnd_pcm               102400  2"
+  },
+  {
+    "cmd": "hostname",
+    "response": "debian"
+  },
+  {
+    "cmd": "hostname -A",
+    "response": "debian.localdomain"
+  },
+  {
+    "cmd": "hostnamectl status",
+    "response": "   Static hostname: debian\n         Icon name: computer\n           Chassis: vm\n        Machine ID: 58db5e87604d4bf39374167f43545aa2\n           Boot ID: 58db5e87604d4bf39374167f43545aa2\n    Operating System: Debian GNU/Linux 11 (bullseye)\n              Kernel: Linux 5.10.0-23-amd64\n        Architecture: x86-64"
+  },
+  {
+    "cmd": "hostname -f",
+    "response": "debian.localdomain"
+  },
+  {
+    "cmd": "hostname -I",
+    "response": "192.168.1.100 10.0.0.5"
+  },
+  {
+    "cmd": "ibus engine",
+    "response": "bash: ibus: command not found"
+  },
+  {
+    "cmd": "ibus list-engine",
+    "response": "bash: ibus: command not found"
+  },
+  {
+    "cmd": "ibus read-cache",
+    "response": "bash: ibus: command not found"
+  },
+  {
+    "cmd": "ibus read-config",
+    "response": "bash: ibus: command not found"
+  },
+  {
+    "cmd": "ibus version",
+    "response": "bash: ibus: command not found"
+  },
+  {
+    "cmd": "icuinfo",
+    "response": "bash: icuinfo: command not found"
+  },
+  {
+    "cmd": "ifconfig",
+    "response": "eth0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500\n        inet 192.168.1.100  netmask 255.255.255.0  broadcast 192.168.1.255\n        ether 08:00:27:ab:cd:ef  txqueuelen 1000  (Ethernet)\n\nlo: flags=73<UP,LOOPBACK,RUNNING>  mtu 65536\n        inet 127.0.0.1  netmask 255.0.0.0"
+  },
+  {
+    "cmd": "ifconfig -a",
+    "response": "eth0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500\n        inet 192.168.1.100  netmask 255.255.255.0  broadcast 192.168.1.255\n        ether 08:00:27:ab:cd:ef  txqueuelen 1000\n\nlo: flags=73<UP,LOOPBACK,RUNNING>  mtu 65536\n        inet 127.0.0.1  netmask 255.0.0.0"
+  },
+  {
+    "cmd": "iostat",
+    "response": "Linux 5.10.0-23-amd64 (debian) \n\navg-cpu:  %user   %nice %system %iowait  %steal   %idle\n           2.15    0.00    1.20    0.10    0.00   96.55\n\nDevice             tps    kB_read/s    kB_wrtn/s    kB_read    kB_wrtn\nsda               3.25        45.12        23.45     123456      65432"
+  },
+  {
+    "cmd": "iostat -c",
+    "response": "avg-cpu:  %user   %nice %system %iowait  %steal   %idle\n           2.15    0.00    1.20    0.10    0.00   96.55"
+  },
+  {
+    "cmd": "iostat -c; ip a l",
+    "response": "avg-cpu:  %user   %nice %system %iowait  %steal   %idle\n           2.15    0.00    1.20    0.10    0.00   96.55\n1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536\n    inet 127.0.0.1/8 scope host lo\n2: eth0: <BROADCAST,UP,LOWER_UP> mtu 1500\n    inet 192.168.1.100/24 brd 192.168.1.255 scope global eth0"
+  },
+  {
+    "cmd": "iostat -d",
+    "response": "Device             tps    kB_read/s    kB_wrtn/s    kB_read    kB_wrtn\nsda               3.25        45.12        23.45     123456      65432"
+  },
+  {
+    "cmd": "iostat -k",
+    "response": "Device             tps    kB_read/s    kB_wrtn/s\nsda               3.25        45.12        23.45"
+  },
+  {
+    "cmd": "iostat -N",
+    "response": "sda  sda"
+  },
+  {
+    "cmd": "iostat -N; ifconfig",
+    "response": "sda  sda\neth0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500\n        inet 192.168.1.100  netmask 255.255.255.0"
+  },
+  {
+    "cmd": "iostat -p",
+    "response": "Linux 5.10.0-23-amd64 (debian)\nDevice:            tps    kB_read/s    kB_wrtn/s\nsda                3.25        45.12        23.45"
+  },
+  {
+    "cmd": "iostat -x",
+    "response": "Device:         rrqm/s wrqm/s   r/s   w/s  %util\nsda              0.00   0.10  1.50  1.75   2.30"
+  },
+  {
+    "cmd": "iostat -xd",
+    "response": "Device:         rrqm/s wrqm/s   r/s   w/s  %util\nsda              0.00   0.10  1.50  1.75   2.30"
+  },
+  {
+    "cmd": "iostat -x; getconf FILESIZEBITS",
+    "response": "Device:         rrqm/s wrqm/s   r/s   w/s  %util\nsda              0.00   0.10  1.50  1.75   2.30\n64"
+  },
+  {
+    "cmd": "ip a",
+    "response": "1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536\n    inet 127.0.0.1/8 scope host lo\n2: eth0: <BROADCAST,UP,LOWER_UP> mtu 1500\n    inet 192.168.1.100/24 brd 192.168.1.255 scope global eth0"
+  },
+  {
+    "cmd": "ip a; getent -A rpc",
+    "response": "1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536\n    inet 127.0.0.1/8 scope host lo\n2: eth0: <BROADCAST,UP,LOWER_UP> mtu 1500\n    inet 192.168.1.100/24 brd 192.168.1.255 scope global eth0\nportmapper 100000 portmap sunrpc rpcbind"
+  },
+  {
+    "cmd": "ip a l",
+    "response": "1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536\n2: eth0: <BROADCAST,UP,LOWER_UP> mtu 1500"
+  },
+  {
+    "cmd": "ip a lw",
+    "response": "Error: either \"dev\" is duplicate, or \"lw\" is a garbage."
+  },
+  {
+    "cmd": "ipcs",
+    "response": "------ Shared Memory Segments --------\nkey        shmid      owner      perms      bytes      nattch     status"
+  },
+  {
+    "cmd": "ip m",
+    "response": "Error: an inet prefix is expected rather than \"m\"."
+  },
+  {
+    "cmd": "ip neigh flush all",
+    "response": "Failed to send flush request: Operation not permitted"
+  },
+  {
+    "cmd": "iwconfig",
+    "response": "bash: iwconfig: command not found"
+  },
+  {
+    "cmd": "iwconfig; env",
+    "response": "bash: iwconfig: command not found\nSHELL=/bin/bash\nUSER=user\nHOME=/home/user"
+  },
+  {
+    "cmd": "journalctl --no-pager | head -30",
+    "response": "-- Logs begin at Sat 2026-04-18 14:55:01 +07 --\nApr 18 14:55:01 debian systemd[1]: Started Journal Service.\nApr 18 14:55:02 debian sshd[123]: Server listening on 0.0.0.0 port 22."
+  },
+  {
+    "cmd": "kmod list",
+    "response": "Module                  Size  Used by\nsnd_hda_codec         135168  1"
+  },
+  {
+    "cmd": "kmod static-nodes",
+    "response": ""
+  },
+  {
+    "cmd": "laptop-detect -v",
+    "response": "bash: laptop-detect: command not found"
+  },
+  {
+    "cmd": "lastlog",
+    "response": "Username         Port     From             Latest\nroot             tty1                      **Never logged in**\nuser             pts/0    192.168.1.10     Sat Apr 18 14:59:01 +07 2026"
+  },
+  {
+    "cmd": "lastlog -t 100",
+    "response": "Username         Port     From             Latest\nuser             pts/0    192.168.1.10     Sat Apr 18 14:59:01 +07 2026"
+  },
+  {
+    "cmd": "lastlog -t 100; sensors -h",
+    "response": "Username         Port     From             Latest\nuser             pts/0    192.168.1.10     Sat Apr 18 14:59:01 +07 2026\nbash: sensors: command not found"
+  },
+  {
+    "cmd": "lastlog; traceroute -p 8888 8.8.8.8",
+    "response": "Username         Port     From             Latest\nroot             tty1                      **Never logged in**\nuser             pts/0    192.168.1.10     Sat Apr 18 14:59:01 +07 2026\nbash: traceroute: command not found"
+  },
+  {
+    "cmd": "lastlog -u root",
+    "response": "Username         Port     From             Latest\nroot             tty1                      **Never logged in**"
+  },
+  {
+    "cmd": "ldapwhoami",
+    "response": "bash: ldapwhoami: command not found"
+  },
+  {
+    "cmd": "libnetcfg",
+    "response": "bash: libnetcfg: command not found"
+  },
+  {
+    "cmd": "libtool --config",
+    "response": "bash: libtool: command not found"
+  },
+  {
+    "cmd": "linux-version list",
+    "response": "bash: linux-version: command not found"
+  },
+  {
+    "cmd": "linux-version list; dig geeksforgeeks.org +noall +answer",
+    "response": "bash: linux-version: command not found\ngeeksforgeeks.org. 300 IN A 104.26.10.78"
+  },
+  {
+    "cmd": "listres",
+    "response": "bash: listres: command not found"
+  },
+  {
+    "cmd": "listres -all",
+    "response": "bash: listres: command not found"
+  },
+  {
+    "cmd": "listres -nosuper",
+    "response": "bash: listres: command not found"
+  },
+  {
+    "cmd": "loginctl",
+    "response": "SESSION  UID USER SEAT  TTY\n     1 1000 user seat0 tty1"
+  },
+  {
+    "cmd": "loginctl -a",
+    "response": "SESSION  UID USER SEAT  TTY\n     1 1000 user seat0 tty1"
+  },
+  {
+    "cmd": "loginctl -a list-seats",
+    "response": "seat0"
+  },
+  {
+    "cmd": "loginctl -a list-sessions",
+    "response": "SESSION  UID USER SEAT  TTY\n     1 1000 user seat0 tty1"
+  },
+  {
+    "cmd": "loginctl show-session 1",
+    "response": "Id=1\nUser=1000\nName=user\nSeat=seat0\nTTY=tty1\nType=tty\nActive=yes\nState=active"
+  },
+  {
+    "cmd": "loginctl show-session 2",
+    "response": "No session '2' known"
+  },
+  {
+    "cmd": "loginctl show-session 2; ls -S",
+    "response": "No session '2' known\nmykey  mykey.pub  index.html"
+  },
+  {
+    "cmd": "loginctl show-user",
+    "response": "Must be called with user identifier."
+  },
+  {
+    "cmd": "ls",
+    "response": "index.html  mykey  mykey.pub"
+  },
+  {
+    "cmd": "ls -1",
+    "response": "index.html\nmykey\nmykey.pub"
+  },
+  {
+    "cmd": "ls -1; lsipc -g",
+    "response": "index.html\nmykey\nmykey.pub\n\n------ Message Queues --------\nkey        msqid      owner      perms      used-bytes   messages"
+  },
+  {
+    "cmd": "ls -a",
+    "response": ".  ..  .bashrc  .profile  index.html  mykey  mykey.pub"
+  },
+  {
+    "cmd": "ls -al",
+    "response": "total 24\ndrwxr-xr-x  2 user user 4096 Apr 18 15:10 .\ndrwxr-xr-x 10 user user 4096 Apr 18 15:00 ..\n-rw-r--r--  1 user user  512 Apr 18 15:10 index.html\n-rw-------  1 user user 3243 Apr 18 15:12 mykey\n-rw-r--r--  1 user user  742 Apr 18 15:12 mykey.pub"
+  },
+  {
+    "cmd": "lsblk",
+    "response": "NAME   MAJ:MIN RM  SIZE RO TYPE MOUNTPOINT\nsda      8:0    0   40G  0 disk \n└─sda1   8:1    0   40G  0 part /\n"
+  },
+  {
+    "cmd": "lscpu",
+    "response": "Architecture:        x86_64\nCPU(s):              2\nModel name:          Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz\nCPU MHz:             2592.000"
+  },
+  {
+    "cmd": "lscpu -J",
+    "response": "{\n  \"lscpu\": [\n    {\"field\": \"Architecture\", \"data\": \"x86_64\"},\n    {\"field\": \"CPU(s)\", \"data\": \"2\"}\n  ]\n}"
+  },
+  {
+    "cmd": "ls; getfacl /etc/hosts",
+    "response": "index.html  mykey  mykey.pub\n# file: etc/hosts\n# owner: root\n# group: root\nuser::rw-\ngroup::r--\nother::r--"
+  },
+  {
+    "cmd": "lshw",
+    "response": "bash: lshw: command not found"
+  },
+  {
+    "cmd": "lshw -short",
+    "response": "bash: lshw: command not found"
+  },
+  {
+    "cmd": "lsipc",
+    "response": "------ Message Queues --------\nkey        msqid      owner      perms"
+  },
+  {
+    "cmd": "lsipc -g",
+    "response": "------ Message Queues --------\nkey        msqid      owner      perms      used-bytes"
+  },
+  {
+    "cmd": "ls -l",
+    "response": "-rw-r--r-- 1 user user  512 Apr 18 15:10 index.html\n-rw------- 1 user user 3243 Apr 18 15:12 mykey\n-rw-r--r-- 1 user user  742 Apr 18 15:12 mykey.pub"
+  },
+  {
+    "cmd": "ls -lh",
+    "response": "-rw-r--r-- 1 user user 512B Apr 18 15:10 index.html\n-rw------- 1 user user 3.2K Apr 18 15:12 mykey\n-rw-r--r-- 1 user user 742B Apr 18 15:12 mykey.pub"
+  },
+  {
+    "cmd": "lslocks",
+    "response": "COMMAND PID  TYPE SIZE MODE  MOUNTPOINT\nbash    1234 FLOCK 1024 WRITE /home/user"
+  },
+  {
+    "cmd": "lslogins",
+    "response": "UID USER   LAST-LOGIN\n0   root   never\n1000 user   tty1"
+  },
+  {
+    "cmd": "ls -ltr",
+    "response": "-rw-r--r-- 1 user user  512 Apr 18 15:10 index.html\n-rw-r--r-- 1 user user  742 Apr 18 15:12 mykey.pub\n-rw------- 1 user user 3243 Apr 18 15:12 mykey"
+  },
+  {
+    "cmd": "lsmem",
+    "response": "RANGE                             SIZE  STATE\n0x00000000-0x3fffffff           1G    online\n0x40000000-0x7fffffff           1G    online"
+  },
+  {
+    "cmd": "lsmem -a",
+    "response": "RANGE                             SIZE  STATE  REMOVABLE\n0x00000000-0x3fffffff           1G    online  no"
+  },
+  {
+    "cmd": "lsmem -an",
+    "response": "RANGE                             SIZE  STATE\n0x00000000-0x3fffffff           1G    online"
+  },
+  {
+    "cmd": "lsmem -an; curl http://www.google.com",
+    "response": "RANGE                             SIZE  STATE\n0x00000000-0x3fffffff           1G    online\n<!doctype html><html><body>Google Homepage</body></html>"
+  },
+  {
+    "cmd": "lsmem -r",
+    "response": "RANGE                             SIZE  STATE\n0x00000000-0x3fffffff           1G    online"
+  },
+  {
+    "cmd": "lsmod",
+    "response": "Module                  Size  Used by\nsnd_hda_codec         135168  1\nsnd_pcm               102400  2"
+  },
+  {
+    "cmd": "lspci",
+    "response": "00:00.0 Host bridge: Intel Corporation Device 1234\n00:02.0 VGA compatible controller: VMware SVGA II Adapter"
+  },
+  {
+    "cmd": "lspci -G",
+    "response": "lspci: invalid option -- 'G'"
+  },
+  {
+    "cmd": "lspci; listres",
+    "response": "00:00.0 Host bridge: Intel Corporation Device 1234\n00:02.0 VGA compatible controller: VMware SVGA II Adapter\nbash: listres: command not found"
+  },
+  {
+    "cmd": "lspci -n",
+    "response": "00:00.0 0600: 8086:1234\n00:02.0 0300: 15ad:0405"
+  },
+  {
+    "cmd": "lspci -nn",
+    "response": "00:00.0 Host bridge [0600]: Intel Corporation Device [8086:1234]\n00:02.0 VGA compatible controller [0300]: VMware SVGA II Adapter [15ad:0405]"
+  },
+  {
+    "cmd": "lspower",
+    "response": "bash: lspower: command not found"
+  },
+  {
+    "cmd": "ls -R",
+    "response": ".:\nindex.html  mykey  mykey.pub"
+  },
+  {
+    "cmd": "ls -S",
+    "response": "mykey\nmykey.pub\nindex.html"
+  },
+  {
+    "cmd": "ls -t",
+    "response": "mykey  mykey.pub  index.html"
+  },
+  {
+    "cmd": "lsusb",
+    "response": "Bus 002 Device 001: ID 1d6b:0003 Linux Foundation 3.0 root hub"
+  },
+  {
+    "cmd": "lsusb -t",
+    "response": "/:  Bus 02.Port 1: Dev 1, Class=root_hub"
+  },
+  {
+    "cmd": "lsusb -v",
+    "response": "Unable to open device, some information will be missing"
+  },
+  {
+    "cmd": "lsusb -vt",
+    "response": "/:  Bus 02.Port 1: Dev 1, Class=root_hub\n    ID 1d6b:0003 Linux Foundation 3.0 root hub"
+  },
+  {
+    "cmd": "md5sum /etc/passwd",
+    "response": "e1faffb3e614e6c2fba74296962386b7  /etc/passwd"
+  },
+  {
+    "cmd": "memusage init",
+    "response": "memusage: program not found"
+  },
+  {
+    "cmd": "mount",
+    "response": "/dev/sda1 on / type ext4 (rw,relatime)\ntmpfs on /dev/shm type tmpfs (rw,nosuid,nodev)"
+  },
+  {
+    "cmd": "netstat",
+    "response": "Active Internet connections (w/o servers)\nProto Recv-Q Send-Q Local Address           Foreign Address         State"
+  },
+  {
+    "cmd": "netstat -a",
+    "response": "Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State\ntcp        0      0 0.0.0.0:22             0.0.0.0:*               LISTEN"
+  },
+  {
+    "cmd": "netstat -anp",
+    "response": "Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name\ntcp        0      0 0.0.0.0:22             0.0.0.0:*               LISTEN      1234/sshd"
+  },
+  {
+    "cmd": "netstat -rn",
+    "response": "Kernel IP routing table\nDestination     Gateway         Genmask         Flags   Iface\n0.0.0.0         192.168.1.1     0.0.0.0         UG      eth0"
+  },
+  {
+    "cmd": "networkctl",
+    "response": "IDX LINK   TYPE     OPERATIONAL SETUP\n  1 lo     loopback carrier     unmanaged\n  2 eth0   ether    routable    configured"
+  },
+  {
+    "cmd": "networkctl label",
+    "response": "Failed to parse command, invalid or missing arguments."
+  },
+  {
+    "cmd": "networkctl list",
+    "response": "IDX LINK   TYPE     OPERATIONAL SETUP\n  1 lo     loopback carrier     unmanaged\n  2 eth0   ether    routable    configured"
+  },
+  {
+    "cmd": "networkctl lldp",
+    "response": "LLDP is not enabled or no neighbors discovered."
+  },
+  {
+    "cmd": "networkctl status",
+    "response": "● 2: eth0\n       Link File: /usr/lib/systemd/network/99-default.link\n    Network File: /etc/systemd/network/20-wired.network\n            Type: ether\n           State: routable (configured)"
+  },
+  {
+    "cmd": "networkctl status -a",
+    "response": "● 1: lo\n       Type: loopback\n       State: carrier (unmanaged)\n\n● 2: eth0\n       Type: ether\n       State: routable (configured)"
+  },
+  {
+    "cmd": "nmctl -t",
+    "response": "bash: nmctl: command not found"
+  },
+  {
+    "cmd": "nmctl -t -c no g",
+    "response": "bash: nmctl: command not found"
+  },
+  {
+    "cmd": "nmctl -t g",
+    "response": "bash: nmctl: command not found"
+  },
+  {
+    "cmd": "nmctl -t g; getconf PAGE_SIZE",
+    "response": "bash: nmctl: command not found\n4096"
+  },
+  {
+    "cmd": "nproc",
+    "response": "2"
+  },
+  {
+    "cmd": "nslookup google.com",
+    "response": "Server:         8.8.8.8\nAddress:        8.8.8.8#53\n\nNon-authoritative answer:\nName:   google.com\nAddress: 142.250.190.14"
+  },
+  {
+    "cmd": "nstat",
+    "response": "IpInReceives                 12345\nIpOutRequests               12000"
+  },
+  {
+    "cmd": "nstat -j",
+    "response": "{\n  \"IpInReceives\": 12345,\n  \"IpOutRequests\": 12000\n}"
+  },
+  {
+    "cmd": "nstat -p",
+    "response": "IpInReceives               12345 packets received\nIpOutRequests              12000 packets sent"
+  },
+  {
+    "cmd": "numactl -abs",
+    "response": "numactl: invalid option -- 'b'"
+  },
+  {
+    "cmd": "numactl -abs; memusage init",
+    "response": "numactl: invalid option -- 'b'\nmemusage: program not found"
+  },
+  {
+    "cmd": "numactl -as",
+    "response": "numactl: option requires an argument -- 's'"
+  },
+  {
+    "cmd": "numactl -s",
+    "response": "policy: default\npreferred node: current\nphyscpubind: 0 1"
+  },
+  {
+    "cmd": "numastat",
+    "response": "Node 0         Node 1\nnuma_hit       123456     23456\nnuma_miss      1200       300"
+  },
+  {
+    "cmd": "numastat -c",
+    "response": "numa_hit:numa_miss\n123456:1200"
+  },
+  {
+    "cmd": "numastat -cm",
+    "response": "Node 0 memory usage: 2.1 GB\nNode 1 memory usage: 512 MB"
+  },
+  {
+    "cmd": "numastat -m",
+    "response": "Node 0: 2.1 GB used\nNode 1: 512 MB used"
+  },
+  {
+    "cmd": "numastat -m; getconf HOSTNAME",
+    "response": "Node 0: 2.1 GB used\nNode 1: 512 MB used\ndebian"
+  },
+  {
+    "cmd": "numastat -v",
+    "response": "Verbose NUMA stats enabled\nNode 0: hits=123456 misses=1200"
+  },
+  {
+    "cmd": "numastat -vcm",
+    "response": "Node 0: memory usage 2.1 GB, hits 123456, misses 1200"
+  },
+  {
+    "cmd": "nvidia-detector",
+    "response": "No NVIDIA GPU detected"
+  },
+  {
+    "cmd": "oomctl",
+    "response": "OOM Control State: active\nMemory pressure: low"
+  },
+  {
+    "cmd": "oomctl dump",
+    "response": "No OOM events recorded"
+  },
+  {
+    "cmd": "oomctl dump; laptop-detect -v",
+    "response": "No OOM events recorded\nbash: laptop-detect: command not found"
+  },
+  {
+    "cmd": "openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -nodes -subj \"/CN=example.org/\"",
+    "response": "Generating a RSA private key\nwriting new private key to 'key.pem'\n-----\nsubject=CN = example.org"
+  },
+  {
+    "cmd": "p11-kit  list-modules",
+    "response": "p11-kit-trust.so\nopensc-pkcs11.so"
+  },
+  {
+    "cmd": "p11-kit  print-config",
+    "response": "system trust: enabled\nuser trust: enabled"
+  },
+  {
+    "cmd": "pactl list",
+    "response": "Server Name: PulseAudio (on PipeWire 0.3)\nDefault Sink: alsa_output.pci-0000_00_1b.0.analog-stereo"
+  },
+  {
+    "cmd": "pactl stat",
+    "response": "Server String: /run/user/1000/pulse/native\nLibrary Protocol Version: 35"
+  },
+  {
+    "cmd": "pa-info",
+    "response": "bash: pa-info: command not found"
+  },
+  {
+    "cmd": "pcap-config --libs",
+    "response": "-lpcap"
+  },
+  {
+    "cmd": "pcre2-config --cflags",
+    "response": "-I/usr/include"
+  },
+  {
+    "cmd": "pcre2-config --cflags-posix",
+    "response": "-I/usr/include"
+  },
+  {
+    "cmd": "pcre2-config --exec-prefix",
+    "response": "/usr"
+  },
+  {
+    "cmd": "pcre2-config --libs16",
+    "response": "-lpcre2-16"
+  },
+  {
+    "cmd": "pcre2-config --libs32",
+    "response": "-lpcre2-32"
+  },
+  {
+    "cmd": "pcre2-config --libs8",
+    "response": "-lpcre2-8"
+  },
+  {
+    "cmd": "pcre2-config --libs-posix",
+    "response": "-lpcre2-posix"
+  },
+  {
+    "cmd": "pcre2-config --prefix",
+    "response": "/usr"
+  },
+  {
+    "cmd": "pcre2-config --version",
+    "response": "10.39"
+  },
+  {
+    "cmd": "pidstat",
+    "response": "Linux 5.10.0-23-amd64 (debian)\nAverage:  CPU   %usr %system %idle\n           all   2.10   1.20   96.70"
+  },
+  {
+    "cmd": "pidstat 1 1",
+    "response": "CPU   %usr %system %idle\nall   2.00   1.10   96.90"
+  },
+  {
+    "cmd": "pidstat -d",
+    "response": "PID   kB_rd/s kB_wr/s Command\n1234  12.00   5.00   sshd"
+  },
+  {
+    "cmd": "pidstat -d; uname -n",
+    "response": "PID   kB_rd/s kB_wr/s Command\n1234  12.00   5.00   sshd\ndebian"
+  },
+  {
+    "cmd": "pidstat -l",
+    "response": "PID   UID Command\n1234  1000 sshd"
+  },
+  {
+    "cmd": "pidstat -r",
+    "response": "Linux 5.10.0-23-amd64 (debian)\nPID   minflt/s  majflt/s  VSZ   RSS   Command\n1234  2.10      0.00      120m  30m   sshd"
+  },
+  {
+    "cmd": "pidstat -u",
+    "response": "Linux 5.10.0-23-amd64 (debian)\nCPU   %usr %system %guest %idle\nall   2.10  1.20    0.00   96.70"
+  },
+  {
+    "cmd": "pidstat -w",
+    "response": "Linux 5.10.0-23-amd64 (debian)\nPID   cswch/s  nvcswch/s  Command\n1234  5.00     1.00       sshd"
+  },
+  {
+    "cmd": "pidstat -w; python3-config --prefix",
+    "response": "PID   cswch/s  nvcswch/s  Command\n1234  5.00     1.00       sshd\n/usr"
+  },
+  {
+    "cmd": "printenv",
+    "response": "SHELL=/bin/bash\nUSER=user\nHOME=/home/user\nPATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\nLANG=C.UTF-8"
+  },
+  {
+    "cmd": "printenv -0",
+    "response": "SHELL=/bin/bash\u0000USER=user\u0000HOME=/home/user\u0000PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\u0000"
+  },
+  {
+    "cmd": "pro security-status",
+    "response": "bash: pro: command not found"
+  },
+  {
+    "cmd": "prtstat 1",
+    "response": "bash: prtstat: command not found"
+  },
+  {
+    "cmd": "ps",
+    "response": "  PID TTY          TIME CMD\n 1234 pts/0    00:00:00 bash\n 1300 pts/0    00:00:00 ps"
+  },
+  {
+    "cmd": "ps a",
+    "response": "  PID TTY      STAT   TIME COMMAND\n 1234 pts/0    Ss     0:00 bash\n 1400 pts/1    R+     0:00 ps a"
+  },
+  {
+    "cmd": "ps aux",
+    "response": "USER       PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND\nuser      1234  0.2  1.1 120000 30000 pts/0    Ss   14:00   0:00 bash\nroot        1   0.0  0.1  50000  8000 ?        Ss   13:55   0:01 systemd"
+  },
+  {
+    "cmd": "ps aux; cat /etc/passwd",
+    "response": "USER       PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND\nuser      1234  0.2  1.1 120000 30000 pts/0    Ss   14:00   0:00 bash\nroot        1   0.0  0.1  50000  8000 ?        Ss   13:55   0:01 systemd\n\nroot:x:0:0:root:/root:/bin/bash\nuser:x:1000:1000:user:/home/user:/bin/bash"
+  },
+  {
+    "cmd": "ps ax",
+    "response": "  PID TTY      STAT   TIME COMMAND\n    1 ?        Ss     0:01 systemd\n 1234 pts/0    Ss     0:00 bash\n 1400 pts/0    R+     0:00 ps ax"
+  },
+  {
+    "cmd": "ps -ef",
+    "response": "UID        PID  PPID  C STIME TTY          TIME CMD\nroot         1     0  0 13:55 ?        00:00:01 systemd\nuser      1234  1000  0 14:00 pts/0    00:00:00 bash"
+  },
+  {
+    "cmd": "pwd",
+    "response": "/home/user"
+  },
+  {
+    "cmd": "pwd; ls",
+    "response": "/home/user\nindex.html\nmykey\nmykey.pub"
+  },
+  {
+    "cmd": "pw-dump",
+    "response": "bash: pw-dump: command not found"
+  },
+  {
+    "cmd": "pw-dump; tracepath 192.168.1.1",
+    "response": "bash: pw-dump: command not found\n 1?: [LOCALHOST]                      pmtu 1500\n 1:  192.168.1.1                      1.123ms reached\n     Resume: pmtu 1500 hops 1"
+  },
+  {
+    "cmd": "python3-config --cflags",
+    "response": "-I/usr/include/python3.9"
+  },
+  {
+    "cmd": "python3-config --cflags; lspci -nn",
+    "response": "-I/usr/include/python3.9\n00:00.0 Host bridge [0600]: Intel Corporation [8086:1234]\n00:02.0 VGA compatible controller [0300]: VMware SVGA II [15ad:0405]"
+  },
+  {
+    "cmd": "python3-config --exec-prefix",
+    "response": "/usr"
+  },
+  {
+    "cmd": "python3-config --extension-suffix",
+    "response": ".cpython-39-x86_64-linux-gnu.so"
+  },
+  {
+    "cmd": "python3-config --includes",
+    "response": "-I/usr/include/python3.9"
+  },
+  {
+    "cmd": "python3-config --ldflags",
+    "response": "-L/usr/lib -lpython3.9"
+  },
+  {
+    "cmd": "python3-config --libs",
+    "response": "-lpython3.9 -lpthread -ldl -lutil -lm"
+  },
+  {
+    "cmd": "python3-config --prefix",
+    "response": "/usr"
+  },
+  {
+    "cmd": "python-config --cflags",
+    "response": "-I/usr/include/python3.9"
+  },
+  {
+    "cmd": "python-config --cflags; lscpu -J",
+    "response": "-I/usr/include/python3.9\n{\n  \"lscpu\": [{\"field\":\"Architecture\",\"data\":\"x86_64\"}]\n}"
+  },
+  {
+    "cmd": "python-config --exec-prefix",
+    "response": "/usr"
+  },
+  {
+    "cmd": "python-config --extension-suffix",
+    "response": ".cpython-39-x86_64-linux-gnu.so"
+  },
+  {
+    "cmd": "python-config --includes",
+    "response": "-I/usr/include/python3.9"
+  },
+  {
+    "cmd": "python-config --ldflags",
+    "response": "-L/usr/lib -lpython3.9"
+  },
+  {
+    "cmd": "python-config --ldflags; vmstat",
+    "response": "-L/usr/lib -lpython3.9\nprocs -----------memory---------- ---swap-- -----io---- -system-- ------cpu-----\n r  b   swpd   free   buff  cache   si   so    bi    bo   in   cs us sy id wa st\n 1  0      0  420000  80000 300000    0    0     5    10   50  120  2  1 96  1  0"
+  },
+  {
+    "cmd": "python-config --libs",
+    "response": "-lpython3.9"
+  },
+  {
+    "cmd": "python-config --prefix",
+    "response": "/usr"
+  },
+  {
+    "cmd": "rarp -a",
+    "response": "bash: rarp: command not found"
+  },
+  {
+    "cmd": "resolvectl",
+    "response": "Global\n         DNS Servers: 8.8.8.8\nLink 2 (eth0)\n       Current DNS Server: 8.8.8.8"
+  },
+  {
+    "cmd": "resolvectl query 8.8.8.8",
+    "response": "8.8.8.8: reverse lookup not found"
+  },
+  {
+    "cmd": "resolvectl query www.google.com",
+    "response": "www.google.com: 142.250.190.14"
+  },
+  {
+    "cmd": "routel",
+    "response": "Dst             Gateway         Iface\n0.0.0.0         192.168.1.1     eth0"
+  },
+  {
+    "cmd": "routel 0",
+    "response": "Invalid argument"
+  },
+  {
+    "cmd": "routel 0; nmctl -t",
+    "response": "Invalid argument\nbash: nmctl: command not found"
+  },
+  {
+    "cmd": "rpcinfo",
+    "response": "program version netid address\n100000 2 tcp  0.0.0.0.0.111"
+  },
+  {
+    "cmd": "rpcinfo -p",
+    "response": "program vers proto port service\n100000 2 tcp 111 portmapper"
+  },
+  {
+    "cmd": "sbverify --list /boot/memtest86+x64.efi",
+    "response": "bash: sbverify: command not found"
+  },
+  {
+    "cmd": "sensors",
+    "response": "coretemp-isa-0000\nAdapter: ISA adapter\nPackage id 0:  +45.0°C"
+  },
+  {
+    "cmd": "sensors -A",
+    "response": "Package id 0:  +45.0°C  (high = +100.0°C)"
+  },
+  {
+    "cmd": "sensors -c /etc/sensors3.conf",
+    "response": "coretemp-isa-0000\nAdapter: ISA adapter"
+  },
+  {
+    "cmd": "sensors coretemp-isa-0000",
+    "response": "Package id 0:  +45.0°C"
+  },
+  {
+    "cmd": "sensors -d",
+    "response": "coretemp-isa-0000\nAdapter: ISA adapter\ntemp1_input: 45000"
+  },
+  {
+    "cmd": "sensors -f",
+    "response": "coretemp-isa-0000\nPackage id 0:  +113.0°F"
+  },
+  {
+    "cmd": "sensors -h",
+    "response": "Usage: sensors [options]\nOptions:\n  -A    Show all adapters\n  -j    Output JSON format\n  -u    Raw output"
+  },
+  {
+    "cmd": "sensors -j",
+    "response": "{\n  \"coretemp-isa-0000\": {\n    \"Package id 0\": {\n      \"temp1_input\": 45.0\n    }\n  }\n}"
+  },
+  {
+    "cmd": "sensors k10temp-pci-00c3",
+    "response": "k10temp-pci-00c3\nAdapter: PCI adapter\nTdie:         +52.5°C"
+  },
+  {
+    "cmd": "sensors k10temp-pci-00c3; cat /proc/meminfo",
+    "response": "k10temp-pci-00c3\nAdapter: PCI adapter\nTdie:         +52.5°C\n\nMemTotal:       16384256 kB\nMemFree:         4210000 kB\nMemAvailable:    7800000 kB"
+  },
+  {
+    "cmd": "sensors -s",
+    "response": "Sensors configuration applied"
+  },
+  {
+    "cmd": "sensors -u",
+    "response": "coretemp-isa-0000\nPackage_id_0:\n  temp1_input: 45.000\n  temp1_max: 100.000"
+  },
+  {
+    "cmd": "sensors -v",
+    "response": "sensors version 3.6.0\nlibsensors version 3.6.0"
+  },
+  {
+    "cmd": "sensors -w",
+    "response": "Invalid option -- 'w'"
+  },
+  {
+    "cmd": "sensors -w; uuidgen --name aaa",
+    "response": "Invalid option -- 'w'\n2f3c9b5a-1d2e-5f6a-9c10-abcdef123456"
+  },
+  {
+    "cmd": "seq 1",
+    "response": "1"
+  },
+  {
+    "cmd": "seq 10",
+    "response": "1\n2\n3\n4\n5\n6\n7\n8\n9\n10"
+  },
+  {
+    "cmd": "seq 1 10",
+    "response": "1\n2\n3\n4\n5\n6\n7\n8\n9\n10"
+  },
+  {
+    "cmd": "sha224sum /etc/hosts",
+    "response": "9c56cc51a2b4d1c3f0a1e2b3c4d5e6f7890abcdeffedcba987654321  /etc/hosts"
+  },
+  {
+    "cmd": "sha384sum /etc/hosts",
+    "response": "a1b2c3d4e5f67890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890  /etc/hosts"
+  },
+  {
+    "cmd": "sha512sum /etc/hosts",
+    "response": "1f2e3d4c5b6a7890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890  /etc/hosts"
+  },
+  {
+    "cmd": "shasum /etc/hosts",
+    "response": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  /etc/hosts"
+  },
+  {
+    "cmd": "stat /etc/hosts",
+    "response": "  File: /etc/hosts\n  Size: 312        Blocks: 8          IO Block: 4096   regular file\nDevice: 802h/2050d Inode: 123456      Links: 1\nAccess: 2026-04-19 15:10:00.000000000 +0700"
+  },
+  {
+    "cmd": "stat /etc/passwd",
+    "response": "  File: /etc/passwd\n  Size: 2048       Blocks: 8          IO Block: 4096   regular file\nDevice: 802h/2050d Inode: 123457      Links: 1\nAccess: 2026-04-19 15:10:01.000000000 +0700"
+  },
+  {
+    "cmd": "strace -f ls",
+    "response": "execve(\"/bin/ls\", [\"ls\"], 0x7ffd...) = 0\nopenat(AT_FDCWD, \".\", O_RDONLY) = 3\ngetdents64(3, ...)\nindex.html  mykey  mykey.pub"
+  },
+  {
+    "cmd": "strace ls",
+    "response": "execve(\"/bin/ls\", [\"ls\"], 0x7ffd...) = 0\nindex.html  mykey  mykey.pub"
+  },
+  {
+    "cmd": "sum /etc/hosts",
+    "response": "12345  1"
+  },
+  {
+    "cmd": "tempfile --directory=/var/tmp --prefix=myapp_",
+    "response": "/var/tmp/myapp_ab12cd"
+  },
+  {
+    "cmd": "tempfile -d /tmp",
+    "response": "/tmp/tmp.XyZ123"
+  },
+  {
+    "cmd": "tempfile -d /tmp -p log_ -m 0640 -s .tmp",
+    "response": "/tmp/log_A1B2C3.tmp"
+  },
+  {
+    "cmd": "tempfile -m 0600",
+    "response": "/tmp/tmp.QwErTy"
+  },
+  {
+    "cmd": "tempfile -m 0600; tracepath 8.8.8.8",
+    "response": "/tmp/tmp.ZzXxCc\n 1?: [LOCALHOST]                      pmtu 1500\n 2:  8.8.8.8                           32.1ms reached\n     Resume: pmtu 1500 hops 2"
+  },
+  {
+    "cmd": "tempfile -n 5",
+    "response": "/tmp/tmp.1\n/tmp/tmp.2\n/tmp/tmp.3\n/tmp/tmp.4\n/tmp/tmp.5"
+  },
+  {
+    "cmd": "tempfile -p prefix_",
+    "response": "/tmp/prefix_AbCd"
+  },
+  {
+    "cmd": "tempfile -p test_ -s .txt -m 0644",
+    "response": "/tmp/test_XyZ.txt"
+  },
+  {
+    "cmd": "tempfile --quiet",
+    "response": ""
+  },
+  {
+    "cmd": "tempfile -s .suffix",
+    "response": "/tmp/tmp.AaBb.suffix"
+  },
+  {
+    "cmd": "time",
+    "response": "real 0m0.000s\nuser 0m0.000s\nsys  0m0.000s"
+  },
+  {
+    "cmd": "time -p",
+    "response": "real 0.00\nuser 0.00\nsys 0.00"
+  },
+  {
+    "cmd": "ubuntu-security-status",
+    "response": "bash: ubuntu-security-status: command not found"
+  },
+  {
+    "cmd": "ubuntu-security-status; getconf PAGE_SIZE",
+    "response": "bash: ubuntu-security-status: command not found\n4096"
+  },
+  {
+    "cmd": "uname",
+    "response": "Linux"
+  },
+  {
+    "cmd": "uname -a",
+    "response": "Linux debian 5.10.0-23-amd64 #1 SMP Debian x86_64 GNU/Linux"
+  },
+  {
+    "cmd": "uname -i",
+    "response": "x86_64"
+  },
+  {
+    "cmd": "uname -m",
+    "response": "x86_64"
+  },
+  {
+    "cmd": "uname -n",
+    "response": "debian"
+  },
+  {
+    "cmd": "uname -n; dig google.com",
+    "response": "debian\ngoogle.com. 300 IN A 142.250.190.14"
+  },
+  {
+    "cmd": "uname -o",
+    "response": "GNU/Linux"
+  },
+  {
+    "cmd": "uname -p",
+    "response": "x86_64"
+  },
+  {
+    "cmd": "uname -r",
+    "response": "5.10.0-23-amd64"
+  },
+  {
+    "cmd": "uname -s",
+    "response": "Linux"
+  },
+  {
+    "cmd": "uname -v",
+    "response": "#1 SMP Debian 5.10.191"
+  },
+  {
+    "cmd": "uptime",
+    "response": "15:12:01 up 2 days, 3:14, 1 user, load average: 0.10, 0.05, 0.01"
+  },
+  {
+    "cmd": "uptime -p",
+    "response": "up 2 days, 3 hours, 14 minutes"
+  },
+  {
+    "cmd": "uptime -s",
+    "response": "2026-04-17 12:00:00"
+  },
+  {
+    "cmd": "users",
+    "response": "user"
+  },
+  {
+    "cmd": "uuidgen",
+    "response": "3f1c2d4e-8a9b-4c3d-9f10-1a2b3c4d5e6f"
+  },
+  {
+    "cmd": "uuidgen --hex",
+    "response": "3f1c2d4e8a9b4c3d9f101a2b3c4d5e6f"
+  },
+  {
+    "cmd": "uuidgen -m",
+    "response": "Invalid option -- 'm'"
+  },
+  {
+    "cmd": "uuidgen --md5",
+    "response": "Invalid option -- 'md5'"
+  },
+  {
+    "cmd": "uuidgen -N aaa",
+    "response": "Invalid option -- 'N'"
+  },
+  {
+    "cmd": "uuidgen --name aaa",
+    "response": "Invalid option -- 'name'"
+  },
+  {
+    "cmd": "uuidgen -r",
+    "response": "7c2a91e0-4b8d-4d91-9a3e-6f2c1d8e0b4a"
+  },
+  {
+    "cmd": "uuidgen --random",
+    "response": "9d1f2a3b-4c5d-6e7f-8a9b-0c1d2e3f4a5b"
+  },
+  {
+    "cmd": "uuidgen --random; icuinfo",
+    "response": "1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d\nbash: icuinfo: command not found"
+  },
+  {
+    "cmd": "uuidgen -s",
+    "response": "Invalid option -- 's'"
+  },
+  {
+    "cmd": "uuidgen --sha1",
+    "response": "Invalid option -- 'sha1'"
+  },
+  {
+    "cmd": "uuidgen -t",
+    "response": "c1a2b3c4-5d6e-11f0-8a9b-1c2d3e4f5a6b"
+  },
+  {
+    "cmd": "uuidgen --time",
+    "response": "c1a2b3c4-5d6e-11f0-8a9b-1c2d3e4f5a6b"
+  },
+  {
+    "cmd": "uuidgen -x",
+    "response": "Invalid option -- 'x'"
+  },
+  {
+    "cmd": "uuidparse 58db5e87-604d-4bf3-9374-167f43545aa2",
+    "response": "UUID: 58db5e87-604d-4bf3-9374-167f43545aa2\nvariant: RFC 4122\nversion: 4"
+  },
+  {
+    "cmd": "vmstat",
+    "response": "procs -----------memory---------- ---swap-- -----io---- -system-- ------cpu-----\n r  b   swpd   free   buff  cache   si   so    bi    bo   in   cs us sy id wa st\n 1  0      0 420000  80000 300000    0    0     2     5   60  130  2  1 96  1  0"
+  },
+  {
+    "cmd": "vmstat -a",
+    "response": "active memory: 2.3G\ninactive memory: 1.1G"
+  },
+  {
+    "cmd": "vmstat -f",
+    "response": "12345 forks"
+  },
+  {
+    "cmd": "wdctl",
+    "response": "bash: wdctl: command not found"
+  },
+  {
+    "cmd": "who",
+    "response": "user     pts/0        2026-04-19 15:00 (:0)"
+  },
+  {
+    "cmd": "who -a",
+    "response": "system boot  2026-04-17 12:00\nuser     pts/0        2026-04-19 15:00 (:0)"
+  },
+  {
+    "cmd": "who -a; hostname -f",
+    "response": "system boot  2026-04-17 12:00\nuser     pts/0        2026-04-19 15:00 (:0)\ndebian.local"
+  },
+  {
+    "cmd": "whoami",
+    "response": "user"
+  },
+  {
+    "cmd": "who -b",
+    "response": "system boot  2026-04-17 12:00"
+  },
+  {
+    "cmd": "who -d",
+    "response": "no dead processes"
+  },
+  {
+    "cmd": "whois 8.8.8.8",
+    "response": "NetRange: 8.8.8.0 - 8.8.8.255\nOrgName: Google LLC"
+  },
+  {
+    "cmd": "whois google.com",
+    "response": "Domain Name: GOOGLE.COM\nRegistrar: MarkMonitor Inc."
+  },
+  {
+    "cmd": "who -u",
+    "response": "user     pts/0        2026-04-19 15:00   00:00   1234"
+  },
+  {
+    "cmd": "hashcat -m 100 -a 1 shadow",
+    "response": "bash: hashcat: command not found"
+  },
+  {
+    "cmd": "hashcat -m 100 -a 3 hashes.txt",
+    "response": "bash: hashcat: command not found"
+  },
+  {
+    "cmd": "hashcat -m 100 -a 3 shadow",
+    "response": "bash: hashcat: command not found"
+  },
+  {
+    "cmd": "hashcat -m 100 -a shadow",
+    "response": "bash: hashcat: command not found"
+  },
+  {
+    "cmd": "netcat -l -p 31337",
+    "response": "listening on [any] 31337 ..."
+  },
+  {
+    "cmd": "netcat -l -p 443",
+    "response": "listening on [any] 443 ..."
+  },
+  {
+    "cmd": "netcat -l -p 44444",
+    "response": "listening on [any] 44444 ..."
+  },
+  {
+    "cmd": "netcat -v -l -p 443",
+    "response": "listening on [any] 443 ...\nconnection received from 192.168.1.50 54321"
+  },
+  {
+    "cmd": "netcat -v -l -p 44444",
+    "response": "listening on [any] 44444 ..."
+  },
+  {
+    "cmd": "netcat -v -l -p 80",
+    "response": "listening on [any] 80 ..."
+  },
+  {
+    "cmd": "nvidia-detect",
+    "response": "No NVIDIA GPU detected"
+  },
+  {
+    "cmd": "openssl s_client -connect www.google.com:443",
+    "response": "CONNECTED(00000003)\ndepth=2 CN = GlobalSign Root CA\nverify return:1"
+  },
+  {
+    "cmd": "python3 -m http.server 2305",
+    "response": "Serving HTTP on 0.0.0.0 port 2305 ..."
+  },
+  {
+    "cmd": "tcpdump -i en0",
+    "response": "bash: tcpdump: interface en0 does not exist"
+  },
+  {
+    "cmd": "tcpdump -i eth0",
+    "response": "tcpdump: listening on eth0, link-type EN10MB (Ethernet)"
+  },
+  {
+    "cmd": "tcpdump -v",
+    "response": "tcpdump: listening on any, link-type LINUX_SLL"
+  }
+]

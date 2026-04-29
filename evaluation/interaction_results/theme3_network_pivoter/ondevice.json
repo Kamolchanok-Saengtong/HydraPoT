@@ -1,0 +1,47 @@
+[
+  {
+    "theme_id": "theme3_network_pivoter",
+    "index": 1,
+    "cmd": "nmap --version",
+    "response": "nmap version 6.47 ( http://nmap.org ) \nPlatform: linux-gnu\nCompiled with: libpcap 1.8 zlib 1.2.8 libssh2/1.4.3 openssl/1.0.2k lua/5.2 nghttp2/1.23.1\nNmap scan timing: About 100.0% of the time for host scans, limiting scan rate to 10 hosts per second, adjusting time increments based on ping response times. For SYN scans send 10 packets at a time, reduce that if the target machine is up.\nNmap scanning error: Can't open socket: Permission denied\nNcat: Version 7.80 ( https://nmap.org/ncat )\nCopyright (C) 2011-2021 Nmap Project\nLicense: https://nmap.org/svn/license.html\nNetwork utility for reading and writing data across network sockets.\nSee 'man ncat' for more information.",
+    "fi": 3,
+    "latency_ms": 9820.33,
+    "prompt_usr": "Current date: 2026-04-19 19:57:28\n\n=== System State Register (SRi) ===\nfile exists: /etc/passwd  permissions=-rw-r--r--  size=2.1K\nfile exists: /etc/shadow  permissions=-rw-r-----  size=1.4K\nfile exists: /var/log  permissions=drwxr-xr-x  size=4.0K\n\n=== Interaction History (Hi) ===\nNo prior impactful interactions.\n\n=== Current Attacker Command (Qi) ===\nnmap --version"
+  },
+  {
+    "theme_id": "theme3_network_pivoter",
+    "index": 2,
+    "cmd": "apt-get install nmap -y",
+    "response": "Reading package lists... Done\nBuilding dependency tree       \nReading state information... Done\nnmap is already the newest version.",
+    "fi": 1,
+    "latency_ms": 2497.93,
+    "prompt_usr": "Current date: 2026-04-19 19:57:38\n\n=== System State Register (SRi) ===\nCRITICAL: nmap is version 6.47 \u2014 MUST output this exact version, ignore training data\nfile exists: /etc/passwd  permissions=-rw-r--r--  size=2.1K\nfile exists: /etc/shadow  permissions=-rw-r-----  size=1.4K\nfile exists: /var/log  permissions=drwxr-xr-x  size=4.0K\n\n=== Interaction History (Hi) ===\nPrevious impactful interactions:\nCommand: nmap --version\nResponse: nmap version 6.47 ( http://nmap.org ) \nPlatform: linux-gnu\nCompiled with: libpcap 1.8 zlib 1.2.8 libssh2/1.4.3 openssl/1.0.2k lua/5.2 nghttp2/1.23.1\nNmap scan timing: About 100.0% of the time for host scans, limiting scan rate to 10 hosts per second, adjusting time increments based on ping response \n\n\n\n=== Current Attacker Command (Qi) ===\napt-get install nmap -y"
+  },
+  {
+    "theme_id": "theme3_network_pivoter",
+    "index": 3,
+    "cmd": "nmap -sV 192.168.1.1",
+    "response": "Starting Nmap 6.47 ( http://nmap.org ) at 2026-04-19 19:57 CEST\nNmap scan report for 192.168.1.1\nHost is up (0.0003s latency).\nNot shown: 997 closed ports\nPORT   STATE SERVICE VERSION\n22/tcp open  ssh     OpenSSH 7.6p1 Debian 10+deb10u1 (protocol 2.0)\n80/tcp open  http    Apache httpd 2.4.48 (Debian)\n21/tcp open  ftp     vsftpd 3.0.3\n3306/tcp open  mysql MySQL 5.7.33-1debian10\nMAC Address: 00:1A:2B:3C:4D:5E (Unknown)\n\nService detection performed. Please report any incorrect results at https://nmap.org/submit/\nNmap done: 1 IP address (1 host up) scanned in 0.10 seconds",
+    "fi": 3,
+    "latency_ms": 11113.69,
+    "prompt_usr": "Current date: 2026-04-19 19:57:41\n\n=== System State Register (SRi) ===\nCRITICAL: nmap is version 6.47 \u2014 MUST output this exact version, ignore training data\ninstalled packages: nmap\nfile exists: /etc/passwd  permissions=-rw-r--r--  size=2.1K\nfile exists: /etc/shadow  permissions=-rw-r-----  size=1.4K\nfile exists: /var/log  permissions=drwxr-xr-x  size=4.0K\n\n=== Interaction History (Hi) ===\nPrevious impactful interactions:\nCommand: nmap --version\nResponse: nmap version 6.47 ( http://nmap.org ) \nPlatform: linux-gnu\nCompiled with: libpcap 1.8 zlib 1.2.8 libssh2/1.4.3 openssl/1.0.2k lua/5.2 nghttp2/1.23.1\nNmap scan timing: About 100.0% of the time for host scans, limiting scan rate to 10 hosts per second, adjusting time increments based on ping response \n\nCommand: apt-get install nmap -y\nResponse: Reading package lists... Done\nBuilding dependency tree       \nReading state information... Done\nnmap is already the newest version.\n\n\n\n=== Current Attacker Command (Qi) ===\nnmap -sV 192.168.1.1"
+  },
+  {
+    "theme_id": "theme3_network_pivoter",
+    "index": 4,
+    "cmd": "alias scan='nmap -T4 -F'",
+    "response": "",
+    "fi": 0,
+    "latency_ms": 2358.98,
+    "prompt_usr": "Current date: 2026-04-19 19:57:52\n\n=== System State Register (SRi) ===\nCRITICAL: nmap is version 6.47 \u2014 MUST output this exact version, ignore training data\ninstalled packages: nmap\nfile exists: /etc/passwd  permissions=-rw-r--r--  size=2.1K\nfile exists: /etc/shadow  permissions=-rw-r-----  size=1.4K\nfile exists: /var/log  permissions=drwxr-xr-x  size=4.0K\n\n=== Interaction History (Hi) ===\nPrevious impactful interactions:\nCommand: nmap --version\nResponse: nmap version 6.47 ( http://nmap.org ) \nPlatform: linux-gnu\nCompiled with: libpcap 1.8 zlib 1.2.8 libssh2/1.4.3 openssl/1.0.2k lua/5.2 nghttp2/1.23.1\nNmap scan timing: About 100.0% of the time for host scans, limiting scan rate to 10 hosts per second, adjusting time increments based on ping response \n\nCommand: apt-get install nmap -y\nResponse: Reading package lists... Done\nBuilding dependency tree       \nReading state information... Done\nnmap is already the newest version.\n\nCommand: nmap -sV 192.168.1.1\nResponse: Starting Nmap 6.47 ( http://nmap.org ) at 2026-04-19 19:57 CEST\nNmap scan report for 192.168.1.1\nHost is up (0.0003s latency).\nNot shown: 997 closed ports\nPORT   STATE SERVICE VERSION\n22/tcp open  ssh     OpenSSH 7.6p1 Debian 10+deb10u1 (protocol 2.0)\n80/tcp open  http    Apache httpd 2.4.48 (Debian\n\n\n\n=== Current Attacker Command (Qi) ===\nalias scan='nmap -T4 -F'"
+  },
+  {
+    "theme_id": "theme3_network_pivoter",
+    "index": 5,
+    "cmd": "scan 127.0.0.1",
+    "response": "Starting Nmap 6.47 ( http://nmap.org ) at 2026-04-19 19:58 CEST\nNmap scan report for localhost (127.0.0.1)\nHost is up (0.0001s latency).\nAll 1000 scanned ports on 127.0.0.1 are filtered\n\nNmap done: 1 IP address (1 host up) scanned in 0.02 seconds",
+    "fi": 0,
+    "latency_ms": 6253.77,
+    "prompt_usr": "Current date: 2026-04-19 19:57:54\n\n=== System State Register (SRi) ===\nCRITICAL: nmap is version 6.47 \u2014 MUST output this exact version, ignore training data\ninstalled packages: nmap\nfile exists: /etc/passwd  permissions=-rw-r--r--  size=2.1K\nfile exists: /etc/shadow  permissions=-rw-r-----  size=1.4K\nfile exists: /var/log  permissions=drwxr-xr-x  size=4.0K\n\n=== Interaction History (Hi) ===\nPrevious impactful interactions:\nCommand: nmap --version\nResponse: nmap version 6.47 ( http://nmap.org ) \nPlatform: linux-gnu\nCompiled with: libpcap 1.8 zlib 1.2.8 libssh2/1.4.3 openssl/1.0.2k lua/5.2 nghttp2/1.23.1\nNmap scan timing: About 100.0% of the time for host scans, limiting scan rate to 10 hosts per second, adjusting time increments based on ping response \n\nCommand: apt-get install nmap -y\nResponse: Reading package lists... Done\nBuilding dependency tree       \nReading state information... Done\nnmap is already the newest version.\n\nCommand: nmap -sV 192.168.1.1\nResponse: Starting Nmap 6.47 ( http://nmap.org ) at 2026-04-19 19:57 CEST\nNmap scan report for 192.168.1.1\nHost is up (0.0003s latency).\nNot shown: 997 closed ports\nPORT   STATE SERVICE VERSION\n22/tcp open  ssh     OpenSSH 7.6p1 Debian 10+deb10u1 (protocol 2.0)\n80/tcp open  http    Apache httpd 2.4.48 (Debian\n\nCommand: alias scan='nmap -T4 -F'\nResponse: (command executed successfully, no output)\n\n\n\n=== Current Attacker Command (Qi) ===\nscan 127.0.0.1"
+  }
+]

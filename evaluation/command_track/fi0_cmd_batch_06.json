@@ -1,0 +1,152 @@
+[
+  {
+    "cmd": "pidstat -r"
+  },
+  {
+    "cmd": "pidstat -u"
+  },
+  {
+    "cmd": "pidstat -w"
+  },
+  {
+    "cmd": "pidstat -w; python3-config --prefix"
+  },
+  {
+    "cmd": "printenv"
+  },
+  {
+    "cmd": "printenv -0"
+  },
+  {
+    "cmd": "pro security-status"
+  },
+  {
+    "cmd": "prtstat 1"
+  },
+  {
+    "cmd": "ps"
+  },
+  {
+    "cmd": "ps a"
+  },
+  {
+    "cmd": "ps aux"
+  },
+  {
+    "cmd": "ps aux; cat /etc/passwd"
+  },
+  {
+    "cmd": "ps ax"
+  },
+  {
+    "cmd": "ps -ef"
+  },
+  {
+    "cmd": "pwd"
+  },
+  {
+    "cmd": "pwd; ls"
+  },
+  {
+    "cmd": "pw-dump"
+  },
+  {
+    "cmd": "pw-dump; tracepath 192.168.1.1"
+  },
+  {
+    "cmd": "python3-config --cflags"
+  },
+  {
+    "cmd": "python3-config --cflags; lspci -nn"
+  },
+  {
+    "cmd": "python3-config --exec-prefix"
+  },
+  {
+    "cmd": "python3-config --extension-suffix"
+  },
+  {
+    "cmd": "python3-config --includes"
+  },
+  {
+    "cmd": "python3-config --ldflags"
+  },
+  {
+    "cmd": "python3-config --libs"
+  },
+  {
+    "cmd": "python3-config --prefix"
+  },
+  {
+    "cmd": "python-config --cflags"
+  },
+  {
+    "cmd": "python-config --cflags; lscpu -J"
+  },
+  {
+    "cmd": "python-config --exec-prefix"
+  },
+  {
+    "cmd": "python-config --extension-suffix"
+  },
+  {
+    "cmd": "python-config --includes"
+  },
+  {
+    "cmd": "python-config --ldflags"
+  },
+  {
+    "cmd": "python-config --ldflags; vmstat"
+  },
+  {
+    "cmd": "python-config --libs"
+  },
+  {
+    "cmd": "python-config --prefix"
+  },
+  {
+    "cmd": "rarp -a"
+  },
+  {
+    "cmd": "resolvectl"
+  },
+  {
+    "cmd": "resolvectl query 8.8.8.8"
+  },
+  {
+    "cmd": "resolvectl query www.google.com"
+  },
+  {
+    "cmd": "routel"
+  },
+  {
+    "cmd": "routel 0"
+  },
+  {
+    "cmd": "routel 0; nmctl -t"
+  },
+  {
+    "cmd": "rpcinfo"
+  },
+  {
+    "cmd": "rpcinfo -p"
+  },
+  {
+    "cmd": "sbverify --list /boot/memtest86+x64.efi"
+  },
+  {
+    "cmd": "sensors"
+  },
+  {
+    "cmd": "sensors -A"
+  },
+  {
+    "cmd": "sensors -c /etc/sensors3.conf"
+  },
+  {
+    "cmd": "sensors coretemp-isa-0000"
+  },
+  {
+    "cmd": "sensors -d"
+  }
+]
