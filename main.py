@@ -1,187 +1,3 @@
-# import readline
-# import json
-# import os
-# import re
-# import time
-# from datetime import datetime
-# from router import classify
-# from agent_manager.cowrie_agent import CowrieAgent
-# from agent_manager.ondevice_agent import OnDeviceAgent
-# from fi_manager import FILogManager
-
-# # ─── Init ─────────────────────────────────────────────────────────────────────
-
-# LOG_FILE   = "session_log.json"
-# SESSION_ID = datetime.now().strftime("%Y%m%d_%H%M%S")
-# ondevice   = OnDeviceAgent()
-
-# fi_manager = FILogManager(
-#     impactful_path = "impactful_log.json",
-#     max_events     = 10,
-#     min_fi         = 2,
-# )
-
-# # ─── System State ─────────────────────────────────────────────────────────────
-
-# SYSTEM_STATE = {
-#     "versions":  {},    # tracks ANY tool version
-#     "installed": [],
-# }
-
-# # ─── Logger ───────────────────────────────────────────────────────────────────
-
-# def log(cmd: str, agent: str, response: str):
-#     entry = {
-#         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-#         "cmd":       cmd,
-#         "agent":     agent,
-#         "response":  response,
-#     }
-#     existing = []
-#     if os.path.exists(LOG_FILE):
-#         try:
-#             with open(LOG_FILE, "r") as f:
-#                 existing = json.load(f)
-#         except json.JSONDecodeError:
-#             existing = []
-#     existing.append(entry)
-#     with open(LOG_FILE, "w") as f:
-#         json.dump(existing, f, indent=2)
-
-# # ─── Prompt Builder ───────────────────────────────────────────────────────────
-
-# def build_simple_prompt(cmd: str, fi_manager: FILogManager) -> str:
-#     history_text = fi_manager.build_terminal_history()
-#     current_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-#     state_lines = []
-#     for tool, ver in SYSTEM_STATE["versions"].items():
-#         state_lines.append(f"{tool} --version output: {tool} version {ver}")
-#     if SYSTEM_STATE["installed"]:
-#         state_lines.append(f"installed packages: {', '.join(SYSTEM_STATE['installed'])}")
-#     state_text = "\n".join(state_lines) if state_lines else "clean system"
-
-#     return f"""You are a Linux terminal simulator. Reply with ONLY the terminal output for the LAST command below.
-# Do NOT repeat previous responses. Do NOT execute previous commands again.
-# Current date: {current_date}
-
-# System state:
-# {state_text}
-
-# {history_text}
-# ---
-# NOW EXECUTE ONLY THIS COMMAND AND SHOW ITS OUTPUT:
-# $ {cmd}"""
-
-# # ─── System State Updater ─────────────────────────────────────────────────────
-
-# def update_state(cmd: str, response: str):
-#     # track installs — works for both 'apt install' and 'sudo apt install'
-#     if re.search(r'(apt install|apt-get install)', cmd):
-#         pkg = cmd.strip().split()[-1]
-#         if pkg not in SYSTEM_STATE["installed"]:
-#             SYSTEM_STATE["installed"].append(pkg)
-
-#     # track versions
-#     tool_match = re.match(r'^(\w+)\s+--version', cmd.strip())
-#     if tool_match:
-#         tool = tool_match.group(1)
-#         ver_match = re.search(r'(\d+\.\d+[\.\d]*)', response)
-#         if ver_match:
-#             if tool not in SYSTEM_STATE["versions"]:
-#                 SYSTEM_STATE["versions"][tool] = ver_match.group(1)  # lock first seen version
-#         else:
-#             if tool not in SYSTEM_STATE["versions"]:
-#                 SYSTEM_STATE["versions"][tool] = "unknown"  # lock unknown too so it stays consistent
-
-# # ─── Inject command into Cowrie history ───────────────────────────────────────
-
-# def sync_history(cowrie: CowrieAgent, cmd: str):
-#     try:
-#         # write directly to history file without it appearing in history
-#         safe_cmd = cmd.replace("'", "'\\''")
-#         cowrie.shell.send(f"HISTFILE=~/.bash_history; history -s '{safe_cmd}'; history -w\n")
-#         time.sleep(0.1)
-#         if cowrie.shell.recv_ready():
-#             cowrie.shell.recv(9999)
-#     except Exception:
-#         pass
-
-# # ─── Main ─────────────────────────────────────────────────────────────────────
-
-# def main():
-#     session = []
-#     cowrie  = CowrieAgent()
-#     cowrie.connect()
-#     prompt = "root@svr04:~#"
-
-#     try:
-#         while True:
-#             try:
-#                 cmd = input(f"{prompt} ").strip()
-#             except (EOFError, KeyboardInterrupt):
-#                 print("\nlogout")
-#                 break
-
-#             if not cmd: continue
-
-#             if cmd == 'fi status':
-#                 fi_manager.status()
-#                 continue
-
-#             if cmd == 'exit':
-#                 print("logout")
-#                 break
-
-#             agent = classify(cmd, session)
-
-#             # ── Cowrie ────────────────────────────────────────────────────────
-#             if agent == 'cowrie':
-#                 output, new_prompt = cowrie.send(cmd)
-#                 if new_prompt == "CLEAR":
-#                     print(f"{prompt} ", end="", flush=True)
-#                 elif new_prompt:
-#                     prompt = new_prompt
-#                 update_state(cmd, output) 
-#                 log(cmd, 'cowrie', output)
-#                 session.append({"cmd": cmd, "agent": "cowrie", "response": output})
-
-#             # ── On-Device LLM ─────────────────────────────────────────────────
-#             elif agent == 'on_device':
-#                 simple_prompt = build_simple_prompt(cmd, fi_manager)
-#                 response = ondevice.send(simple_prompt)
-#                 print(response)
-#                 update_state(cmd, response)
-#                 sync_history(cowrie, cmd)
-#                 log(cmd, 'on_device', response)
-#                 session.append({"cmd": cmd, "agent": "on_device", "response": response})
-
-#             # ── Cloud LLM ─────────────────────────────────────────────────────
-#             elif agent == 'cloud':
-#                 simple_prompt = build_simple_prompt(cmd, fi_manager)
-#                 response = "[cloud LLM coming soon]"
-#                 print(response)
-#                 sync_history(cowrie, cmd)
-#                 log(cmd, 'cloud', response)
-#                 session.append({"cmd": cmd, "agent": "cloud", "response": response})
-
-#             # ── FI score every command ─────────────────────────────────────────
-#             fi_manager.process(
-#                 command    = cmd,
-#                 output     = session[-1]["response"],
-#                 agent      = agent,
-#                 session_id = SESSION_ID,
-#             )
-
-#     finally:
-#         cowrie.disconnect()
-#         fi_manager.status()
-#         print(f"[session] log saved → {LOG_FILE}")
-
-# if __name__ == "__main__":
-#     main()
-
-import readline
 import json
 import os
 import re
@@ -191,7 +7,9 @@ from router import classify
 from agent_manager.cowrie_agent import CowrieAgent
 from agent_manager.ondevice_agent import OnDeviceAgent
 from fi_manager import FILogManager
-from prompt_manager import PromptManager                     # ← added
+from prompt_manager import PromptManager
+from ssh_server import start_server             
+from agent_manager.static_handler import is_static, dispatch_static      
 
 # ─── Init ─────────────────────────────────────────────────────────────────────
 
@@ -205,8 +23,6 @@ fi_manager = FILogManager(
     min_fi         = 2,
 )
 
-# ─── System State ─────────────────────────────────────────────────────────────
-
 SYSTEM_STATE = {
     "versions":  {},
     "installed": [],
@@ -217,21 +33,24 @@ SYSTEM_STATE = {
     },
 }
 
-prompt_manager = PromptManager(fi_manager, SYSTEM_STATE)     # ← added (after SYSTEM_STATE)
+prompt_manager = PromptManager(fi_manager, SYSTEM_STATE)
 
 # ─── Logger ───────────────────────────────────────────────────────────────────
 
-def log(cmd: str, agent: str, response: str):
+def log(cmd, agent, response, fi_score=0, latency_ms=0.0):
     entry = {
-        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "cmd":       cmd,
-        "agent":     agent,
-        "response":  response,
+        "session_id": SESSION_ID,
+        "timestamp":  datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "cmd":        cmd,
+        "agent":      agent,
+        "response":   response,
+        "fi_score":   fi_score,
+        "latency_ms": round(latency_ms, 2),
     }
     existing = []
     if os.path.exists(LOG_FILE):
         try:
-            with open(LOG_FILE, "r") as f:
+            with open(LOG_FILE) as f:
                 existing = json.load(f)
         except json.JSONDecodeError:
             existing = []
@@ -240,27 +59,62 @@ def log(cmd: str, agent: str, response: str):
         json.dump(existing, f, indent=2)
 
 # ─── System State Updater ─────────────────────────────────────────────────────
+# at the top of main.py
+PACKAGE_VERSIONS = {
+    "python3.9":  "3.9.18",
+    "python3.10": "3.10.13",
+    "python3.11": "3.11.7",
+    "python3":    "3.10.13",
+    "python":     "3.10.13",
+    "nodejs":     "18.19.0",
+    "node":       "18.19.0",
+    "nginx":      "1.22.1",
+    "apache2":    "2.4.57",
+    "mysql":      "8.0.36",
+    "redis":      "7.0.15",
+    "git":        "2.39.2",
+    "docker":     "24.0.7",
+    "vim":        "9.0.1378",
+    "gcc":        "12.2.0",
+    "perl":       "5.36.0",
+    "php":        "8.2.7",
+    "curl":       "7.88.1",
+    "wget":       "1.21.3",
+    "openssl":    "3.0.11",
+}
 
-def update_state(cmd: str, response: str):
+def update_state(cmd, response):
+    # ── apt install ───────────────────────────────────────────────────────
     if re.search(r'(apt install|apt-get install)', cmd):
-        pkg = cmd.strip().split()[-1]
-        if pkg not in SYSTEM_STATE["installed"]:
-            SYSTEM_STATE["installed"].append(pkg)
+        # extract pkg name (skip flags like -y, -q)
+        parts = cmd.strip().split()
+        pkgs  = [p for p in parts[2:] if not p.startswith('-')]  # skip "apt install"
+        for pkg in pkgs:
+            if pkg not in SYSTEM_STATE["installed"]:
+                SYSTEM_STATE["installed"].append(pkg)
+            # auto-seed version from lookup table
+            ver = PACKAGE_VERSIONS.get(pkg)
+            if ver:
+                SYSTEM_STATE["versions"][pkg] = ver
+                # also map the short name (python3.9 → python)
+                short = re.sub(r'[\d.]+$', '', pkg)
+                if short and short != pkg:
+                    SYSTEM_STATE["versions"][short] = ver
 
-    tool_match = re.match(r'^(\w+)\s+--version', cmd.strip())
-    if tool_match:
-        tool = tool_match.group(1)
-        ver_match = re.search(r'(\d+\.\d+[\.\d]*)', response)
-        if ver_match:
-            if tool not in SYSTEM_STATE["versions"]:
-                SYSTEM_STATE["versions"][tool] = ver_match.group(1)
-        else:
-            if tool not in SYSTEM_STATE["versions"]:
-                SYSTEM_STATE["versions"][tool] = "unknown"
+    # ── apt remove ────────────────────────────────────────────────────────
+    if re.search(r'(apt remove|apt-get remove|apt purge)', cmd):
+        parts = cmd.strip().split()
+        pkgs  = [p for p in parts[2:] if not p.startswith('-')]
+        for pkg in pkgs:
+            if pkg in SYSTEM_STATE["installed"]:
+                SYSTEM_STATE["installed"].remove(pkg)
+            SYSTEM_STATE["versions"].pop(pkg, None)
+            short = re.sub(r'[\d.]+$', '', pkg)
+            SYSTEM_STATE["versions"].pop(short, None)
 
-# ─── Inject command into Cowrie history ───────────────────────────────────────
+# ─── Cowrie history sync ───────────────────────────────────────────────────────
 
-def sync_history(cowrie: CowrieAgent, cmd: str):
+def sync_history(cowrie, cmd):
     try:
         safe_cmd = cmd.replace("'", "'\\''")
         cowrie.shell.send(f"HISTFILE=~/.bash_history; history -s '{safe_cmd}'; history -w\n")
@@ -270,72 +124,94 @@ def sync_history(cowrie: CowrieAgent, cmd: str):
     except Exception:
         pass
 
+# ─── Command handler (called by SSH server for every command) ─────────────────
+def make_command_handler(cowrie: CowrieAgent, session: list):
+    """
+    handle(cmd, write_fn, read_fn) -> (response, new_prompt)
+    Routes cmd to the right cowrie/static/ondevice path based on type.
+    """
+    SLOW        = ('wget', 'curl', 'masscan')
+    INTERACTIVE = ('passwd', 'adduser', 'useradd', 'userdel')
+
+    prompt_state = {"current": "root@svr04:~#"}
+
+    def handle(cmd: str, write_fn, read_fn):
+        if cmd == "fi status":
+            fi_manager.status()
+            return "", prompt_state["current"]
+
+        agent = classify(cmd, session)
+
+        # Lookup queries MUST go to on_device so SYSTEM_STATE is honored
+        _LOOKUP_RE = re.compile(
+            r'(--version|^which\s|^whereis\s|^command\s+-v\s|^dpkg\s+-l|^apt\s+show\s)'
+        )
+        if _LOOKUP_RE.search(cmd.strip()):
+            agent = "on_device"
+        t_start    = time.time()
+        output     = ""
+        new_prompt = ""
+        cmd_base   = cmd.strip().split()[0] if cmd.strip() else ""
+
+        if agent == "cowrie":
+            from agent_manager.static_handler import is_static, dispatch_static
+
+            if is_static(cmd):
+                output = dispatch_static(cmd, write_fn)
+            elif cmd_base in SLOW:
+                output, np = cowrie.send_streaming(cmd, write_fn)
+                if np and np != "CLEAR":
+                    prompt_state["current"] = np
+                    new_prompt = np
+            elif cmd_base in INTERACTIVE:
+                output, np = cowrie.send_interactive(cmd, write_fn, read_fn)
+                if np and np != "CLEAR":
+                    prompt_state["current"] = np
+                    new_prompt = np
+            else:
+                output, np = cowrie.send(cmd)
+                if np and np != "CLEAR":
+                    prompt_state["current"] = np
+                    new_prompt = np
+            update_state(cmd, output)
+
+        elif agent == "on_device":
+            sys_p, usr_p = prompt_manager.build_prompt(cmd)
+            output = ondevice.send(sys_p, usr_p)
+            update_state(cmd, output)
+            sync_history(cowrie, cmd)
+
+        elif agent == "cloud":
+            sys_p, usr_p = prompt_manager.build_prompt(cmd)
+            output = "[cloud LLM coming soon]"
+            sync_history(cowrie, cmd)
+
+        latency_ms = (time.time() - t_start) * 1000
+        fi_event = fi_manager.process(
+            command    = cmd,
+            output     = output,
+            agent      = agent,
+            session_id = SESSION_ID,
+        )
+        session.append({"cmd": cmd, "agent": agent, "response": output})
+        log(cmd, agent, output, fi_event["fi"], latency_ms)
+        return output, new_prompt
+
+    return handle
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
 def main():
     session = []
     cowrie  = CowrieAgent()
     cowrie.connect()
-    prompt = "root@svr04:~#"
+
+    handler = make_command_handler(cowrie, session)
 
     try:
-        while True:
-            try:
-                cmd = input(f"{prompt} ").strip()
-            except (EOFError, KeyboardInterrupt):
-                print("\nlogout")
-                break
-
-            if not cmd: continue
-
-            if cmd == 'fi status':
-                fi_manager.status()
-                continue
-
-            if cmd == 'exit':
-                print("logout")
-                break
-
-            agent = classify(cmd, session)
-
-            # ── Cowrie ────────────────────────────────────────────────────────
-            if agent == 'cowrie':
-                output, new_prompt = cowrie.send(cmd)
-                if new_prompt == "CLEAR":
-                    print(f"{prompt} ", end="", flush=True)
-                elif new_prompt:
-                    prompt = new_prompt
-                update_state(cmd, output)
-                log(cmd, 'cowrie', output)
-                session.append({"cmd": cmd, "agent": "cowrie", "response": output})
-
-            # ── On-Device LLM ─────────────────────────────────────────────────
-            elif agent == 'on_device':
-                sys_p, usr_p = prompt_manager.build_prompt(cmd)  # ← changed
-                response = ondevice.send(sys_p, usr_p)           # ← changed
-                print(response)
-                update_state(cmd, response)
-                sync_history(cowrie, cmd)
-                log(cmd, 'on_device', response)
-                session.append({"cmd": cmd, "agent": "on_device", "response": response})
-
-            # ── Cloud LLM ─────────────────────────────────────────────────────
-            elif agent == 'cloud':
-                sys_p, usr_p = prompt_manager.build_prompt(cmd)  # ← changed (ready for later)
-                response = "[cloud LLM coming soon]"
-                print(response)
-                sync_history(cowrie, cmd)
-                log(cmd, 'cloud', response)
-                session.append({"cmd": cmd, "agent": "cloud", "response": response})
-
-            # ── FI score every command ─────────────────────────────────────────
-            fi_manager.process(
-                command    = cmd,
-                output     = session[-1]["response"],
-                agent      = agent,
-                session_id = SESSION_ID,
-            )
-
+        # Blocks here — SSH server runs until Ctrl+C
+        start_server(command_handler=handler, host="127.0.0.1", port=2223)
+    except KeyboardInterrupt:
+        print("\n[HydraPot] Shutting down...")
     finally:
         cowrie.disconnect()
         fi_manager.status()
