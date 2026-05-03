@@ -6,37 +6,37 @@ from collections import Counter
 
 BASIC_PATTERNS = [
     # File Operations
-    r'^(cat|cp|mv|rm|touch|head|tail|less|more|sort|diff|wc|ln|find|locate|file|stat|readlink|basename|dirname|truncate|tee|xargs|dd)',
+    r'^(cat|cp|mv|rm|touch|head|tail|less|more|sort|diff|wc|ln|find|locate|file|stat|readlink|basename|dirname|truncate|tee|xargs|dd)(\s|$)',
     # Directory Operations
-    r'^(cd|pwd|mkdir|rmdir|du|tree|ls|dir|vdir)',
+    r'^(cd|pwd|mkdir|rmdir|du|tree|ls|dir|vdir)(\s|$)',
     # File Permissions
-    r'^(chmod|chown|chgrp|umask|getfacl|setfacl)',
+    r'^(chmod|chown|chgrp|umask|getfacl|setfacl)(\s|$)',
     # User Information
-    r'^(whoami|id|who|users|finger|w|last|lastlog|groups)',
+    r'^(whoami|id|who|users|finger|w|last|lastlog|groups)(\s|$)',
     # Process Information
-    r'^(ps|top|htop|kill|bg|fg|uptime|jobs|nice|renice|pgrep|pkill|killall|pstree|lsof)',
+    r'^(ps|top|htop|kill|bg|fg|uptime|jobs|nice|renice|pgrep|pkill|killall|pstree|lsof)(\s|$)',
     # System Information
-    r'^(uname|free|dmesg|arch|date|cal|df|lscpu|lsmem|lsblk|lshw|lspci|lsusb|hostname|hostnamectl|timedatectl)',
+    r'^(uname|free|dmesg|arch|date|cal|df|lscpu|lsmem|lsblk|lshw|lspci|lsusb|hostname|hostnamectl|timedatectl)(\s|$)',
     # Text Processing
-    r'^(grep|awk|sed|cut|tr|echo|sort|uniq|tac|rev|strings|xxd|hexdump|od|column|paste|join|nl)',
+    r'^(grep|awk|sed|cut|tr|echo|sort|uniq|tac|rev|strings|xxd|hexdump|od|column|paste|join|nl)(\s|$)',
     # Compression
-    r'^(tar|zip|unzip|gzip|gunzip|bzip2|bunzip2|xz|7z|zcat|zless)',
+    r'^(tar|zip|unzip|gzip|gunzip|bzip2|bunzip2|xz|7z|zcat|zless)(\s|$)',
     # Shell Built-ins
-    r'^(env|alias|exit|history|printenv|source|eval|exec|type|which|whereis|whatis|man)',
+    r'^(env|alias|exit|history|printenv|source|eval|exec|type|which|whereis|whatis|man)(\s|$)',
     r'^export(?!\s+PATH=)\s+',
     # User/Group Management
-    r'^(adduser|useradd|userdel|usermod|groupadd|groupdel|groupmod|passwd|chpasswd|newgrp)',
-    # Network Tools — download/scan only, NOT version queries
-    r'^(nmap|masscan|wget|curl|ping|traceroute|arp|dig|nslookup|host|ftp|sftp|scp|whois)',
-    r'^nc\s+',                              # nc with args → cowrie
-    r'^(netstat|ss|ip|ifconfig)',           # network info → cowrie
-    r'^(ssh)\s+',                           # ssh connection → cowrie
-    r'^(telnet)\s+',                        # telnet → cowrie
-    # Package Management → Cowrie simulates install
+    r'^(adduser|useradd|userdel|usermod|groupadd|groupdel|groupmod|passwd|chpasswd|newgrp)(\s|$)',
+    # Network Tools — download/scan
+    r'^(nmap|masscan|wget|curl|ping|traceroute|arp|dig|nslookup|host|ftp|sftp|scp|whois)(\s|$)',
+    r'^nc\s+',
+    r'^(netstat|ss|ip|ifconfig)(\s|$)',
+    r'^ssh\s+',
+    r'^telnet\s+',
+    # Package Management
     r'^(apt|apt-get|yum|dnf|pip|pip3|gem|npm|dpkg)\s+',
-    # sudo anything → Cowrie handles
+    # sudo anything
     r'^sudo\s+',
-    # Specific patterns
+    # Specific patterns (already safe — no alternation footguns)
     r'cat\s+/etc/(passwd|shadow|hosts|hostname|os-release|crontab|sudoers|group|fstab|issue|motd)',
     r'ls\s+(-\w+\s+)?(\/etc|\/var|\/tmp|\/root|\/home|\/proc|\/sys)',
     r'uname\s+-\w+',
@@ -51,15 +51,15 @@ ONDEVICE_PATTERNS = [
     # Service Management
     r'^(systemctl|service)\s+',
     # Job Scheduling
-    r'^(crontab|cron|atd)',
+    r'^(crontab|cron|atd)(\s|$)',
     # User/Group Management
-    r'^(chage|chfn|chsh)',
+    r'^(chage|chfn|chsh)(\s|$)',
     # Kernel & Modules
-    r'^(lsmod|insmod|rmmod|modinfo)',
+    r'^(lsmod|insmod|rmmod|modinfo)(\s|$)',
     # Logging
-    r'^(journalctl|sar)',
+    r'^(journalctl|sar)(\s|$)',
     # Development Tools
-    r'^(gcc|g\+\+|gdb|make)',
+    r'^(gcc|g\+\+|gdb|make)(\s|$)',
     # Script execution
     r'^(python|python3|perl|ruby|php|node|lua)\s+',
     r'^\./\w+',
@@ -68,8 +68,7 @@ ONDEVICE_PATTERNS = [
     r'^export\s+PATH=',
     r'^unset\s+\w+',
     # Session
-    r'^(screen|stty|tty)',
-    # ← remove all the --version, ncat, netcat hardcoding
+    r'^(screen|stty|tty)(\s|$)',
 ]
 
 # ─── Group 3: Cloud LLM ──────────────────────────────────────────────────────
@@ -119,7 +118,7 @@ def classify(cmd: str, session_history: list) -> str:
         return 'on_device'
 
     # Fallback
-    return 'on_device'
+    return 'cowrie'
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -132,6 +131,19 @@ def _entropy(text: str) -> float:
     total  = len(text)
     return -sum((c/total) * math.log2(c/total) for c in counts.values())
 
+if __name__ == "__main__":
+    test_cmds = ["hello", "hey", "hi", "wtf", "what"]
+    all_pattern_groups = [
+        ("BASIC", BASIC_PATTERNS),
+        ("ONDEVICE", ONDEVICE_PATTERNS),
+    ]
+    for cmd in test_cmds:
+        result = classify(cmd, [])
+        print(f"\n{cmd!r} → {result}")
+        for group_name, patterns in all_pattern_groups:
+            for p in patterns:
+                if re.search(p, cmd):
+                    print(f"   matched {group_name}: {p}")
 
 # test case
 # ── 1. Base64 Encoded ─────────────────────────────────────────────────────────
