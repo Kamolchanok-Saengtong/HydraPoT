@@ -1,0 +1,68 @@
+# ─── Project metadata ───────────────────────────────────────────────────────
+[project]
+name            = "HydraPoT"
+version         = "0.1.0+demo.2025s2"
+description     = "An Intelligent Honeypot Framework Using Large Language Models for Interactive Attack Analysis"
+readme          = "README.md"
+requires-python = ">=3.10"
+authors         = [
+    { name = "Kamolchanok Saengtong" },
+]
+license = { file = "LICENSE" }
+
+# ─── Runtime dependencies ───────────────────────────────────────────────────
+dependencies = [
+    # SSH frontend
+    "asyncssh>=2.14",
+    "paramiko>=3.0",
+
+    # LLM (on-device)
+    "transformers>=4.40",
+    "torch>=2.0",
+    "accelerate>=0.27",
+
+    # CLI / wizard
+    "click>=8.1",
+    "rich>=13.7",
+
+    # Config
+    "PyYAML>=6.0",
+
+    # Dashboard
+    "streamlit>=1.30",
+    "plotly>=5.18",
+    "pandas>=2.0",
+]
+
+
+
+# ─── The `hp` command ───────────────────────────────────────────────────────
+# After `pip install -e .`, the user can type `hp` in their terminal.
+# It calls the `main()` function inside hp.py (root level).
+[project.scripts]
+hp = "hp:main"
+
+# ─── Build system ───────────────────────────────────────────────────────────
+[build-system]
+requires      = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+# ─── Tell setuptools where the modules live ─────────────────────────────────
+# Your code sits at the project root (no package folder), so we list the
+# top-level .py files explicitly. Add new files here as you create them.
+[tool.setuptools]
+py-modules = [
+    "hp",
+    "main",
+    "setup_wizard",
+    "config_loader",
+    "dashboard",
+    "ssh_server",
+    "router",
+    "fi_manager",
+    "prompt_manager",
+]
+packages = [
+    "agent_manager",
+    "prompt",
+]
