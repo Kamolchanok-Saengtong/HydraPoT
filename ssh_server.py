@@ -9,7 +9,6 @@ The handler we receive from main.py has signature:
                       (used during interactive commands; returns None
                        when nothing is queued)
 """
-
 import asyncio
 import os
 import queue
@@ -19,9 +18,7 @@ from datetime import datetime
 import json
 
 HOST_KEY_PATH = "data/hostkey_asyncssh.key"
-
 AUTH_LOG_PATH = "data/logs/auth_log.json"
-
 def _append_json(path, entry):
     """Append entry to a JSON list file. Creates file if missing."""
     existing = []
@@ -44,8 +41,6 @@ def get_host_key():
     key.write_private_key(HOST_KEY_PATH)
     print(f"[ssh_server] Generated new host key → {HOST_KEY_PATH}")
     return key
-
-
 class HoneypotServer(asyncssh.SSHServer):
     def __init__(self):
         self._peer = ("?", 0)
@@ -94,8 +89,6 @@ class HoneypotServer(asyncssh.SSHServer):
             "auth_type": "publickey",
         })
         return True
-
-
 async def _shell_session(process, handler_factory):
     peer     = process.get_extra_info("peername")
     src_ip   = peer[0] if peer else "?"
