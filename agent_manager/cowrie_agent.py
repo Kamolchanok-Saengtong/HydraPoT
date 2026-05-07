@@ -33,25 +33,27 @@ def strip_ansi(text: str) -> str:
     text = text.replace('\r\n', '\n').replace('\r', '')
     return text
 
-
 class CowrieAgent:
     SLOW_DELAYS         = {'wget': 0.8, 'curl': 0.3, 'masscan': 0.4}
     INTERACTIVE_TIMEOUT = 60.0   # safety hard-stop for interactive cmds
-
-    def __init__(self):
+    def __init__(self, host="127.0.0.1", port=2222, username="root", password="root"):
+        self.host     = host
+        self.port     = port
+        self.username = username
+        self.password = password
+        self.client   = paramiko.SSHClient()
+        self.client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        self.shell    = None
+        self._original_prompt = ""
+        
+    # ── connection ───────────────────────────────────────────────────────────
+    def _connect(self):
+        self._connect()
         self.client = paramiko.SSHClient()
         self.client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        self.shell  = None
-        self._original_prompt = ""   # captured at connect time
-
-    # ── connection ───────────────────────────────────────────────────────────
-    def connect(self):
-        username = input("Cowrie username: ")
-        password = getpass.getpass("Cowrie password: ")
-        self.client.connect(
-            hostname='127.0.0.1', port=2222,
-            username=username, password=password,
-        )
+        self.client.connect(self.host, port=self.port,
+                            username=self.username, password=self.password)
+        
         # term='dumb' tells cowrie not to emit colors / cursor codes
         self.shell = self.client.invoke_shell(term='dumb')
         time.sleep(0.5)
@@ -64,25 +66,33 @@ class CowrieAgent:
             self._original_prompt = cleaned_lines[-1].strip()
         print(f"[cowrie_agent] Connected. Original prompt: {self._original_prompt!r}")
 
-    # ── public API ───────────────────────────────────────────────────────────
     def send(self, cmd: str) -> tuple[str, str]:
         """Instant commands. Returns full (output, prompt)."""
         if not self.shell:
             return "", ""
         cmd_base = cmd.strip().split()[0] if cmd.strip() else ""
 
-        # nmap → static_handler (caller will use streaming version though)
         if cmd_base == 'nmap':
             return run_nmap(cmd), ""
 
         if cmd_base == 'clear':
-            self.shell.send(cmd + '\n')
+            try:
+                self.shell.send(cmd + '\n')
+            except (OSError, EOFError, paramiko.SSHException):
+                self._connect()
+                self.shell.send(cmd + '\n')
             time.sleep(0.2)
             if self.shell.recv_ready():
                 self.shell.recv(9999)
             return "", "CLEAR"
 
-        self.shell.send(cmd + '\n')
+        try:
+            self.shell.send(cmd + '\n')
+        except (OSError, EOFError, paramiko.SSHException):
+            print("[cowrie_agent] Socket closed — reconnecting...")
+            self._connect()
+            self.shell.send(cmd + '\n')
+
         return self._collect_until_prompt(cmd)
 
     def send_streaming(self, cmd: str, write_fn: Callable[[str], None],
