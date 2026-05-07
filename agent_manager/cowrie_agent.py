@@ -48,7 +48,6 @@ class CowrieAgent:
         
     # ── connection ───────────────────────────────────────────────────────────
     def _connect(self):
-        self._connect()
         self.client = paramiko.SSHClient()
         self.client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         self.client.connect(self.host, port=self.port,
