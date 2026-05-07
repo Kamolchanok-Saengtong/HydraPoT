@@ -12,7 +12,19 @@ import os
 import sys
 import yaml
 import subprocess
+import questionary
+from questionary import Style
+import readchar
 
+WIZARD_STYLE = Style([
+    ("qmark",       "fg:#ffaa00 bold"),
+    ("question",    "bold"),
+    ("answer",      "fg:#ffaa00 bold"),
+    ("pointer",     "fg:#ffaa00 bold"),
+    ("highlighted", ""),          # ← completely empty, no color, no bg, nothing
+    ("selected",    "fg:#888888"),
+    ("instruction", "fg:#888888"),
+])
 try:
     from rich.console import Console
     from rich.panel import Panel
@@ -34,8 +46,50 @@ console = Console() if HAS_RICH else None
 
 CONFIG_PATH = "config.yaml"
 
-# ─── Helpers ──────────────────────────────────────────────────────────────────
+class GoBack(Exception):
+    """User chose 'Go back' or typed 'b'."""
+    pass
 
+def build_default_config(existing: dict) -> dict:
+    """Build a config dict from defaults (or last saved config if it exists)."""
+    hp = existing.get("honeypot", {})
+    cw = existing.get("agents", {}).get("cowrie", {})
+    od = existing.get("agents", {}).get("on_device", {})
+    cl = existing.get("agents", {}).get("cloud", {})
+
+    return build_config(
+        honeypot   = {
+            "hostname": hp.get("hostname", "svr04"),
+            "os":       hp.get("os",       "Ubuntu 12.04 LTS"),
+            "port":     hp.get("port",     2223),
+        },
+        deployment = {"host": hp.get("host", "127.0.0.1")},
+        cowrie     = {
+            "enabled":  True,
+            "host":     cw.get("host",     "127.0.0.1"),
+            "port":     cw.get("port",     2222),
+            "username": cw.get("username", "root"),
+            "password": cw.get("password", "root"),
+        },
+        on_device  = {
+            "enabled":      od.get("enabled",      True),
+            "model":        od.get("model",        "Qwen/Qwen2.5-1.5B-Instruct"),
+            "quantization": od.get("quantization", "4bit"),
+            "temperature":  od.get("temperature",  0.7),
+            "max_tokens":   od.get("max_tokens",   256),
+            "do_sample":    od.get("do_sample",    True),
+        },
+        cloud      = {
+            "enabled":     cl.get("enabled",     False),
+            "provider":    cl.get("provider",    "openai"),
+            "model":       cl.get("model",       "gpt-4o-mini"),
+            "api_key_env": cl.get("api_key_env", "OPENAI_API_KEY"),
+            "temperature": cl.get("temperature", 0.3),
+            "max_tokens":  cl.get("max_tokens",  512),
+        },
+    )
+
+# help
 def _print(text: str, style: str = ""):
     if console:
         console.print(text, style=style)
@@ -43,48 +97,66 @@ def _print(text: str, style: str = ""):
         print(text)
 
 def _prompt(text: str, default: str = "") -> str:
-    """Simple prompt with default value shown."""
-    if default:
-        display = f"{text} [{default}]: "
-    else:
-        display = f"{text}: "
+    """Single-line text input. Type 'b' to go back."""
+    answer = questionary.text(
+        f"{text} (b=back)",
+        default=str(default),
+        style=WIZARD_STYLE,
+    ).ask()
+    if answer is None:
+        return default
+    if answer.strip().lower() in ("b", "back"):
+        raise GoBack()
+    return answer if answer else default
 
-    if HAS_CLICK:
-        return click.prompt(text, default=default, show_default=True)
-    else:
-        val = input(display).strip()
-        return val if val else default
 
-def _choice(text: str, options: list[tuple[str, str]], default: int = 1) -> int:
-    """
-    Show numbered options, return the index (1-based).
-    options = list of (label, description) tuples.
-    """
-    _print(f"\n{text}")
-    for i, (label, desc) in enumerate(options, 1):
-        marker = "→" if i == default else " "
-        _print(f"  {marker} {i}) {label}  {desc}", style="dim" if i != default else "bold")
+def _choice(text: str, options: list[tuple[str, str]], default: int = 1,
+            allow_back: bool = True) -> int:
+    
+    all_options = [(label, desc) for label, desc in options]
+    if allow_back:
+        all_options.append(("← Go back", ""))
+    
+    idx = default - 1
+    n = len(all_options)
 
+    def render():
+        sys.stdout.write(f"\n\033[93m?\033[0m \033[1m{text}\033[0m  \033[90m(↑/↓ arrows, Enter to select)\033[0m\n")
+        for i, (label, desc) in enumerate(all_options):
+            if i == idx:
+                sys.stdout.write(f"  \033[93m» {label}  {desc}\033[0m\n")
+            else:
+                sys.stdout.write(f"    {label}  \033[90m{desc}\033[0m\n")
+        sys.stdout.flush()
+
+    def clear(n_lines):
+        for _ in range(n_lines + 1):
+            sys.stdout.write("\033[A\033[2K")
+        sys.stdout.flush()
+
+    render()
     while True:
-        raw = input(f"  Choice [{default}]: ").strip()
-        if not raw:
-            return default
-        try:
-            val = int(raw)
-            if 1 <= val <= len(options):
-                return val
-        except ValueError:
-            pass
-        _print(f"  Please enter a number between 1 and {len(options)}", style="red")
+        key = readchar.readkey()
+        if key == readchar.key.UP:
+            idx = (idx - 1) % n
+        elif key == readchar.key.DOWN:
+            idx = (idx + 1) % n
+        elif key in (readchar.key.ENTER, "\r", "\n"):
+            clear(n + 1)
+            if allow_back and idx == n - 1:
+                raise GoBack()
+            return idx + 1
+        elif key in ("b", "B") and allow_back:
+            clear(n + 1)
+            raise GoBack()
+        clear(n + 1)
+        render()
+
 
 def _confirm(text: str, default: bool = True) -> bool:
-    """Yes/no confirmation."""
-    suffix = "[Y/n]" if default else "[y/N]"
-    raw = input(f"  {text} {suffix}: ").strip().lower()
-    if not raw:
-        return default
-    return raw in ("y", "yes")
-
+    """Yes/no, defaults to the highlighted option."""
+    answer = questionary.confirm(text, default=default, style=WIZARD_STYLE).ask()
+    return answer if answer is not None else default
 
 # ─── Welcome Banner ──────────────────────────────────────────────────────────
 
@@ -92,7 +164,7 @@ def show_welcome():
     if console:
         banner = Text()
         banner.append("\n")
-        banner.append("  🍯  Welcome to HydraPoT\n", style="bold yellow")
+        banner.append("Welcome to HydraPoT\n", style="bold yellow")
         banner.append("  Honeypot Framework Setup\n\n", style="dim")
         banner.append("  An Intelligent Honeypot Framework Using\n", style="")
         banner.append("  Large Language Models for Interactive\n", style="")
@@ -102,7 +174,7 @@ def show_welcome():
                             width=52, padding=(0, 2)))
     else:
         print("=" * 52)
-        print("  🍯  Welcome to HydraPoT")
+        print("Welcome to HydraPoT")
         print("  Honeypot Framework Setup")
         print("")
         print("  An Intelligent Honeypot Framework Using")
@@ -501,35 +573,228 @@ def what_now_menu():
             _print("  Invalid choice. Pick 1, 2, 3, or q.", style="red")
 
 
-# ─── Main wizard flow ────────────────────────────────────────────────────────
+def review_and_edit(config: dict) -> dict:
+    """Show the config, let the user edit any field, then return the final dict."""
+    while True:
+        hp = config["honeypot"]
+        cw = config["agents"]["cowrie"]
+        od = config["agents"]["on_device"]
+        cl = config["agents"]["cloud"]
 
+        # build the editable list. each entry: (label, current_value, edit_fn)
+        items = [
+            ("Hostname",            hp["hostname"],
+                lambda c: c["honeypot"].update({"hostname": _prompt("New hostname", c["honeypot"]["hostname"])})),
+            ("OS",                  hp["os"],
+                lambda c: c["honeypot"].update({"os": _edit_os(c["honeypot"]["os"])})),
+            ("Bind address",        f"{hp['host']}:{hp['port']}",
+                lambda c: _edit_bind(c)),
+            ("Cowrie host:port",    f"{cw['host']}:{cw['port']}",
+                lambda c: _edit_cowrie_addr(c)),
+            ("Cowrie credentials",  f"{cw['username']} / {cw['password']}",
+                lambda c: _edit_cowrie_creds(c)),
+            ("On-device model",     od["model"] if od["enabled"] else "disabled",
+                lambda c: _edit_ondevice_model(c)),
+            ("On-device quant",     od["quantization"] if od["enabled"] else "—",
+                lambda c: _edit_ondevice_quant(c)),
+            ("On-device temp",      str(od["temperature"]) if od["enabled"] else "—",
+                lambda c: c["agents"]["on_device"].update(
+                    {"temperature": float(_prompt("Temperature", str(c["agents"]["on_device"]["temperature"])))})),
+            ("On-device max_tok",   str(od["max_tokens"]) if od["enabled"] else "—",
+                lambda c: c["agents"]["on_device"].update(
+                    {"max_tokens": int(_prompt("Max tokens", str(c["agents"]["on_device"]["max_tokens"])))})),
+            ("Cloud LLM",           f"{cl['provider']} / {cl['model']}" if cl["enabled"] else "disabled",
+                lambda c: _edit_cloud(c)),
+        ]
+
+        # render
+        if console:
+            table = Table(box=box.SIMPLE, show_header=True, padding=(0, 2))
+            table.add_column("#",     style="bold cyan", width=3)
+            table.add_column("Setting", style="white")
+            table.add_column("Value", style="yellow")
+            for i, (label, value, _) in enumerate(items, 1):
+                table.add_row(str(i), label, str(value))
+            console.print(Panel(table, title="[bold]Review Configuration[/bold]",
+                                border_style="cyan", width=70))
+            _print("  Type a number to edit, or 's' to save and continue.\n", style="dim")
+        else:
+            print("\n── Review Configuration ──")
+            for i, (label, value, _) in enumerate(items, 1):
+                print(f"  {i:>2}) {label:<22} {value}")
+            print("\n  Type a number to edit, or 's' to save and continue.\n")
+
+        choice = input("  > ").strip().lower()
+
+        if choice in ("s", "save", ""):
+            return config
+
+        try:
+            idx = int(choice)
+            if 1 <= idx <= len(items):
+                _, _, edit_fn = items[idx - 1]
+
+                # ── NEW: catch GoBack so it cancels just this edit ───────
+                try:
+                    edit_fn(config)
+                except GoBack:
+                    _print("  ← Edit cancelled.", style="dim")
+                    continue   # back to the review screen
+
+                # also re-run build_config to make sure routing/etc stays consistent
+                config = build_config(
+                    honeypot   = {**config["honeypot"]},
+                    deployment = {"host": config["honeypot"]["host"]},
+                    cowrie     = config["agents"]["cowrie"],
+                    on_device  = config["agents"]["on_device"],
+                    cloud      = config["agents"]["cloud"],
+                )
+                continue
+        except ValueError:
+            pass
+
+        _print("  Invalid choice. Type a number or 's'.", style="red")
+
+def _edit_os(current: str) -> str:
+    os_choices = [
+        ("Ubuntu 12.04 LTS", "(CVE-rich, attacker-attractive)"),
+        ("Ubuntu 22.04 LTS", "(modern)"),
+        ("Debian 11",        "(stable)"),
+        ("CentOS 7",         "(enterprise)"),
+    ]
+    default = next((i for i, (l, _) in enumerate(os_choices, 1) if l == current), 1)
+    idx = _choice("Pick OS", os_choices, default=default)
+    return os_choices[idx - 1][0]
+
+
+def _edit_bind(c: dict):
+    deploy_choices = [
+        ("Localhost (127.0.0.1)", "(safest)"),
+        ("LAN (0.0.0.0)",         "(network-exposed)"),
+        ("Custom IP",             ""),
+    ]
+    idx = _choice("Bind address", deploy_choices, default=1)
+    if idx == 1:
+        c["honeypot"]["host"] = "127.0.0.1"
+    elif idx == 2:
+        c["honeypot"]["host"] = "0.0.0.0"
+    else:
+        c["honeypot"]["host"] = _prompt("Custom IP", c["honeypot"]["host"])
+    c["honeypot"]["port"] = int(_prompt("Honeypot port", str(c["honeypot"]["port"])))
+
+
+def _edit_cowrie_addr(c: dict):
+    c["agents"]["cowrie"]["host"] = _prompt("Cowrie host", c["agents"]["cowrie"]["host"])
+    c["agents"]["cowrie"]["port"] = int(_prompt("Cowrie port", str(c["agents"]["cowrie"]["port"])))
+
+
+def _edit_cowrie_creds(c: dict):
+    c["agents"]["cowrie"]["username"] = _prompt("Username", c["agents"]["cowrie"]["username"])
+    c["agents"]["cowrie"]["password"] = _prompt("Password", c["agents"]["cowrie"]["password"])
+
+
+def _edit_ondevice_model(c: dict):
+    model_choices = [
+        ("Qwen 2.5 1.5B Instruct", "(small, ~3GB)"),
+        ("Qwen 2.5 7B Instruct",   "(~15GB)"),
+        ("Qwen 2.5 Coder 7B",      "(code-focused, ~15GB)"),
+        ("Custom",                 "(HuggingFace name)"),
+        ("Disable",                ""),
+    ]
+    MODEL_MAP = {1: "Qwen/Qwen2.5-1.5B-Instruct",
+                 2: "Qwen/Qwen2.5-7B-Instruct",
+                 3: "Qwen/Qwen2.5-Coder-7B-Instruct"}
+    idx = _choice("On-device model", model_choices, default=1)
+    od = c["agents"]["on_device"]
+    if idx == 5:
+        od["enabled"] = False
+    elif idx == 4:
+        od["enabled"] = True
+        od["model"]   = _prompt("HuggingFace model", od["model"])
+    else:
+        od["enabled"] = True
+        od["model"]   = MODEL_MAP[idx]
+
+
+def _edit_ondevice_quant(c: dict):
+    quant_choices = [("4-bit", "(fastest)"), ("8-bit", "(balanced)"), ("None", "(full precision)")]
+    quant_map = {1: "4bit", 2: "8bit", 3: "none"}
+    idx = _choice("Quantization", quant_choices, default=1)
+    c["agents"]["on_device"]["quantization"] = quant_map[idx]
+
+
+def _edit_cloud(c: dict):
+    cl = c["agents"]["cloud"]
+    if not _confirm("Enable cloud LLM?", default=cl["enabled"]):
+        cl["enabled"] = False
+        return
+    cl["enabled"]     = True
+    cl["provider"]    = _prompt("Provider",     cl["provider"])
+    cl["model"]       = _prompt("Model",        cl["model"])
+    cl["api_key_env"] = _prompt("API key env",  cl["api_key_env"])
+
+# ─── Main wizard flow ────────────────────────────────────────────────────────
 def run_wizard():
-    """The main wizard loop. Can be called directly or via `hp init`."""
     while True:
         show_welcome()
-
         existing = load_existing()
 
-        # ask all sections
-        honeypot   = ask_honeypot(existing)
-        deployment = ask_deployment(existing)
-        cowrie     = ask_cowrie(existing)
-        on_device  = ask_on_device(existing)
-        cloud      = ask_cloud(existing)
+        # mode selection — back from here just re-shows welcome
+        mode_choices = [
+            ("Quick setup",  "(use defaults template)"),
+            ("Custom setup", "(answer each question)"),
+        ]
+        try:
+            mode = _choice("How would you like to configure?", mode_choices,
+                           default=1, allow_back=False)
+        except GoBack:
+            continue   # shouldn't happen since allow_back=False, but safe
 
-        # build and save
-        config_dict = build_config(honeypot, deployment, cowrie, on_device, cloud)
+        if mode == 1:
+            config_dict = build_default_config(existing)
+        else:
+            # custom mode: walk through sections, allow GoBack to step back
+            steps = [
+                ("honeypot",   ask_honeypot),
+                ("deployment", ask_deployment),
+                ("cowrie",     ask_cowrie),
+                ("on_device",  ask_on_device),
+                ("cloud",      ask_cloud),
+            ]
+
+            answers = {}
+            i = 0
+            while i < len(steps):
+                name, fn = steps[i]
+                try:
+                    answers[name] = fn(existing)
+                    i += 1
+                except GoBack:
+                    if i == 0:
+                        _print("  ← Already at the first section.", style="yellow")
+                    else:
+                        i -= 1
+                        _print(f"  ← Going back to '{steps[i][0]}'", style="yellow")
+
+            config_dict = build_config(
+                answers["honeypot"], answers["deployment"], answers["cowrie"],
+                answers["on_device"], answers["cloud"],
+            )
+
+        # review screen catches GoBack too — just loops back into review
+        try:
+            config_dict = review_and_edit(config_dict)
+        except GoBack:
+            pass
+
         save_config(config_dict)
         show_summary(config_dict)
 
-        # what now?
         result = what_now_menu()
         if result == "rerun":
             print("\n" * 2)
-            continue   # restart wizard
+            continue
         break
-
-
 # ─── Entry point ──────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
