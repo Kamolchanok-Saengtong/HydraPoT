@@ -3,22 +3,19 @@ ssh_server.py — asyncssh server for HydraPot.
 
 The handler we receive from main.py has signature:
     handle(cmd, write_fn, read_fn) -> (response, new_prompt)
-
-  - write_fn(text)  : push partial output to the attacker mid-command
-  - read_fn()       : non-blocking poll for the next attacker keystroke
-                      (used during interactive commands; returns None
-                       when nothing is queued)
 """
+
 import asyncio
 import os
 import queue
-import threading
+import json
 import asyncssh
 from datetime import datetime
-import json
 
 HOST_KEY_PATH = "data/hostkey_asyncssh.key"
 AUTH_LOG_PATH = "data/logs/auth_log.json"
+
+
 def _append_json(path, entry):
     """Append entry to a JSON list file. Creates file if missing."""
     existing = []
@@ -31,19 +28,27 @@ def _append_json(path, entry):
         except json.JSONDecodeError:
             existing = []
     existing.append(entry)
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     with open(path, "w") as f:
         json.dump(existing, f, indent=2)
 
+
 def get_host_key():
+    os.makedirs(os.path.dirname(HOST_KEY_PATH) or ".", exist_ok=True)
     if os.path.exists(HOST_KEY_PATH):
         return asyncssh.read_private_key(HOST_KEY_PATH)
     key = asyncssh.generate_private_key("ssh-rsa", key_size=2048)
     key.write_private_key(HOST_KEY_PATH)
     print(f"[ssh_server] Generated new host key → {HOST_KEY_PATH}")
     return key
+
+
 class HoneypotServer(asyncssh.SSHServer):
+    """Records every auth attempt and remembers the username for the session."""
+
     def __init__(self):
-        self._peer = ("?", 0)
+        self._peer    = ("?", 0)
+        self.username = None
 
     def connection_made(self, conn):
         self._peer = conn.get_extra_info("peername") or ("?", 0)
@@ -69,12 +74,12 @@ class HoneypotServer(asyncssh.SSHServer):
             "password":  password,
             "auth_type": "password",
         })
+        self.username = username
         return True
 
     def validate_public_key(self, username, key):
         ip, port = self._peer
         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        # key.get_fingerprint() gives a short hash we can log instead of the raw key
         try:
             fp = key.get_fingerprint()
         except Exception:
@@ -85,21 +90,40 @@ class HoneypotServer(asyncssh.SSHServer):
             "src_ip":    ip,
             "src_port":  port,
             "username":  username,
-            "password":  fp,           # store fingerprint where password would go
+            "password":  fp,
             "auth_type": "publickey",
         })
+        self.username = username
         return True
-async def _shell_session(process, handler_factory):
+
+
+async def _shell_session(process, handler_factory, hostname, os_banner):
     peer     = process.get_extra_info("peername")
     src_ip   = peer[0] if peer else "?"
     src_port = peer[1] if peer else 0
     peer_str = f"{src_ip}:{src_port}"
 
+    conn       = process.get_extra_info("connection")
+    server_obj = conn.get_extra_info("server") if conn else None
+    username   = getattr(server_obj, "username", None) or "root"
+
+    prompt_char = "#" if username == "root" else "$"
+    cwd         = "/root"
+
+    def make_prompt():
+        display = "~" if cwd == "/root" else cwd
+        return f"{username}@{hostname}:{display}{prompt_char} "
+
+    prompt = make_prompt()
     command_handler = handler_factory(src_ip=src_ip)
 
-    prompt = "root@svr04:~# "
-    process.stdout.write("Welcome to Ubuntu 12.04 LTS\r\n\r\n")
-    process.stdout.write(prompt)
+    try:
+        process.stdout.write(f"Welcome to {os_banner}\r\n\r\n")
+        process.stdout.write(prompt)
+    except (BrokenPipeError, asyncssh.ConnectionLost):
+        print(f"[ssh_server] {peer_str} disconnected before shell opened")
+        process.exit(0)
+        return
 
     loop = asyncio.get_running_loop()
     def write_fn(text: str):
@@ -128,6 +152,7 @@ async def _shell_session(process, handler_factory):
                     if not cmd:
                         process.stdout.write(prompt)
                         continue
+
                     if cmd in ("exit", "logout", "quit"):
                         process.stdout.write("logout\r\n")
                         print(f"[ssh_server] {peer_str} clean exit via '{cmd}'")
@@ -137,6 +162,35 @@ async def _shell_session(process, handler_factory):
                         process.stdout.write("\x1b[H\x1b[2J\x1b[3J" + prompt)
                         continue
 
+                    # ── cd handled locally so prompt always tracks correctly ──
+                    if cmd == "cd" or cmd.startswith("cd "):
+                        parts = cmd.split(None, 1)
+                        target = parts[1].strip() if len(parts) > 1 else "/root"
+
+                        if target == "~":
+                            target = "/root"
+                        elif target == "-":
+                            target = cwd          # simplification
+                        elif not target.startswith("/"):
+                            target = cwd.rstrip("/") + "/" + target
+
+                        # resolve . and ..
+                        segments = []
+                        for p in target.split("/"):
+                            if p == "..":
+                                if segments:
+                                    segments.pop()
+                            elif p and p != ".":
+                                segments.append(p)
+                        cwd = "/" + "/".join(segments)
+                        if not cwd:
+                            cwd = "/"
+
+                        prompt = make_prompt()
+                        process.stdout.write(prompt)
+                        continue
+
+                    # ── everything else goes to the agent ──
                     try:
                         response, new_prompt = await asyncio.to_thread(
                             command_handler, cmd, write_fn, read_fn
@@ -147,6 +201,8 @@ async def _shell_session(process, handler_factory):
                         traceback.print_exc()
                         response, new_prompt = (f"bash: error: {e}", "")
 
+                    # only accept new_prompt from agent if it contains path info
+                    # otherwise we keep our locally tracked prompt
                     if new_prompt:
                         prompt = new_prompt if new_prompt.endswith(" ") else new_prompt + " "
 
@@ -183,10 +239,12 @@ async def _shell_session(process, handler_factory):
         process.exit(0)
 
 
-async def _run_server(handler_factory, host, port):   # ← renamed param
+async def _run_server(handler_factory, host, port, hostname, os_banner):
     host_key = get_host_key()
+
     async def process_factory(process):
-        await _shell_session(process, handler_factory)   # ← pass factory
+        await _shell_session(process, handler_factory, hostname, os_banner)
+
     await asyncssh.create_server(
         HoneypotServer, host, port,
         server_host_keys=[host_key],
@@ -199,11 +257,14 @@ async def _run_server(handler_factory, host, port):   # ← renamed param
     print(f"[HydraPot] Test with: ssh root@{host} -p {port}")
 
 
-def start_server(handler_factory, host="127.0.0.1", port=2223):  # ← renamed param
+def start_server(handler_factory, host="127.0.0.1", port=2223,
+                 hostname="svr04", os_banner="Ubuntu 12.04 LTS"):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
-        loop.run_until_complete(_run_server(handler_factory, host, port))
+        loop.run_until_complete(
+            _run_server(handler_factory, host, port, hostname, os_banner)
+        )
         loop.run_forever()
     except (KeyboardInterrupt, SystemExit):
         print("\n[ssh_server] Shutdown requested...")
