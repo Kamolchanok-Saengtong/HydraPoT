@@ -295,6 +295,87 @@ def ask_cowrie(existing: dict) -> dict:
         "password": password,
     }
 
+def _scan_cached_models() -> list[str]:
+    """Scan ~/.cache/huggingface/hub/ and return all downloaded model IDs."""
+    cache = os.path.expanduser("~/.cache/huggingface/hub/")
+    models = []
+    try:
+        for folder in os.listdir(cache):
+            if folder.startswith("models--"):
+                name = folder[len("models--"):]
+                name = name.replace("--", "/", 1)
+                models.append(name)
+    except FileNotFoundError:
+        pass
+    return sorted(models)
+
+
+def _is_cached(model_id: str) -> bool:
+    """Check if a model is already downloaded in HuggingFace cache."""
+    folder = "models--" + model_id.replace("/", "--")
+    cache  = os.path.expanduser("~/.cache/huggingface/hub/")
+    return os.path.isdir(os.path.join(cache, folder))
+
+
+def _is_gguf(model_id: str) -> bool:
+    """Check if a model ID looks like a GGUF repo."""
+    return "gguf" in model_id.lower()
+
+
+def _ask_gguf_filter() -> str | None:
+    """
+    Ask the user which GGUF quant variant they want.
+    Returns a glob pattern like '*Q4_K_M*' or None to download all.
+    """
+    _print("\n  This is a GGUF repo — it contains many quant variants.", style="yellow")
+    _print("  Downloading all variants can be 20GB+.", style="dim")
+
+    common = [
+        ("Q4_K_M", "(recommended — best balance of size/quality)"),
+        ("Q5_K_M", "(higher quality, larger)"),
+        ("Q8_0",   "(near full quality, largest)"),
+        ("Q2_K",   "(smallest, lowest quality)"),
+        ("All variants", "(download everything — slow!)"),
+    ]
+
+    idx = _choice("Which quant variant do you want?", common, default=1)
+
+    if idx == 5:
+        return None  # download all
+    return common[idx - 1][0]   # e.g. "Q4_K_M"
+
+
+def _download_model(model_id: str) -> bool:
+    """
+    Download a model from HuggingFace inside the wizard.
+    Handles GGUF repos by asking which quant variant to download.
+    Returns True if successful, False if failed.
+    """
+    _print(f"\n  Downloading {model_id} from HuggingFace...", style="bold yellow")
+    _print("  This may take a while depending on model size.\n", style="dim")
+
+    try:
+        from huggingface_hub import snapshot_download
+
+        kwargs = {"repo_id": model_id}
+
+        # ── GGUF: ask which variant to download ───────────────────────────
+        if _is_gguf(model_id):
+            variant = _ask_gguf_filter()
+            if variant:
+                kwargs["allow_patterns"] = [f"*{variant}*", "*.json", "*.md"]
+                _print(f"\n  Downloading {variant} only...", style="dim")
+            else:
+                _print(f"\n  Downloading all variants...", style="dim")
+
+        snapshot_download(**kwargs)
+        _print(f"\n  ✓ Download complete!", style="bold green")
+        return True
+
+    except Exception as e:
+        _print(f"\n  ✗ Download failed: {e}", style="bold red")
+        _print("  Check the model name is correct and you have internet access.", style="yellow")
+        return False
 
 def ask_on_device(existing: dict) -> dict:
     """Section 4: On-device LLM."""
@@ -303,47 +384,55 @@ def ask_on_device(existing: dict) -> dict:
     _print("\n─── On-Device LLM ───", style="bold cyan")
     _print("  Local model for version queries, scripts, and context-aware responses.", style="dim")
 
-    model_choices = [
-        ("Qwen 2.5 1.5B Instruct",  "(small, fast, ~3GB RAM)"),
-        ("Qwen 2.5 7B Instruct",    "(better quality, ~15GB RAM)"),
-        ("Qwen 2.5 Coder 7B",       "(code-focused, ~15GB RAM)"),
-        ("Custom model",             "(enter HuggingFace model name)"),
-        ("None — disable",          "(cowrie + cloud only)"),
-    ]
+    cached = _scan_cached_models()
+    model_choices = [(m, "(cached ✓)") for m in cached]
+    model_choices.append(("Custom model", "(enter HuggingFace model name)"))
+    model_choices.append(("None — disable", "(cowrie + cloud only)"))
 
-    MODEL_MAP = {
-        1: "Qwen/Qwen2.5-1.5B-Instruct",
-        2: "Qwen/Qwen2.5-7B-Instruct",
-        3: "Qwen/Qwen2.5-Coder-7B-Instruct",
-    }
+    custom_idx  = len(cached) + 1
+    disable_idx = len(cached) + 2
 
-    # detect current model to set default
-    current_model = od.get("model", "Qwen/Qwen2.5-Coder-7B-Instruct")
-    model_default = 3  # default to Coder 7B
-    for idx, m in MODEL_MAP.items():
+    current_model = od.get("model", "")
+    model_default = 1
+    for i, m in enumerate(cached, 1):
         if m == current_model:
-            model_default = idx
+            model_default = i
             break
     if not od.get("enabled", True):
-        model_default = 5
+        model_default = disable_idx
 
     model_idx = _choice("[9] On-device LLM", model_choices, default=model_default)
 
-    if model_idx == 5:
+    if model_idx == disable_idx:
         return {"enabled": False, "model": "", "quantization": "4bit",
                 "temperature": 0.7, "max_tokens": 256, "do_sample": True}
 
-    if model_idx == 4:
-        model = _prompt("  Enter HuggingFace model name", current_model)
+    if model_idx == custom_idx:
+        while True:
+            model = _prompt("  Enter HuggingFace model name (e.g. Qwen/Qwen2.5-3B-Instruct)",
+                            current_model)
+            if _is_cached(model):
+                _print(f"  ✓ Already cached — no download needed.", style="green")
+                break
+            else:
+                _print(f"  Model not found in cache.", style="yellow")
+                if _confirm(f"  Download {model} now?", default=True):
+                    if _download_model(model):
+                        break
+                    if not _confirm("  Try a different model name?", default=True):
+                        raise GoBack()
+                else:
+                    if not _confirm("  Pick a different model?", default=True):
+                        raise GoBack()
     else:
-        model = MODEL_MAP[model_idx]
+        model = cached[model_idx - 1]
 
     quant_choices = [
         ("4-bit", "(fastest, least RAM)"),
         ("8-bit", "(balanced)"),
         ("None",  "(full precision — needs lots of RAM)"),
     ]
-    quant_map = {1: "4bit", 2: "8bit", 3: "none"}
+    quant_map     = {1: "4bit", 2: "8bit", 3: "none"}
     current_quant = od.get("quantization", "4bit")
     quant_default = {v: k for k, v in quant_map.items()}.get(current_quant, 1)
 
@@ -353,12 +442,12 @@ def ask_on_device(existing: dict) -> dict:
     max_tokens  = int(_prompt("[12] Max tokens",   str(od.get("max_tokens", 256))))
 
     return {
-        "enabled": True,
-        "model": model,
+        "enabled":      True,
+        "model":        model,
         "quantization": quant_map[quant_idx],
-        "temperature": temperature,
-        "max_tokens": max_tokens,
-        "do_sample": True,
+        "temperature":  temperature,
+        "max_tokens":   max_tokens,
+        "do_sample":    True,
     }
 
 
@@ -688,32 +777,42 @@ def _edit_cowrie_addr(c: dict):
     c["agents"]["cowrie"]["port"] = int(_prompt("Cowrie port", str(c["agents"]["cowrie"]["port"])))
 
 
-def _edit_cowrie_creds(c: dict):
-    c["agents"]["cowrie"]["username"] = _prompt("Username", c["agents"]["cowrie"]["username"])
-    c["agents"]["cowrie"]["password"] = _prompt("Password", c["agents"]["cowrie"]["password"])
-
-
 def _edit_ondevice_model(c: dict):
-    model_choices = [
-        ("Qwen 2.5 1.5B Instruct", "(small, ~3GB)"),
-        ("Qwen 2.5 7B Instruct",   "(~15GB)"),
-        ("Qwen 2.5 Coder 7B",      "(code-focused, ~15GB)"),
-        ("Custom",                 "(HuggingFace name)"),
-        ("Disable",                ""),
-    ]
-    MODEL_MAP = {1: "Qwen/Qwen2.5-1.5B-Instruct",
-                 2: "Qwen/Qwen2.5-7B-Instruct",
-                 3: "Qwen/Qwen2.5-Coder-7B-Instruct"}
+    cached = _scan_cached_models()
+    model_choices = [(m, "(cached ✓)") for m in cached]
+    model_choices.append(("Custom", "(enter HuggingFace name)"))
+    model_choices.append(("Disable", ""))
+
+    custom_idx  = len(cached) + 1
+    disable_idx = len(cached) + 2
+
     idx = _choice("On-device model", model_choices, default=1)
-    od = c["agents"]["on_device"]
-    if idx == 5:
+    od  = c["agents"]["on_device"]
+
+    if idx == disable_idx:
         od["enabled"] = False
-    elif idx == 4:
+    elif idx == custom_idx:
         od["enabled"] = True
-        od["model"]   = _prompt("HuggingFace model", od["model"])
+        while True:
+            model = _prompt("HuggingFace model", od.get("model", ""))
+            if _is_cached(model):
+                _print("  ✓ Already cached — no download needed.", style="green")
+                od["model"] = model
+                break
+            else:
+                _print("  Model not found in cache.", style="yellow")
+                if _confirm(f"  Download {model} now?", default=True):
+                    if _download_model(model):
+                        od["model"] = model
+                        break
+                    if not _confirm("  Try a different model name?", default=True):
+                        raise GoBack()
+                else:
+                    if not _confirm("  Pick a different model?", default=True):
+                        raise GoBack()
     else:
         od["enabled"] = True
-        od["model"]   = MODEL_MAP[idx]
+        od["model"]   = cached[idx - 1]
 
 
 def _edit_ondevice_quant(c: dict):
