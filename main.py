@@ -4,6 +4,7 @@ import json
 import os
 import re
 import time
+import random
 from datetime import datetime
 
 from config_loader import load_config
@@ -60,9 +61,9 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?"):
         "systemctl", "service", "journalctl",
     }
 
-    EDITORS      = {"vim", "vi", "nano", "emacs"}
-    SLOW         = ("wget", "curl", "masscan", "apt", "apt-get")
-    INTERACTIVE  = ("passwd", "adduser", "useradd", "userdel")
+    EDITORS     = {"vim", "vi", "nano", "emacs"}
+    SLOW        = ("masscan",)
+    INTERACTIVE = ("adduser", "useradd", "userdel")
 
     DEFAULT_VERSIONS = {
         "nmap":      "Nmap version 7.80 ( https://nmap.org )",
@@ -108,9 +109,19 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?"):
 
     SYSTEM_STATE = {
         "versions":  {},
-        "installed": list(config.system_state.get("pre_installed", [])),
-        "files":     config.system_state.get("starting_files", {}),
+        "installed": {},
+        "files":     dict(config.system_state.get("starting_files", {})),
     }
+
+    for pkg in config.system_state.get("pre_installed", []):
+        if pkg not in SYSTEM_STATE["installed"]:
+            display = DEFAULT_VERSIONS.get(pkg)
+            num_m   = re.search(r'(\d+\.\d+(?:\.\d+)*)', display or "")
+            ver_num = num_m.group(1) if num_m else "1.0.0"
+            SYSTEM_STATE["installed"][pkg] = {
+                "version":     ver_num,
+                "version_str": display or f"{pkg} version {ver_num}",
+            }
 
     prompt_manager = PromptManager(
         fi_manager,
@@ -122,25 +133,28 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?"):
 
     # ── helpers ───────────────────────────────────────────────────────────
 
+    def _rand_ver() -> str:
+        return f"{random.randint(1,3)}.{random.randint(0,19)}.{random.randint(0,9)}"
+
     def _is_tool_available(cmd_base: str) -> bool:
         if cmd_base in BUILTIN_TOOLS:
             return True
-        pkg = TOOL_TO_PACKAGE.get(cmd_base)
-        if pkg and pkg in SYSTEM_STATE["installed"]:
-            return True
         if cmd_base in SYSTEM_STATE["installed"]:
             return True
-        pre = config.system_state.get("pre_installed", [])
-        if cmd_base in pre:
-            return True
-        if pkg and pkg in pre:
+        pkg = TOOL_TO_PACKAGE.get(cmd_base)
+        if pkg and pkg in SYSTEM_STATE["installed"]:
             return True
         return False
 
     def _handle_version_query(cmd: str, cmd_base: str) -> str:
         if cmd_base in SYSTEM_STATE["versions"]:
             return SYSTEM_STATE["versions"][cmd_base]
-        ver = DEFAULT_VERSIONS.get(cmd_base, f"{cmd_base} version 1.0.0")
+        if cmd_base in DEFAULT_VERSIONS:
+            ver = DEFAULT_VERSIONS[cmd_base]
+            SYSTEM_STATE["versions"][cmd_base] = ver
+            return ver
+        pkg_info = SYSTEM_STATE["installed"].get(cmd_base, {})
+        ver = pkg_info.get("version_str") or f"{cmd_base} version {pkg_info.get('version', '1.0.0')}"
         SYSTEM_STATE["versions"][cmd_base] = ver
         return ver
 
@@ -148,7 +162,6 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?"):
         parts = cmd.strip().split()
         if len(parts) < 3:
             return "Usage: systemctl [OPTIONS...] COMMAND ..."
-        # systemctl <action> <service>  vs  service <service> <action>
         if parts[0] == "service":
             service, action = parts[1], parts[2]
         else:
@@ -172,6 +185,16 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?"):
             return f"Removed /etc/systemd/system/multi-user.target.wants/{service}.service"
         return f"systemctl: unknown command '{action}'"
 
+    def _handle_passwd(cmd: str, write_fn, read_fn) -> str:
+        parts  = cmd.strip().split()
+        target = parts[1] if len(parts) > 1 else "root"
+        write_fn(f"New password: ")
+        read_fn()
+        write_fn(f"\r\nRetype new password: ")
+        read_fn()
+        write_fn(f"\r\npasswd: password updated successfully\r\n")
+        return ""
+
     def _needs_llm(cmd: str, cmd_base: str, state: dict) -> bool:
         files = state.get("files", {})
         if re.search(r'--version\b|-V\b', cmd):
@@ -184,14 +207,13 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?"):
                 return True
         if cmd.strip().startswith("./"):
             script = cmd.strip()[2:].split()[0]
-            if script in files:          # any tracked file, even downloaded ones
+            if script in files:
                 return True
         if cmd_base == "cat":
             for p in cmd.strip().split()[1:]:
                 if not p.startswith("-") and p in files and files[p].get("content"):
                     return True
         if cmd_base == "sed":
-            # use last token as filename — same as update_state
             parts = cmd.strip().split()
             filename = parts[-1] if len(parts) > 1 else ""
             if filename in files:
@@ -234,42 +256,94 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?"):
             time.sleep(0.1)
         return combined.strip()
 
-    def update_state(cmd, response):
-        # ── apt install: track packages, strip flags and single chars ─────
-        if re.search(r'\b(apt|apt-get)\s+install\b', cmd):
-            parts = cmd.strip().split()
-            try:
-                i    = parts.index('install')
-                pkgs = [
-                    p for p in parts[i+1:]
-                    if not p.startswith('-') and len(p) > 1
-                ]
-            except ValueError:
-                pkgs = []
-            for pkg in pkgs:
-                if pkg not in SYSTEM_STATE["installed"]:
-                    SYSTEM_STATE["installed"].append(pkg)
-                    print(f"[state] installed: {pkg}")
+    def _register_packages(pkgs: list):
+        for pkg in pkgs:
+            if pkg not in SYSTEM_STATE["installed"]:
+                ver_num = _rand_ver()
+                display = DEFAULT_VERSIONS.get(pkg) or f"{pkg} {ver_num}"
+                SYSTEM_STATE["installed"][pkg] = {
+                    "version":     ver_num,
+                    "version_str": display,
+                }
+                print(f"[state] installed: {pkg} {ver_num}")
 
-        # ── apt remove/purge ──────────────────────────────────────────────
+    def _fake_apt_output(pkgs: list) -> str:
+        total_kb = sum(random.randint(200, 900) for _ in pkgs)
+        total_mb = round(total_kb * 2.2 / 1024, 1)
+        lines = [
+            "Reading package lists... Done",
+            "Building dependency tree",
+            "Reading state information... Done",
+            "The following NEW packages will be installed:",
+            f"  {' '.join(pkgs)}",
+            f"0 upgraded, {len(pkgs)} newly installed, 0 to remove and 259 not upgraded.",
+            f"Need to get {total_kb}.2kB of archives.",
+            f"After this operation, {total_mb}MB of additional disk space will be used.",
+        ]
+        for pkg in pkgs:
+            ver = SYSTEM_STATE["installed"][pkg]["version"]
+            kb  = random.randint(200, 900)
+            lines.append(f"Get:1 http://archive.ubuntu.com/ubuntu jammy/main amd64 {pkg} {ver} [{kb}.2 kB]")
+        lines += [
+            f"Fetched {total_kb}.2kB in 1s (4493B/s)",
+            "Selecting previously unselected package(s).",
+            "(Reading database ... 177887 files and directories currently installed.)",
+        ]
+        for pkg in pkgs:
+            ver = SYSTEM_STATE["installed"][pkg]["version"]
+            lines.append(f"Preparing to unpack .../archives/{pkg}_{ver}_amd64.deb ...")
+            lines.append(f"Unpacking {pkg} ({ver}) ...")
+        lines.append("Processing triggers for man-db (2.10.2-1) ...")
+        for pkg in pkgs:
+            ver = SYSTEM_STATE["installed"][pkg]["version"]
+            lines.append(f"Setting up {pkg} ({ver}) ...")
+        return "\n".join(lines)
+
+    def _fake_download_output(cmd: str, actual_base: str) -> str:
+        url_m    = re.search(r'https?://\S+', cmd)
+        url      = url_m.group(0) if url_m else "http://unknown"
+        dest_m   = re.search(r'-o\s+(\S+)', cmd)
+        if dest_m:
+            dest = dest_m.group(1)
+        else:
+            fname = url.rstrip("/").split("/")[-1] or "index.html"
+            dest  = f"/root/{fname}"
+        size_kb  = random.randint(4, 800)
+        speed_kb = random.randint(100, 1200)
+        now      = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        if actual_base == "wget":
+            return (
+                f"--{now}--  {url}\n"
+                f"Connecting to {url.split('/')[2]}:80... connected.\n"
+                f"HTTP request sent, awaiting response... 200 OK\n"
+                f"Length: {size_kb * 1024} ({size_kb}K) [application/octet-stream]\n"
+                f"Saving to: '{dest}'\n\n"
+                f"{size_kb}K [======================================>] "
+                f"{size_kb * 1024}  {speed_kb}.{random.randint(10,99)}KB/s   in 0.{random.randint(1,9)}s\n\n"
+                f"{now} ({speed_kb}.{random.randint(10,99)} KB/s) - '{dest}' saved [{size_kb*1024}/{size_kb*1024}]"
+            )
+        else:
+            return (
+                f"  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current\n"
+                f"                                 Dload  Upload   Total   Spent    Left  Speed\n"
+                f"100 {size_kb}K  100 {size_kb}K    0     0  {speed_kb}k      0  0:00:01  0:00:01 --:--:-- {speed_kb}k"
+            )
+
+    def update_state(cmd, response):
         if re.search(r'\b(apt|apt-get)\s+(remove|purge)\b', cmd):
             parts    = cmd.strip().split()
             verb_idx = next((i for i, p in enumerate(parts) if p in ("remove", "purge")), -1)
             pkgs     = [p for p in parts[verb_idx+1:] if not p.startswith('-')] if verb_idx >= 0 else []
             for pkg in pkgs:
-                if pkg in SYSTEM_STATE["installed"]:
-                    SYSTEM_STATE["installed"].remove(pkg)
+                SYSTEM_STATE["installed"].pop(pkg, None)
                 SYSTEM_STATE["versions"].pop(pkg, None)
 
-        # ── version cache: store full string, never overwrite ─────────────
         m = re.match(r'^(?:sudo\s+)?([\w.\-]+)\s+(--version|-V)', cmd.strip())
         if m and response:
             tool = m.group(1)
             if tool not in SYSTEM_STATE["versions"]:
-                # store the first line of the response as-is (full string)
                 SYSTEM_STATE["versions"][tool] = response.strip().splitlines()[0]
 
-        # ── file writes ───────────────────────────────────────────────────
         m = re.match(r"^echo\s+['\"]?(.+?)['\"]?\s*>\s*(.+)$", cmd.strip())
         if m:
             SYSTEM_STATE["files"][m.group(2).strip()] = {
@@ -292,11 +366,9 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?"):
             if path not in SYSTEM_STATE["files"]:
                 SYSTEM_STATE["files"][path] = {"content": "", "perms": "-rw-r--r--", "size": "0B"}
 
-        # ── wget/curl: track downloaded file by destination path ──────────
-        # curl ... -o /dest/file  →  use -o target
         m_curl_o = re.match(r"^curl\s+.*?-o\s+(\S+)", cmd.strip())
         if m_curl_o:
-            dest = m_curl_o.group(1)
+            dest  = m_curl_o.group(1)
             url_m = re.search(r"https?://\S+", cmd)
             url   = url_m.group(0) if url_m else "unknown"
             SYSTEM_STATE["files"][dest] = {
@@ -304,7 +376,6 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?"):
                 "perms": "-rw-r--r--", "size": "4.2K",
             }
         else:
-            # wget or curl without -o → filename from URL
             m = re.match(r"^(wget|curl)\s+.*?(https?://\S+)", cmd.strip())
             if m:
                 url      = m.group(2)
@@ -326,13 +397,18 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?"):
         if m:
             SYSTEM_STATE["files"][m.group(1).strip()] = {"perms": "drwxr-xr-x", "size": "4.0K"}
 
-        # ── sed -i on tracked file ────────────────────────────────────────
         m = re.match(r"^sed\s+(-i\s+)?'s/(.+?)/(.+?)/(g?)'\s+(.+)$", cmd.strip())
         if m:
             old, new, g, path = m.group(2), m.group(3), m.group(4), m.group(5).strip()
             if path in SYSTEM_STATE["files"] and "content" in SYSTEM_STATE["files"][path]:
                 c = SYSTEM_STATE["files"][path]["content"]
                 SYSTEM_STATE["files"][path]["content"] = c.replace(old, new) if g else c.replace(old, new, 1)
+
+        m = re.match(r"^mv\s+(\S+)\s+(\S+)$", cmd.strip())
+        if m:
+            src, dst = m.group(1).strip(), m.group(2).strip()
+            if src in SYSTEM_STATE["files"]:
+                SYSTEM_STATE["files"][dst] = SYSTEM_STATE["files"].pop(src)
 
     def sync_history(cmd):
         try:
@@ -362,6 +438,14 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?"):
         with open(LOG_FILE, "w") as f:
             json.dump(existing, f, indent=2)
 
+    # ── shortcut: log + return ────────────────────────────────────────────
+    def _finish(cmd, agent, output, fi_score, t_start, streamed=False):
+        latency_ms = (time.time() - t_start) * 1000
+        fi_manager.process(command=cmd, output=output, agent=agent, session_id=SESSION_ID)
+        session.append({"cmd": cmd, "agent": agent, "response": output})
+        log(cmd, agent, output, fi_score, latency_ms)
+        return ("", "") if streamed else (output, "")
+
     # ── main dispatch ─────────────────────────────────────────────────────
 
     def handle(cmd: str, write_fn, read_fn):
@@ -379,17 +463,50 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?"):
         fi_score, _ = fi_manager.scorer.score(cmd)
         needs_llm   = _needs_llm(cmd, actual_base, SYSTEM_STATE)
 
-        # ── Editor shortcut: installed editor → silent success ────────────
+        # ── apt install — fully local, streamed ───────────────────────────
+        if re.search(r'\b(apt|apt-get)\s+install\b', actual_cmd):
+            parts = actual_cmd.strip().split()
+            try:
+                i    = parts.index('install')
+                pkgs = [p for p in parts[i+1:] if not p.startswith('-') and len(p) > 1]
+            except ValueError:
+                pkgs = []
+            if pkgs:
+                _register_packages(pkgs)
+                output = _fake_apt_output(pkgs)
+                for line in output.split("\n"):
+                    write_fn(line + "\r\n")
+                    time.sleep(random.uniform(0.1, 0.4))
+                return _finish(cmd, "cowrie", output, fi_score, t_start, streamed=True)
+
+        # ── wget/curl — fake download, streamed ──────────────────────────
+        if actual_base in ("wget", "curl") and re.search(r'https?://', actual_cmd):
+            output = _fake_download_output(actual_cmd, actual_base)
+            for line in output.split("\n"):
+                write_fn(line + "\r\n")
+                time.sleep(random.uniform(0.2, 0.6))
+            update_state(cmd, output)
+            return _finish(cmd, "cowrie", output, fi_score, t_start, streamed=True)
+
+        # ── passwd — fake interactive ─────────────────────────────────────
+        if actual_base == "passwd":
+            output = _handle_passwd(cmd, write_fn, read_fn)
+            return _finish(cmd, "on_device", output, fi_score, t_start)
+
+        # ── editor (installed, not --version) — silent success ────────────
         if actual_base in EDITORS and _is_tool_available(actual_base):
-            if not re.search(r'--version\b|-V\b', cmd):
-                agent      = "on_device"
-                output     = ""
-                latency_ms = (time.time() - t_start) * 1000
-                fi_manager.process(command=cmd, output=output, agent=agent, session_id=SESSION_ID)
-                session.append({"cmd": cmd, "agent": agent, "response": output})
-                log(cmd, agent, output, fi_score, latency_ms)
-                return output, ""
-            # --version falls through to Step 3
+            if re.search(r'--version\b|-V\b', cmd):
+                if _is_tool_available(actual_base):
+                    output = _handle_version_query(cmd, actual_base)
+                    return _finish(cmd, "on_device", output, fi_score, t_start)
+
+        # ── chmod on tracked file — handle locally ────────────────────────
+        if actual_base == "chmod" and not re.search(r'--version\b|-V\b', cmd):
+            parts  = actual_cmd.split()
+            target = parts[-1] if len(parts) >= 3 else ""
+            if target in SYSTEM_STATE["files"]:
+                update_state(cmd, "")
+                return _finish(cmd, "cowrie", "", fi_score, t_start)
 
         # ── Step 0: not installed → command not found ─────────────────────
         skip_not_found = (
@@ -402,13 +519,8 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?"):
             or _is_tool_available(actual_base)
         )
         if not skip_not_found:
-            agent      = "cowrie"
-            output     = f"bash: {actual_base}: command not found"
-            latency_ms = (time.time() - t_start) * 1000
-            fi_manager.process(command=cmd, output=output, agent=agent, session_id=SESSION_ID)
-            session.append({"cmd": cmd, "agent": agent, "response": output})
-            log(cmd, agent, output, fi_score, latency_ms)
-            return output, ""
+            output = f"bash: {actual_base}: command not found"
+            return _finish(cmd, "cowrie", output, fi_score, t_start)
 
         # ── Step 1: obfuscated → cloud ────────────────────────────────────
         if _is_cloud(cmd):
@@ -424,34 +536,57 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?"):
 
         # ── Step 3: context-dependent ─────────────────────────────────────
         elif needs_llm:
-
-            # version query — always handled directly
             if re.search(r'--version\b|-V\b', cmd):
                 agent  = "on_device"
                 output = _handle_version_query(cmd, actual_base)
                 update_state(cmd, output)
+            
+            if actual_base == "touch":
+                update_state(cmd, "")
+                return _finish(cmd, "cowrie", "", fi_score, t_start)
 
-            # systemctl / service — always handled directly
+            if actual_base == "mkdir":
+                update_state(cmd, "")
+                return _finish(cmd, "cowrie", "", fi_score, t_start)
+            # ── mv — handle locally if source file is tracked ─────────────────
+            if actual_base == "mv":
+                parts = actual_cmd.split()
+                if len(parts) >= 3:
+                    src = parts[1]
+                    if src in SYSTEM_STATE["files"]:
+                        update_state(cmd, "")
+                        return _finish(cmd, "cowrie", "", fi_score, t_start)
+
             elif actual_base in ("systemctl", "service"):
                 agent  = "on_device"
                 output = _handle_systemctl(cmd)
                 update_state(cmd, output)
 
-            # sed on tracked file — silent success, state already mutated
             elif actual_base == "sed":
-                agent  = "on_device"
+                agent = "on_device"
                 update_state(cmd, "")
                 output = ""
+            
 
-            # everything else — LLM if loaded, else Cowrie best-effort
             elif ondevice is not None:
                 agent         = "on_device"
                 script_output = _execute_tracked_script(cmd, write_fn)
                 if script_output is not None:
                     output, streamed = script_output, True
                 else:
-                    sys_p, usr_p = prompt_manager.build_prompt(cmd)
-                    output = ondevice.send(sys_p, usr_p)
+                    file_key  = cmd.strip()[2:].split()[0] if cmd.strip().startswith("./") else actual_cmd.split()[-1]
+                    file_info = SYSTEM_STATE["files"].get(file_key, {})
+                    if file_info.get("content", "").startswith("[downloaded from"):
+                        sys_p = (
+                            f"You are a Linux terminal. The attacker ran: {cmd}\n"
+                            f"This is a script downloaded from the internet. "
+                            f"Simulate realistic terminal output as if it executed. "
+                            f"3-6 lines max. No explanation, no markdown."
+                        )
+                        output = ondevice.send(sys_p, cmd)
+                    else:
+                        sys_p, usr_p = prompt_manager.build_prompt(cmd)
+                        output = ondevice.send(sys_p, usr_p)
                 sync_history(cmd)
                 update_state(cmd, output)
 
@@ -490,11 +625,7 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?"):
                 output, _ = cowrie.send(cmd)
             update_state(cmd, output)
 
-        latency_ms = (time.time() - t_start) * 1000
-        fi_manager.process(command=cmd, output=output, agent=agent, session_id=SESSION_ID)
-        session.append({"cmd": cmd, "agent": agent, "response": output})
-        log(cmd, agent, output, fi_score, latency_ms)
-        return ("", "") if streamed else (output, "")
+        return _finish(cmd, agent, output, fi_score, t_start, streamed)
 
     return handle
 
