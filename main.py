@@ -20,7 +20,7 @@ config   = None
 ondevice = None
 
 
-def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?"):
+def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str = "?"):
 
     TOOL_TO_PACKAGE = {
         "nmap": "nmap", "masscan": "masscan", "ncat": "nmap",
@@ -423,9 +423,11 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?"):
     def log(cmd, agent, response, fi_score=0, latency_ms=0.0):
         entry = {
             "session_id": SESSION_ID, "src_ip": src_ip,
+            "public_ip":  public_ip,
             "timestamp":  datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "cmd": cmd, "agent": agent, "response": response,
             "fi_score": fi_score, "latency_ms": round(latency_ms, 2),
+
         }
         existing = []
         if os.path.exists(LOG_FILE):
@@ -656,7 +658,7 @@ def main():
 
     try:
         start_server(
-            handler_factory = lambda src_ip="?": make_command_handler(cowrie, src_ip=src_ip),
+            handler_factory = lambda src_ip="?", public_ip="?": make_command_handler(cowrie, src_ip=src_ip, public_ip=public_ip),
             host            = config.honeypot.host,
             port            = config.honeypot.port,
             hostname        = config.honeypot.hostname,

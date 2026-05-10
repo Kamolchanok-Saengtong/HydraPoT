@@ -52,7 +52,18 @@ class HoneypotServer(asyncssh.SSHServer):
 
     def connection_made(self, conn):
         self._peer = conn.get_extra_info("peername") or ("?", 0)
-        print(f"[ssh_server] Connection from {self._peer[0]}:{self._peer[1]}")
+        ip, port = self._peer
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        print(f"[ssh_server] Connection from {ip}:{port}")
+        _append_json(AUTH_LOG_PATH, {
+            "timestamp": ts,
+            "src_ip":    ip,
+            "src_port":  port,
+            "event":     "connection",
+            "username":  None,
+            "password":  None,
+            "auth_type": "tcp_connect",
+        })
 
     def connection_lost(self, exc):
         if exc:
@@ -110,12 +121,26 @@ async def _shell_session(process, handler_factory, hostname, os_banner):
     prompt_char = "#" if username == "root" else "$"
     cwd         = "/root"
 
+    # ── resolve public IP for geo mapping ─────────────────────────
+    import ipaddress
+    try:
+        is_private = ipaddress.ip_address(src_ip).is_private
+    except ValueError:
+        is_private = True
+
+    if is_private:
+        # testing locally — can't geolocate private IPs
+        public_ip = src_ip
+    else:
+        # real attacker from internet — their IP is already public
+        public_ip = src_ip
+
     def make_prompt():
         display = "~" if cwd == "/root" else cwd
         return f"{username}@{hostname}:{display}{prompt_char} "
 
     prompt = make_prompt()
-    command_handler = handler_factory(src_ip=src_ip)
+    command_handler = handler_factory(src_ip=src_ip, public_ip=public_ip)
 
     try:
         process.stdout.write(f"Welcome to {os_banner}\r\n\r\n")
