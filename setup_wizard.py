@@ -295,26 +295,62 @@ def ask_cowrie(existing: dict) -> dict:
         "password": password,
     }
 
+
+# models that are used internally by the framework, not for chat
+_INTERNAL_MODELS = {"roberta-large"}
+
 def _scan_cached_models() -> list[str]:
-    """Scan ~/.cache/huggingface/hub/ and return all downloaded model IDs."""
+    """Scan ~/.cache/huggingface/hub/ and return downloaded chat model IDs."""
     cache = os.path.expanduser("~/.cache/huggingface/hub/")
     models = []
     try:
         for folder in os.listdir(cache):
-            if folder.startswith("models--"):
-                name = folder[len("models--"):]
-                name = name.replace("--", "/", 1)
-                models.append(name)
+            if not folder.startswith("models--"):
+                continue
+
+            name = folder[len("models--"):]
+            name = name.replace("--", "/", 1)
+
+            # skip internal/evaluation models
+            if name in _INTERNAL_MODELS:
+                continue
+
+            # skip if no actual model files downloaded yet
+            folder_path = os.path.join(cache, folder)
+            has_files = any(
+                f.endswith((".gguf", ".safetensors", ".bin"))
+                for root, _, files in os.walk(folder_path)
+                for f in files
+            )
+            if not has_files:
+                continue
+
+            models.append(name)
     except FileNotFoundError:
         pass
     return sorted(models)
 
 
 def _is_cached(model_id: str) -> bool:
-    """Check if a model is already downloaded in HuggingFace cache."""
+    """Check if a model is fully downloaded (no incomplete files)."""
     folder = "models--" + model_id.replace("/", "--")
     cache  = os.path.expanduser("~/.cache/huggingface/hub/")
-    return os.path.isdir(os.path.join(cache, folder))
+    folder_path = os.path.join(cache, folder)
+
+    if not os.path.isdir(folder_path):
+        return False
+
+    has_model_files   = False
+    has_incomplete    = False
+
+    for root, _, files in os.walk(folder_path):
+        for f in files:
+            if f.endswith((".gguf", ".safetensors", ".bin")):
+                has_model_files = True
+            if f.endswith(".incomplete") or f.endswith(".part"):
+                has_incomplete = True
+
+    return has_model_files and not has_incomplete
 
 
 def _is_gguf(model_id: str) -> bool:
@@ -546,11 +582,17 @@ def build_config(honeypot: dict, deployment: dict, cowrie: dict,
             "fi_threshold":  2,
         },
         "system_state": {
-            "starting_files": {
-                "/etc/passwd": {"perms": "-rw-r--r--", "size": "2.1K"},
-                "/etc/shadow": {"perms": "-rw-r-----", "size": "1.4K"},
-                "/var/log":    {"perms": "drwxr-xr-x", "size": "4.0K"},
-            },
+         "pre_installed": [
+        "coreutils", "bash", "ssh", "apt", "apt-get", "dpkg",
+        "grep", "sed", "awk", "tar", "gzip", "net-tools",
+        "procps", "util-linux", "cron", "sudo", "passwd",
+        "wget", "curl",
+        ],
+         "starting_files": {
+        "/etc/passwd": {"perms": "-rw-r--r--", "size": "2.1K"},
+        "/etc/shadow": {"perms": "-rw-r-----", "size": "1.4K"},
+        "/var/log":    {"perms": "drwxr-xr-x", "size": "4.0K"},
+        },
         },
     }
 
@@ -706,6 +748,19 @@ def review_and_edit(config: dict) -> dict:
                 table.add_row(str(i), label, str(value))
             console.print(Panel(table, title="[bold]Review Configuration[/bold]",
                                 border_style="cyan", width=70))
+            # show plugin summary
+            plugin_dir = "plugins/rules"
+            if os.path.isdir(plugin_dir):
+                rule_files = [f for f in os.listdir(plugin_dir) if f.endswith((".yaml", ".yml"))]
+                if rule_files:
+                    names = [f.replace(".yaml", "").replace(".yml", "").replace("_", " ") for f in rule_files]
+                    _print(f"  📦 Plugins: {len(rule_files)} rule(s) loaded ({', '.join(names)})", style="dim")
+            export_dir = "plugins/export"
+            if os.path.isdir(export_dir):
+                export_files = [f for f in os.listdir(export_dir) if f.endswith((".yaml", ".yml"))]
+                if export_files:
+                    _print(f"  📤 Exporters: {len(export_files)} configured (edit in plugins/export/)", style="dim")
+
             _print("  Type a number to edit, or 's' to save and continue.\n", style="dim")
         else:
             print("\n── Review Configuration ──")
