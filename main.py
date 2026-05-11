@@ -1,5 +1,4 @@
 """main.py — HydraPoT honeypot orchestrator."""
-
 import json
 import os
 import re
@@ -15,12 +14,15 @@ from prompt.fi_manager import FILogManager
 from prompt.prompt_manager import PromptManager
 from ssh_server import start_server
 from router import _is_cloud
+import sys 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from plugins.plugin_loader import PluginManager
 
 config   = None
 ondevice = None
 
 
-def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str = "?"):
+def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str = "?", plugins=None):
 
     TOOL_TO_PACKAGE = {
         "nmap": "nmap", "masscan": "masscan", "ncat": "nmap",
@@ -106,6 +108,8 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
         max_events=10,
         min_fi=config.logging.fi_threshold,
     )
+    if plugins:
+        plugins.apply_fi_rules(fi_manager.scorer)
 
     SYSTEM_STATE = {
         "versions":  {},
@@ -200,6 +204,16 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
         if re.search(r'--version\b|-V\b', cmd):
             return _is_tool_available(cmd_base)
         if cmd_base in ("systemctl", "service", "journalctl"):
+            return True
+        pre_installed = config.system_state.get("pre_installed", [])
+        if (cmd_base not in BUILTIN_TOOLS
+            and cmd_base in SYSTEM_STATE["installed"]
+            and cmd_base not in pre_installed):
+            return True
+        pkg = TOOL_TO_PACKAGE.get(cmd_base)
+        if (pkg and cmd_base not in BUILTIN_TOOLS
+            and pkg in SYSTEM_STATE["installed"]
+            and pkg not in pre_installed):
             return True
         if cmd_base in ("bash", "sh", "python", "python3", "perl", "node", "ruby", "php", "lua"):
             parts = cmd.strip().split()
@@ -446,6 +460,16 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
         fi_manager.process(command=cmd, output=output, agent=agent, session_id=SESSION_ID)
         session.append({"cmd": cmd, "agent": agent, "response": output})
         log(cmd, agent, output, fi_score, latency_ms)
+
+        # export to SIEM
+        if plugins:
+            plugins.export_event({
+                "session_id": SESSION_ID, "src_ip": src_ip,
+                "timestamp": datetime.now().isoformat(),
+                "cmd": cmd, "agent": agent, "fi_score": fi_score,
+                "latency_ms": round(latency_ms, 2),
+            })
+
         return ("", "") if streamed else (output, "")
 
     # ── main dispatch ─────────────────────────────────────────────────────
@@ -498,9 +522,10 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
         # ── editor (installed, not --version) — silent success ────────────
         if actual_base in EDITORS and _is_tool_available(actual_base):
             if re.search(r'--version\b|-V\b', cmd):
-                if _is_tool_available(actual_base):
-                    output = _handle_version_query(cmd, actual_base)
-                    return _finish(cmd, "on_device", output, fi_score, t_start)
+                output = _handle_version_query(cmd, actual_base)
+                return _finish(cmd, "on_device", output, fi_score, t_start)
+            else:
+                return _finish(cmd, "on_device", "", fi_score, t_start)
 
         # ── chmod on tracked file — handle locally ────────────────────────
         if actual_base == "chmod" and not re.search(r'--version\b|-V\b', cmd):
@@ -568,8 +593,12 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
                 agent = "on_device"
                 update_state(cmd, "")
                 output = ""
-            
-
+                
+            elif is_static(cmd):
+                agent = "cowrie"
+                output = dispatch_static(cmd, write_fn)
+                streamed = True
+    
             elif ondevice is not None:
                 agent         = "on_device"
                 script_output = _execute_tracked_script(cmd, write_fn)
@@ -637,6 +666,8 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
 def main():
     global config, ondevice
     config = load_config()
+    plugins = PluginManager("plugins/")
+    plugins.load_all()
 
     ondevice = OnDeviceAgent(
         model        = config.agents.on_device.model,
@@ -658,7 +689,9 @@ def main():
 
     try:
         start_server(
-            handler_factory = lambda src_ip="?", public_ip="?": make_command_handler(cowrie, src_ip=src_ip, public_ip=public_ip),
+            handler_factory = lambda src_ip="?", public_ip="?": make_command_handler(
+        cowrie, src_ip=src_ip, public_ip=public_ip, plugins=plugins
+        ),
             host            = config.honeypot.host,
             port            = config.honeypot.port,
             hostname        = config.honeypot.hostname,
@@ -667,6 +700,7 @@ def main():
     except KeyboardInterrupt:
         print("\n[HydraPot] Shutting down...")
     finally:
+        plugins.flush_exporters()
         cowrie.disconnect()
         print("[HydraPot] Done.")
 
