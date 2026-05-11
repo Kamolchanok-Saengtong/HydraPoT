@@ -1,0 +1,46 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# HydraPoT Plugin — Data Exfiltration Detection
+# ═══════════════════════════════════════════════════════════════════════════════
+# Detects data collection, compression, and exfiltration attempts.
+
+name: Data Exfiltration Detection
+author: HydraPoT
+version: 1.0
+description: Detects data staging, archiving, and exfiltration via network.
+
+rules:
+  # FI 4 — active exfiltration
+  - fi: 4
+    patterns:
+      - "nc.*-e.*/bin/(ba)?sh"
+      - "bash.*-i.*>&.*/dev/tcp"
+      - "curl.*-X POST.*-d @"
+      - "wget.*--post-file"
+      - "scp.*@.*:"
+      - "python.*-c.*socket.*connect"
+    description: "Active data exfiltration or reverse shell"
+
+  # FI 3 — data staging and compression
+  - fi: 3
+    patterns:
+      - "tar.*czf.*/etc"
+      - "tar.*czf.*/home"
+      - "tar.*czf.*/var"
+      - "zip.*-r.*/etc"
+      - "mysqldump"
+      - "pg_dump"
+      - "find.*-name.*\\.conf.*-exec.*cat"
+      - "find.*-name.*\\.env"
+    description: "Data collection and staging for exfiltration"
+
+  # FI 2 — data discovery
+  - fi: 2
+    patterns:
+      - "find / -name.*\\.pem"
+      - "find / -name.*\\.key"
+      - "find / -name.*\\.csv"
+      - "find / -name.*\\.sql"
+      - "find.*-type f -size \\+1M"
+      - "du -sh /home"
+      - "ls -laR /var/www"
+    description: "Sensitive file discovery"

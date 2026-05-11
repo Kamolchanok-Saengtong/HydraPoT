@@ -1,0 +1,32 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# HydraPoT SIEM Export — Syslog (JSON or CEF)
+# ═══════════════════════════════════════════════════════════════════════════════
+# Forward honeypot events via syslog to any SIEM that accepts syslog input
+# (Wazuh, QRadar, ArcSight, Graylog, rsyslog, etc.)
+#
+# Supports:
+#   - UDP or TCP transport
+#   - JSON or CEF (Common Event Format) output
+#
+# Setup:
+#   1. Set enabled: true below
+#   2. Point host/port to your syslog collector
+#   3. Restart HydraPoT
+
+name: Syslog/CEF Export
+enabled: false
+type: syslog
+
+connection:
+  host: "your company"
+  port: 514
+  protocol: "udp"
+  format: "cef"
+
+settings:
+  batch_size: 5
+  flush_interval_sec: 15
+
+filters:
+  min_fi: 2
+  include_auth: true
