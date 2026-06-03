@@ -12,6 +12,7 @@ from agent_manager.ondevice_agent import OnDeviceAgent
 from agent_manager.static_handler import is_static, dispatch_static
 from prompt.fi_manager import FILogManager
 from prompt.prompt_manager import PromptManager
+from agent_manager.cloud_agent import CloudAgent
 from ssh_server import start_server
 from router import _is_cloud
 import sys 
@@ -20,6 +21,7 @@ from plugins.plugin_loader import PluginManager
 
 config   = None
 ondevice = None
+cloud = None
 
 
 def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str = "?", plugins=None):
@@ -551,14 +553,22 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
 
         # ── Step 1: obfuscated → cloud ────────────────────────────────────
         if _is_cloud(cmd):
-            agent  = "cloud"
-            output = "[cloud LLM coming soon]"
+            agent = "cloud"
+            if cloud is not None:
+                sys_p, usr_p = prompt_manager.build_prompt(cmd)
+                output = cloud.send(sys_p, usr_p)
+            else:
+                output = ""
             sync_history(cmd)
 
-        # ── Step 2: FI 4 → cloud ─────────────────────────────────────────
+        # Step 2: FI 4 → cloud
         elif fi_score == 4:
-            agent  = "cloud"
-            output = "[cloud LLM coming soon]"
+            agent = "cloud"
+            if cloud is not None:
+                sys_p, usr_p = prompt_manager.build_prompt(cmd)
+                output = cloud.send(sys_p, usr_p)
+            else:
+                output = ""
             sync_history(cmd)
 
         # ── Step 3: context-dependent ─────────────────────────────────────
@@ -567,16 +577,17 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
                 agent  = "on_device"
                 output = _handle_version_query(cmd, actual_base)
                 update_state(cmd, output)
+                return _finish(cmd, agent, output, fi_score, t_start)
             
-            if actual_base == "touch":
+            elif actual_base == "touch":
                 update_state(cmd, "")
                 return _finish(cmd, "cowrie", "", fi_score, t_start)
 
-            if actual_base == "mkdir":
+            elif actual_base == "mkdir":
                 update_state(cmd, "")
                 return _finish(cmd, "cowrie", "", fi_score, t_start)
             # ── mv — handle locally if source file is tracked ─────────────────
-            if actual_base == "mv":
+            elif actual_base == "mv":
                 parts = actual_cmd.split()
                 if len(parts) >= 3:
                     src = parts[1]
@@ -664,7 +675,7 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
 def main():
-    global config, ondevice
+    global config, ondevice, cloud
     config = load_config()
     plugins = PluginManager("plugins/")
     plugins.load_all()
@@ -676,8 +687,17 @@ def main():
         max_tokens   = config.agents.on_device.max_tokens,
         do_sample    = config.agents.on_device.do_sample,
     ) if config.agents.on_device.enabled else None
+    cloud = CloudAgent(
+        provider    = config.agents.cloud.provider,
+        model       = config.agents.cloud.model,
+        api_key_env = config.agents.cloud.api_key_env,
+        base_url    = getattr(config.agents.cloud, "base_url", "https://ai.psu.blue/v1"),
+        temperature = config.agents.cloud.temperature,
+        max_tokens  = config.agents.cloud.max_tokens,
+    ) if config.agents.cloud.enabled else None
 
     print(f"[HydraPot] on_device: {'loaded' if ondevice else 'DISABLED'}")
+    print(f"[HydraPot] cloud: {'loaded' if cloud else 'DISABLED'}")
 
     cowrie = CowrieAgent(
         host     = config.agents.cowrie.host,
