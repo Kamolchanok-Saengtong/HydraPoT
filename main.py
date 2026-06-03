@@ -271,17 +271,27 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
                     combined += out + "\n"
             time.sleep(0.1)
         return combined.strip()
+    def _canonical_package(pkg: str) -> str:
+        if re.match(r'^python3\.\d+', pkg):  return "python3"
+        if re.match(r'^python2\.\d+', pkg):  return "python2"
+        if re.match(r'^gcc-\d+',      pkg):  return "gcc"
+        if re.match(r'^g\+\+-\d+',    pkg):  return "g++"
+        if re.match(r'^ruby\d+\.\d+', pkg):  return "ruby"
+        if re.match(r'^php\d+\.\d+',  pkg):  return "php"
+        if re.match(r'^nodejs\d+',    pkg):  return "node"
+        return pkg
 
     def _register_packages(pkgs: list):
         for pkg in pkgs:
-            if pkg not in SYSTEM_STATE["installed"]:
+            canonical = _canonical_package(pkg)
+            if canonical not in SYSTEM_STATE["installed"]:
                 ver_num = _rand_ver()
-                display = DEFAULT_VERSIONS.get(pkg) or f"{pkg} {ver_num}"
-                SYSTEM_STATE["installed"][pkg] = {
+                display = DEFAULT_VERSIONS.get(canonical) or f"{canonical} {ver_num}"
+                SYSTEM_STATE["installed"][canonical] = {
                     "version":     ver_num,
                     "version_str": display,
                 }
-                print(f"[state] installed: {pkg} {ver_num}")
+                print(f"[state] installed: {canonical} {ver_num}")
 
     def _fake_apt_output(pkgs: list) -> str:
         total_kb = sum(random.randint(200, 900) for _ in pkgs)
@@ -297,7 +307,7 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
             f"After this operation, {total_mb}MB of additional disk space will be used.",
         ]
         for pkg in pkgs:
-            ver = SYSTEM_STATE["installed"][pkg]["version"]
+            ver = SYSTEM_STATE["installed"][_canonical_package(pkg)]["version"]
             kb  = random.randint(200, 900)
             lines.append(f"Get:1 http://archive.ubuntu.com/ubuntu jammy/main amd64 {pkg} {ver} [{kb}.2 kB]")
         lines += [
@@ -306,12 +316,12 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
             "(Reading database ... 177887 files and directories currently installed.)",
         ]
         for pkg in pkgs:
-            ver = SYSTEM_STATE["installed"][pkg]["version"]
+            ver = SYSTEM_STATE["installed"][_canonical_package(pkg)]["version"]
             lines.append(f"Preparing to unpack .../archives/{pkg}_{ver}_amd64.deb ...")
             lines.append(f"Unpacking {pkg} ({ver}) ...")
         lines.append("Processing triggers for man-db (2.10.2-1) ...")
         for pkg in pkgs:
-            ver = SYSTEM_STATE["installed"][pkg]["version"]
+            ver = SYSTEM_STATE["installed"][_canonical_package(pkg)]["version"]
             lines.append(f"Setting up {pkg} ({ver}) ...")
         return "\n".join(lines)
 
@@ -547,11 +557,6 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
             or needs_llm
             or _is_tool_available(actual_base)
         )
-        if not skip_not_found:
-            output = f"bash: {actual_base}: command not found"
-            return _finish(cmd, "cowrie", output, fi_score, t_start)
-
-        # ── Step 1: obfuscated → cloud ────────────────────────────────────
         if _is_cloud(cmd):
             agent = "cloud"
             if cloud is not None:
@@ -560,12 +565,18 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
             else:
                 output = ""
             sync_history(cmd)
+            return _finish(cmd, agent, output, fi_score, t_start)
+
+        # ── Step 1: not installed → command not found ─────────────────────
+        if not skip_not_found:
+            output = f"bash: {actual_base}: command not found"
+            return _finish(cmd, "cowrie", output, fi_score, t_start)
 
         # Step 2: FI 4 → cloud
         elif fi_score == 4:
             agent = "cloud"
             if cloud is not None:
-                sys_p, usr_p = prompt_manager.build_prompt(cmd)
+                sys_p, usr_p = prompt_manager.build_cloud_prompt(cmd) 
                 output = cloud.send(sys_p, usr_p)
             else:
                 output = ""

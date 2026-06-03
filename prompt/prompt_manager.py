@@ -56,6 +56,28 @@ class PromptManager:
         system_prompt = f"{base_prompt}\n\n{system_setting}"
         user_prompt   = self._build_user_prompt(cmd)
         return system_prompt, user_prompt
+    def build_cloud_prompt(self, cmd: str) -> tuple[str, str]:
+        """
+        Like build_prompt() but adds obfuscation-aware instruction for cloud LLM.
+        """
+        base_prompt = self._base_prompt_tpl.format(
+            hostname = self.hostname,
+            os_name  = self.os_name,
+        )
+        system_setting = self._system_setting_tpl.format(
+            hostname = self.hostname,
+            os_name  = self.os_name,
+        )
+        obfuscation_note = (
+            "\nIMPORTANT: The attacker may use obfuscated commands (base64, hex, "
+            "variable splitting, eval, subshell substitution, etc.). "
+            "Mentally decode the full command first, then simulate the terminal output "
+            "of the decoded command. Never show the decoding steps — output only what "
+            "a real Linux terminal would print."
+        )
+        system_prompt = f"{base_prompt}\n\n{system_setting}{obfuscation_note}"
+        user_prompt   = self._build_user_prompt(cmd)
+        return system_prompt, user_prompt
 
     def _build_user_prompt(self, cmd: str) -> str:
         current_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -65,15 +87,23 @@ class PromptManager:
 
         # ── SRi — system state register ──────────────────────────────
         sri_lines = []
+
+        # installed packages — most important for tool availability
+        if self.system_state.get("installed"):
+            sri_lines.append(
+                f"installed packages: {', '.join(self.system_state['installed'])}"
+            )
+        else:
+            sri_lines.append("installed packages: (none beyond coreutils)")
+
+        # cached versions
         for tool, ver in self.system_state["versions"].items():
             sri_lines.append(
                 f"CRITICAL: {tool} is version {ver} — "
                 f"MUST output this exact version, ignore training data"
             )
-        if self.system_state["installed"]:
-            sri_lines.append(
-                f"installed packages: {', '.join(self.system_state['installed'])}"
-            )
+
+        # tracked files
         if self.system_state.get("files"):
             for path, meta in self.system_state["files"].items():
                 perms   = meta.get("perms", "-rw-r--r--")
