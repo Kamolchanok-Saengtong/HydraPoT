@@ -63,6 +63,7 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
         "clear", "exit", "logout",
         "dig", "nslookup", "host",
         "systemctl", "service", "journalctl",
+        "base64", "xxd", "od",
     }
 
     EDITORS     = {"vim", "vi", "nano", "emacs"}
@@ -134,6 +135,8 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
         SYSTEM_STATE,
         hostname=config.honeypot.hostname,
         os_name=config.honeypot.os,
+        builtins   = BUILTIN_TOOLS,
+
     )
     session = []
 
@@ -192,14 +195,9 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
         return f"systemctl: unknown command '{action}'"
 
     def _handle_passwd(cmd: str, write_fn, read_fn) -> str:
-        parts  = cmd.strip().split()
-        target = parts[1] if len(parts) > 1 else "root"
-        write_fn(f"New password: ")
-        read_fn()
-        write_fn(f"\r\nRetype new password: ")
-        read_fn()
-        write_fn(f"\r\npasswd: password updated successfully\r\n")
-        return ""
+        time.sleep(random.uniform(1.5, 3.0))
+        time.sleep(random.uniform(1.5, 3.0))
+        return "passwd: password updated successfully"
 
     def _needs_llm(cmd: str, cmd_base: str, state: dict) -> bool:
         files = state.get("files", {})
@@ -499,7 +497,6 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
         actual_base = actual_cmd.split()[0] if actual_cmd else ""
 
         fi_score, _ = fi_manager.scorer.score(cmd)
-        needs_llm   = _needs_llm(cmd, actual_base, SYSTEM_STATE)
 
         # ── apt install — fully local, streamed ───────────────────────────
         if re.search(r'\b(apt|apt-get)\s+install\b', actual_cmd):
@@ -526,10 +523,21 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
             update_state(cmd, output)
             return _finish(cmd, "cowrie", output, fi_score, t_start, streamed=True)
 
-        # ── passwd — fake interactive ─────────────────────────────────────
         if actual_base == "passwd":
-            output = _handle_passwd(cmd, write_fn, read_fn)
-            return _finish(cmd, "on_device", output, fi_score, t_start)
+            fi_manager.process(command=cmd, output="", agent="on_device", session_id=SESSION_ID)
+            session.append({"cmd": cmd, "agent": "on_device", "response": ""})
+            log(cmd, "on_device", "", fi_score, t_start)
+            return "", ""
+        
+        if actual_base in INTERACTIVE:
+            parts = actual_cmd.strip().split()
+            if len(parts) < 2:
+                # no username provided — let cowrie handle it normally, not interactive
+                output, _ = cowrie.send(cmd)
+                return _finish(cmd, "cowrie", output, fi_score, t_start)
+            output, _ = cowrie.send_interactive(cmd, write_fn, read_fn)
+            update_state(cmd, output)
+            return _finish(cmd, "cowrie", output, fi_score, t_start)
 
         # ── editor (installed, not --version) — silent success ────────────
         if actual_base in EDITORS and _is_tool_available(actual_base):
@@ -546,7 +554,7 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
             if target in SYSTEM_STATE["files"]:
                 update_state(cmd, "")
                 return _finish(cmd, "cowrie", "", fi_score, t_start)
-
+        needs_llm   = _needs_llm(cmd, actual_base, SYSTEM_STATE)
         # ── Step 0: not installed → command not found ─────────────────────
         skip_not_found = (
             not actual_base
@@ -560,7 +568,7 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
         if _is_cloud(cmd):
             agent = "cloud"
             if cloud is not None:
-                sys_p, usr_p = prompt_manager.build_prompt(cmd)
+                sys_p, usr_p = prompt_manager.build_cloud_prompt(cmd)
                 output = cloud.send(sys_p, usr_p)
             else:
                 output = ""

@@ -15,6 +15,14 @@ from datetime import datetime
 HOST_KEY_PATH = "data/hostkey_asyncssh.key"
 AUTH_LOG_PATH = "data/logs/auth_log.json"
 
+async def _read_hidden(process, prompt_text: str) -> str:
+    """Read password input — accepts one line then returns."""
+    process.stdout.write(prompt_text)
+    try:
+        line = await asyncio.wait_for(process.stdin.readline(), timeout=30.0)
+        return line.rstrip("\r\n")
+    except asyncio.TimeoutError:
+        return ""
 
 def _append_json(path, entry):
     """Append entry to a JSON list file. Creates file if missing."""
@@ -140,6 +148,7 @@ async def _shell_session(process, handler_factory, hostname, os_banner):
         return f"{username}@{hostname}:{display}{prompt_char} "
 
     prompt = make_prompt()
+    swallow = {"lines": 0}
     command_handler = handler_factory(src_ip=src_ip, public_ip=public_ip)
 
     try:
@@ -175,6 +184,11 @@ async def _shell_session(process, handler_factory, hostname, os_banner):
                         print(f"\033[36m[{ts}] {peer_str} ➜\033[0m {cmd}")
 
                     if not cmd:
+                        process.stdout.write(prompt)
+                        continue
+
+                    if swallow["lines"] > 0:
+                        swallow["lines"] -= 1
                         process.stdout.write(prompt)
                         continue
 
@@ -214,6 +228,20 @@ async def _shell_session(process, handler_factory, hostname, os_banner):
                         prompt = make_prompt()
                         process.stdout.write(prompt)
                         continue
+                    actual = cmd.strip()[5:].strip() if cmd.strip().startswith("sudo ") else cmd.strip()
+                    if actual.split()[0] == "passwd":
+                        try:
+                            pw1 = await asyncio.wait_for(
+                                _read_hidden(process, "New password: "), timeout=30.0
+                            )
+                            pw2 = await asyncio.wait_for(
+                                _read_hidden(process, "\r\nRetype new password: "), timeout=30.0
+                            )
+                            process.stdout.write("\r\npasswd: password updated successfully\r\n")
+                        except asyncio.TimeoutError:
+                            process.stdout.write("\r\npasswd: Authentication token manipulation error\r\n")
+                        process.stdout.write(prompt)
+                        continue
 
                     # ── everything else goes to the agent ──
                     try:
@@ -230,6 +258,13 @@ async def _shell_session(process, handler_factory, hostname, os_banner):
                     # otherwise we keep our locally tracked prompt
                     if new_prompt:
                         prompt = new_prompt if new_prompt.endswith(" ") else new_prompt + " "
+                        
+                    if isinstance(response, str) and response.startswith("__SWALLOW_"):
+                        try:
+                            swallow["lines"] = int(response.split("_")[-1])
+                        except ValueError:
+                            swallow["lines"] = 2
+                        response = ""
 
                     if response:
                         response = response.replace("\r\n", "\n").replace("\n", "\r\n")
