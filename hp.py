@@ -1,98 +1,3 @@
-# """hp.py"""
-
-# import click
-# from importlib.metadata import version, PackageNotFoundError
-
-# # ─────────────────────────────────────────────────────────────
-# # Get version safely
-# # ─────────────────────────────────────────────────────────────
-# def get_version():
-#     try:
-#         return version("HydraPoT")
-#     except PackageNotFoundError:
-#         return "0.0.0-dev"
-
-
-# # ─────────────────────────────────────────────────────────────
-# # Main CLI group
-# # ─────────────────────────────────────────────────────────────
-# @click.group()
-# @click.version_option(get_version(), prog_name="HydraPoT")
-# def main():
-#     """
-#     HydraPoT: An Intelligent Honeypot Framework Using Large Language Models (LLM) for Interactive Attack Analysis
-#     \n
-#     Author: Kamolchanok Saengtong
-#     """
-#     pass
-
-
-# # ─────────────────────────────────────────────────────────────
-# # Run honeypot
-# # ─────────────────────────────────────────────────────────────
-# @main.command()
-# def run():
-#     """Start the SSH honeypot server"""
-#     from main import main as run_main 
-
-#     click.echo("🚀 Starting HydraPoT SSH server...")
-#     run_main()
-
-# # ─────────────────────────────────────────────────────────────
-# # Setup wizard
-# # ─────────────────────────────────────────────────────────────
-# @main.command()
-# def setup():
-#     """Run initial setup wizard"""
-#     from setup_wizard import run_setup
-
-#     click.echo("⚙️ Running setup wizard...")
-#     run_setup()
-
-
-# # ─────────────────────────────────────────────────────────────
-# # Dashboard
-# # ─────────────────────────────────────────────────────────────
-# @main.command()
-# @click.option("--port", default=8501, help="Port for dashboard")
-# def dashboard(port):
-#     """Launch Streamlit dashboard"""
-#     import subprocess
-
-#     click.echo(f"📊 Launching dashboard on port {port}...")
-#     subprocess.run(["streamlit", "run", "dashboard.py", "--server.port", str(port)])
-
-
-# # ─────────────────────────────────────────────────────────────
-# # Logs (placeholder for future)
-# # ─────────────────────────────────────────────────────────────
-# @main.command()
-# def logs():
-#     """View honeypot logs (coming soon)"""
-#     click.echo("📜 Logs feature coming soon...")
-
-# @main.command()
-# def license():
-#     """Show full license"""
-#     import os
-
-#     license_path = os.path.join(os.getcwd(), "license")
-
-#     try:
-#         with open(license_path, "r") as f:
-#             click.echo(f.read())
-#     except FileNotFoundError:
-#         click.echo("❌ LICENSE file not found.")
-
-# # ─────────────────────────────────────────────────────────────
-# # Entry point
-# # ─────────────────────────────────────────────────────────────
-# if __name__ == "__main__":
-#     main()
-
-
-
-
 """
 hp.py — HydraPoT CLI entry point.
 
@@ -127,13 +32,13 @@ VERSION = "0.1.0"
 @click.group(invoke_without_command=True)
 @click.pass_context
 def main(ctx):
-    """🍯 HydraPoT — Honeypot Framework"""
+    """HydraPoT: Multi Agent Honeypot System"""
     if ctx.invoked_subcommand is None:
         click.echo(ctx.get_help())
 
-
 @main.command()
-def init():
+@click.option("--force", is_flag=True, help="(kept for compatibility)")
+def init(force):
     """Run the setup wizard to configure HydraPoT."""
     from setup_wizard import run_wizard
     run_wizard()
@@ -170,29 +75,26 @@ def run(host, port):
         cl = config.agents.cloud
         info.append(f"  Cloud:       {cl.provider + ' / ' + cl.model if cl.enabled else 'disabled'}\n")
         info.append(f"  Logs:        {config.logging.session_dir}\n")
-        console.print(Panel(info, title="[bold yellow]🍯 HydraPoT v" + VERSION + "[/bold yellow]",
+        console.print(Panel(info, title="[bold yellow] HydraPoT v" + VERSION + "[/bold yellow]",
                             border_style="yellow", width=56))
         console.print("  Press Ctrl+C to stop.\n", style="dim")
     else:
-        click.echo(f"🍯 HydraPoT v{VERSION}")
+        click.echo(f"HydraPoT v{VERSION}")
         click.echo(f"  Listening: {config.honeypot.host}:{config.honeypot.port}")
         click.echo(f"  Press Ctrl+C to stop.\n")
 
     import main as honeypot_main
     honeypot_main.main()
 
-
 @main.command()
-@click.option("--port", default=8501, type=int, help="Streamlit port")
-def dashboard(port):
+@click.option("--port", default=8050, type=int, help="Dash port")
+@click.option("--host", default="127.0.0.1", help="Bind address (use 0.0.0.0 to expose externally)")
+@click.option("--debug/--no-debug", default=False, help="Enable Flask debug/reloader")
+def dashboard(port, host, debug):
     """Open the analytics dashboard."""
-    import subprocess
-    click.echo(f"🍯 Opening dashboard on port {port}...")
-    subprocess.run([
-        sys.executable, "-m", "streamlit", "run", "dashboard.py",
-        "--server.port", str(port),
-        "--server.headless", "true",
-    ])
+    click.echo(f"🍯 Opening dashboard on http://{host}:{port} ...")
+    from dashboard import app as dash_app
+    dash_app.run(host=host, port=port, debug=debug)
 
 
 @main.command()
@@ -287,7 +189,7 @@ def logs(auth, lines):
 @main.command()
 def version():
     """Show HydraPoT version."""
-    click.echo(f"🍯 HydraPoT v{VERSION}")
+    click.echo(f"HydraPoT v{VERSION}")
 
 
 @main.command()

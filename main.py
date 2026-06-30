@@ -24,7 +24,7 @@ ondevice = None
 cloud = None
 
 
-def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str = "?", plugins=None):
+def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str = "?", plugins=None, sri_max_events: int = 10):
 
     TOOL_TO_PACKAGE = {
         "nmap": "nmap", "masscan": "masscan", "ncat": "nmap",
@@ -45,26 +45,23 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
         "jq": "jq", "tree": "tree",
     }
 
-    BUILTIN_TOOLS = {
-        "ls", "cat", "cp", "mv", "rm", "mkdir", "rmdir", "touch",
-        "echo", "pwd", "cd", "head", "tail", "less", "more",
-        "grep", "sed", "awk", "cut", "tr", "sort", "uniq", "wc",
-        "find", "xargs", "tee", "dd", "tar", "gzip", "gunzip",
-        "chmod", "chown", "chgrp", "umask",
-        "ps", "top", "kill", "bg", "fg", "jobs", "nice",
-        "whoami", "id", "who", "w", "last", "groups", "finger",
-        "uname", "hostname", "date", "uptime", "free", "df", "du",
-        "netstat", "ss", "ip", "ifconfig", "arp", "ping", "traceroute",
-        "mount", "umount", "fdisk", "lsblk",
-        "apt", "apt-get", "dpkg", "sudo", "su",
-        "passwd", "adduser", "useradd", "userdel", "usermod",
-        "crontab", "at", "bash", "sh", "ssh", "scp", "sftp",
-        "env", "export", "alias", "history", "source",
-        "clear", "exit", "logout",
-        "dig", "nslookup", "host",
-        "systemctl", "service", "journalctl",
-        "base64", "xxd", "od",
-    }
+    # Base system tools — SINGLE SOURCE: config.yaml system_state.base_tools.
+    # Parsed robustly so the comma-per-line YAML format works (each line may
+    # list several tools separated by commas).
+    def _parse_base_tools(raw):
+        tools = set()
+        for entry in (raw or []):
+            for t in str(entry).split(","):
+                t = t.strip()
+                if t:
+                    tools.add(t)
+        return tools
+
+    BUILTIN_TOOLS = _parse_base_tools(config.system_state.get("base_tools", []))
+    # shell builtins handled directly in handle() (cd/exit/clear/etc.) — added
+    # so version/availability checks treat them as present too.
+    BUILTIN_TOOLS |= {"cd", "exit", "logout", "clear", "alias", "export",
+                      "history", "source", "bg", "fg", "jobs", "umask"}
 
     EDITORS     = {"vim", "vi", "nano", "emacs"}
     SLOW        = ("masscan",)
@@ -108,7 +105,7 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
 
     fi_manager = FILogManager(
         impactful_path=impactful_file,
-        max_events=10,
+        max_events=sri_max_events,
         min_fi=config.logging.fi_threshold,
     )
     if plugins:
@@ -118,6 +115,19 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
         "versions":  {},
         "installed": {},
         "files":     dict(config.system_state.get("starting_files", {})),
+        "users": {
+            "root":     {"uid": 0,    "gid": 0,    "home": "/root",       "shell": "/bin/bash"},
+            "daemon":   {"uid": 1,    "gid": 1,    "home": "/usr/sbin",   "shell": "/bin/sh"},
+            "bin":      {"uid": 2,    "gid": 2,    "home": "/bin",        "shell": "/bin/sh"},
+            "www-data": {"uid": 33,   "gid": 33,   "home": "/var/www",    "shell": "/bin/sh"},
+            "nobody":   {"uid": 65534,"gid": 65534,"home": "/nonexistent","shell": "/bin/sh"},
+            "sshd":     {"uid": 101,  "gid": 65534,"home": "/var/run/sshd","shell": "/usr/sbin/nologin"},
+            "phil":     {"uid": 1000, "gid": 1000, "home": "/home/phil",  "shell": "/bin/bash"},
+        },
+        "shadow": {
+            "root": "$6$4aOmWdpJ$/kyPOik9rR0kSLyABIYNXgg/UqlWX3c1eIaovOLWphShTGXmuUAMq6iu9DrcQqlVUw3Pirizns4u27w3Ugvb6.",
+            "phil": "$6$ErqInBoz$FibX212AFnHMvyZdWW87bq5Cm3214CoffqFuUyzz.ZKmZ725zKqSPRRlQ1fGGP02V/WawQWQrDda6YiKERNR61",
+        },
     }
 
     for pkg in config.system_state.get("pre_installed", []):
@@ -154,6 +164,40 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
         if pkg and pkg in SYSTEM_STATE["installed"]:
             return True
         return False
+    
+    # ── Virtual file generation ───────────────────────────────────────────
+    # /etc/passwd and /etc/shadow are generated on-demand from SYSTEM_STATE
+    # ["users"] / ["shadow"] — no stored content to keep in sync.
+
+    def _generate_passwd() -> str:
+        lines = []
+        for name, u in SYSTEM_STATE["users"].items():
+            uid  = u.get("uid", 1000)
+            gid  = u.get("gid", uid)
+            home = u.get("home", f"/home/{name}")
+            sh   = u.get("shell", "/bin/sh")
+            gecos = u.get("gecos", name)
+            lines.append(f"{name}:x:{uid}:{gid}:{gecos}:{home}:{sh}")
+        return "\n".join(lines)
+
+    def _generate_shadow() -> str:
+        lines = []
+        for name in SYSTEM_STATE["users"]:
+            pw = SYSTEM_STATE["shadow"].get(name, "*")
+            lines.append(f"{name}:{pw}:15800:0:99999:7:::")
+        return "\n".join(lines)
+
+    VIRTUAL_FILES = {
+        "/etc/passwd": _generate_passwd,
+        "/etc/shadow": _generate_shadow,
+    }
+
+    def _virtual_file(path: str) -> str | None:
+        """Return generated content for virtual files, None for real tracked files."""
+        if path in VIRTUAL_FILES:
+            return VIRTUAL_FILES[path]()
+        f = SYSTEM_STATE["files"].get(path, {})
+        return f.get("content") if f else None
 
     def _handle_version_query(cmd: str, cmd_base: str) -> str:
         if cmd_base in SYSTEM_STATE["versions"]:
@@ -225,7 +269,11 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
                 return True
         if cmd_base == "cat":
             for p in cmd.strip().split()[1:]:
-                if not p.startswith("-") and p in files and files[p].get("content"):
+                if p.startswith("-"):
+                    continue
+                if p in VIRTUAL_FILES:          # virtual: always has content
+                    return True
+                if p in files and files[p].get("content"):
                     return True
         if cmd_base == "sed":
             parts = cmd.strip().split()
@@ -408,6 +456,12 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
                     "content": f"[downloaded from {url}]", "source": url,
                     "perms": "-rw-r--r--", "size": "4.2K",
                 }
+        # chpasswd — update shadow passwords
+        m = re.match(r'^echo\s+["\']?(\w+):(\S+?)["\']?\s*\|\s*chpasswd', cmd.strip())
+        if m:
+            user, pw = m.group(1), m.group(2)
+            if user in SYSTEM_STATE["users"]:
+                SYSTEM_STATE["shadow"][user] = f"$6$salt${pw}_hashed"
 
         m = re.match(r"^chmod\s+\+x\s+(.+)$", cmd.strip())
         if m and m.group(1).strip() in SYSTEM_STATE["files"]:
@@ -441,8 +495,8 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
             time.sleep(0.1)
             if cowrie.shell.recv_ready():
                 cowrie.shell.recv(9999)
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[sync_history] FAILED: {e}")  # ← add this
 
     def log(cmd, agent, response, fi_score=0, latency_ms=0.0):
         entry = {
@@ -466,6 +520,7 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
 
     # ── shortcut: log + return ────────────────────────────────────────────
     def _finish(cmd, agent, output, fi_score, t_start, streamed=False):
+        handle.last_agent = agent
         latency_ms = (time.time() - t_start) * 1000
         fi_manager.process(command=cmd, output=output, agent=agent, session_id=SESSION_ID)
         session.append({"cmd": cmd, "agent": agent, "response": output})
@@ -484,7 +539,7 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
 
     # ── main dispatch ─────────────────────────────────────────────────────
 
-    def handle(cmd: str, write_fn, read_fn):
+    def handle(cmd: str, write_fn, read_fn, force_agent: str | None = None):
         if cmd.strip() == "fi status":
             fi_manager.status()
             return "", ""
@@ -495,8 +550,38 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
 
         actual_cmd  = cmd.strip()[5:].strip() if cmd.strip().startswith("sudo ") else cmd.strip()
         actual_base = actual_cmd.split()[0] if actual_cmd else ""
+        lookup_base = os.path.basename(actual_base)   # strip path for tool-availability checks
 
         fi_score, _ = fi_manager.scorer.score(cmd)
+
+        # ── evaluation-only forced routing ───────────────────────────────────
+        # force_agent is only set by the eval framework (run_partB.py).
+        # Production always calls handle(cmd, write_fn, read_fn) — force_agent
+        # defaults to None and this block is completely skipped.
+        if force_agent is not None:
+            if force_agent == "cloud":
+                agent = "cloud"
+                if cloud is not None:
+                    sys_p, usr_p = prompt_manager.build_cloud_prompt(cmd)
+                    output = cloud.send(sys_p, usr_p)
+                else:
+                    output = ""
+                sync_history(cmd)
+                return _finish(cmd, agent, output, fi_score, t_start)
+            elif force_agent == "on_device":
+                agent = "on_device"
+                if ondevice is not None:
+                    sys_p, usr_p = prompt_manager.build_prompt(cmd)
+                    output = ondevice.send(sys_p, usr_p)
+                else:
+                    output = ""
+                update_state(cmd, output)
+                return _finish(cmd, agent, output, fi_score, t_start)
+            elif force_agent == "cowrie":
+                agent  = "cowrie"
+                output, _ = cowrie.send(cmd)
+                update_state(cmd, output)
+                return _finish(cmd, agent, output, fi_score, t_start)
 
         # ── apt install — fully local, streamed ───────────────────────────
         if re.search(r'\b(apt|apt-get)\s+install\b', actual_cmd):
@@ -532,17 +617,33 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
         if actual_base in INTERACTIVE:
             parts = actual_cmd.strip().split()
             if len(parts) < 2:
-                # no username provided — let cowrie handle it normally, not interactive
                 output, _ = cowrie.send(cmd)
                 return _finish(cmd, "cowrie", output, fi_score, t_start)
-            output, _ = cowrie.send_interactive(cmd, write_fn, read_fn)
-            update_state(cmd, output)
+
+            if actual_base == "userdel":
+                username = parts[-1]
+                SYSTEM_STATE["users"].pop(username, None)
+                SYSTEM_STATE["shadow"].pop(username, None)
+                output = ""
+                return _finish(cmd, "cowrie", output, fi_score, t_start)
+
+            # useradd / adduser — register user
+            username = parts[-1]
+            shell_m  = re.search(r'-s\s+(\S+)', actual_cmd)
+            shell    = shell_m.group(1) if shell_m else "/bin/bash"
+            uid      = 1000 + len(SYSTEM_STATE["users"])
+            SYSTEM_STATE["users"][username] = {
+                "uid": uid, "gid": uid,
+                "home": f"/home/{username}", "shell": shell,
+            }
+            SYSTEM_STATE["shadow"][username] = "*"
+            output = ""
             return _finish(cmd, "cowrie", output, fi_score, t_start)
 
         # ── editor (installed, not --version) — silent success ────────────
         if actual_base in EDITORS and _is_tool_available(actual_base):
             if re.search(r'--version\b|-V\b', cmd):
-                output = _handle_version_query(cmd, actual_base)
+                output = _handle_version_query(cmd, lookup_base)
                 return _finish(cmd, "on_device", output, fi_score, t_start)
             else:
                 return _finish(cmd, "on_device", "", fi_score, t_start)
@@ -554,7 +655,29 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
             if target in SYSTEM_STATE["files"]:
                 update_state(cmd, "")
                 return _finish(cmd, "cowrie", "", fi_score, t_start)
-        needs_llm   = _needs_llm(cmd, actual_base, SYSTEM_STATE)
+        
+        # ── find — return plausible results for common attacker queries ───
+        if actual_base == "find" and not re.search(r'--version\b', cmd):
+            if re.search(r'-perm\s+-?4000', actual_cmd):
+                output = "\n".join([
+                    "/usr/bin/sudo", "/usr/bin/passwd", "/usr/bin/su",
+                    "/usr/bin/newgrp", "/usr/bin/gpasswd", "/usr/bin/chsh",
+                    "/usr/bin/chfn", "/bin/mount", "/bin/umount", "/bin/ping",
+                ])
+                return _finish(cmd, "cowrie", output, fi_score, t_start)
+            if re.search(r'-name\s+["\']?\*\.conf', actual_cmd):
+                output = "\n".join([
+                    "/etc/ssh/sshd_config", "/etc/mysql/mysql.conf.d/mysqld.cnf",
+                    "/etc/nginx/nginx.conf", "/etc/php/8.1/cli/php.ini",
+                    "/etc/fail2ban/fail2ban.conf", "/etc/logrotate.conf",
+                ])
+                return _finish(cmd, "cowrie", output, fi_score, t_start)
+            if re.search(r'-name\s+["\']?\*\.env', actual_cmd):
+                output = "/var/www/html/.env\n/opt/app/.env"
+                return _finish(cmd, "cowrie", output, fi_score, t_start)
+
+        needs_llm = _needs_llm(cmd, lookup_base, SYSTEM_STATE)
+        agent = "cowrie"   # ← add this line
         # ── Step 0: not installed → command not found ─────────────────────
         skip_not_found = (
             not actual_base
@@ -563,7 +686,7 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
             or actual_cmd.startswith("apt")
             or actual_cmd.startswith("dpkg")
             or needs_llm
-            or _is_tool_available(actual_base)
+            or _is_tool_available(lookup_base)
         )
         if _is_cloud(cmd):
             agent = "cloud"
@@ -594,7 +717,7 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
         elif needs_llm:
             if re.search(r'--version\b|-V\b', cmd):
                 agent  = "on_device"
-                output = _handle_version_query(cmd, actual_base)
+                output = _handle_version_query(cmd, lookup_base)
                 update_state(cmd, output)
                 return _finish(cmd, agent, output, fi_score, t_start)
             
@@ -616,7 +739,7 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
 
             elif actual_base in ("systemctl", "service"):
                 agent  = "on_device"
-                output = _handle_systemctl(cmd)
+                output = _handle_systemctl(actual_cmd)
                 update_state(cmd, output)
 
             elif actual_base == "sed":
@@ -646,7 +769,19 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
                         )
                         output = ondevice.send(sys_p, cmd)
                     else:
+                        # for cat on virtual/tracked files, inject actual content
+                        # so the LLM doesn't hallucinate — it reads what's really there
+                        extra = ""
+                        if actual_base == "cat":
+                            for p in actual_cmd.split()[1:]:
+                                if p.startswith("-") or p.startswith("|"):
+                                    continue
+                                content = _virtual_file(p)
+                                if content:
+                                    extra += f"\nFILE CONTENT of {p}:\n{content}\n"
                         sys_p, usr_p = prompt_manager.build_prompt(cmd)
+                        if extra:
+                            usr_p = usr_p + extra
                         output = ondevice.send(sys_p, usr_p)
                 sync_history(cmd)
                 update_state(cmd, output)
@@ -655,44 +790,26 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
                 agent     = "cowrie"
                 output, _ = cowrie.send(cmd)
                 update_state(cmd, output)
-
-        # ── Step 4: FI 2-3 → cowrie ──────────────────────────────────────
-        elif fi_score in (2, 3):
-            agent = "cowrie"
-            if is_static(cmd):
-                output, streamed = dispatch_static(cmd, write_fn), True
-            elif actual_base in SLOW:
-                output, _ = cowrie.send_streaming(cmd, write_fn)
-                streamed   = True
-            elif actual_base in INTERACTIVE:
-                output, _ = cowrie.send_interactive(cmd, write_fn, read_fn)
-                streamed   = True
-            else:
-                output, _ = cowrie.send(cmd)
-            update_state(cmd, output)
-
-        # ── Step 5: FI 0-1 → cowrie ──────────────────────────────────────
+        
         else:
-            agent = "cowrie"
-            if is_static(cmd):
-                output, streamed = dispatch_static(cmd, write_fn), True
-            elif actual_base in SLOW:
-                output, _ = cowrie.send_streaming(cmd, write_fn)
-                streamed   = True
-            elif actual_base in INTERACTIVE:
-                output, _ = cowrie.send_interactive(cmd, write_fn, read_fn)
-                streamed   = True
-            else:
-                output, _ = cowrie.send(cmd)
+            agent     = "cowrie"
+            output, _ = cowrie.send(cmd)
             update_state(cmd, output)
 
+        if (agent == "cowrie" and not streamed
+                and ("command not found" in (output or "") or "cannot execute binary file" in (output or ""))
+                and _is_tool_available(actual_base)
+                and ondevice is not None):
+            sys_p, usr_p = prompt_manager.build_prompt(cmd)
+            llm_out = ondevice.send(sys_p, usr_p)
+            if llm_out and "command not found" not in llm_out:
+                output = llm_out
+                agent  = "on_device"
+                update_state(cmd, output)
         return _finish(cmd, agent, output, fi_score, t_start, streamed)
 
     return handle
-
-
 # ─── Main ─────────────────────────────────────────────────────────────────────
-
 def main():
     global config, ondevice, cloud
     config = load_config()
@@ -706,6 +823,7 @@ def main():
         max_tokens   = config.agents.on_device.max_tokens,
         do_sample    = config.agents.on_device.do_sample,
     ) if config.agents.on_device.enabled else None
+
     cloud = CloudAgent(
         provider    = config.agents.cloud.provider,
         model       = config.agents.cloud.model,
@@ -718,19 +836,21 @@ def main():
     print(f"[HydraPot] on_device: {'loaded' if ondevice else 'DISABLED'}")
     print(f"[HydraPot] cloud: {'loaded' if cloud else 'DISABLED'}")
 
-    cowrie = CowrieAgent(
-        host     = config.agents.cowrie.host,
-        port     = config.agents.cowrie.port,
-        username = config.agents.cowrie.username,
-        password = config.agents.cowrie.password,
-    )
-    cowrie._connect()
+    def _make_cowrie():
+        c = CowrieAgent(
+            host     = config.agents.cowrie.host,
+            port     = config.agents.cowrie.port,
+            username = config.agents.cowrie.username,
+            password = config.agents.cowrie.password,
+        )
+        c._connect()
+        return c
 
     try:
         start_server(
             handler_factory = lambda src_ip="?", public_ip="?": make_command_handler(
-        cowrie, src_ip=src_ip, public_ip=public_ip, plugins=plugins
-        ),
+                _make_cowrie(), src_ip=src_ip, public_ip=public_ip, plugins=plugins
+            ),
             host            = config.honeypot.host,
             port            = config.honeypot.port,
             hostname        = config.honeypot.hostname,
@@ -740,7 +860,6 @@ def main():
         print("\n[HydraPot] Shutting down...")
     finally:
         plugins.flush_exporters()
-        cowrie.disconnect()
         print("[HydraPot] Done.")
 
 
