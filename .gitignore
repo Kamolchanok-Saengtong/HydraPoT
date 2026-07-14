@@ -1,0 +1,15 @@
+archive_code/
+data/
+evaluation/
+production/
+NSC/
+
+geoip.mmdb
+test.py
+debug_chmod_state.py
+config.yaml.bak.20260625_173542
+
+__pycache__/
+*.pyc
+honeypot_new/
+HydraPoT.egg-info/
