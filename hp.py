@@ -28,8 +28,25 @@ except ImportError:
 
 VERSION = "0.1.0"
 
+_HERE = os.path.dirname(os.path.abspath(__file__))
+try:
+    with open(os.path.join(_HERE, "LICENSE"), encoding="utf-8") as _f:
+        LICENSE_TEXT = _f.read().strip()
+except FileNotFoundError:
+    LICENSE_TEXT = ""
 
-@click.group(invoke_without_command=True)
+
+class LicenseGroup(click.Group):
+    """Prints the epilog as-is, skipping click's default rewrap — click's
+    textwrap splits on whitespace only, which mangles Thai text (no spaces
+    between words)."""
+    def format_epilog(self, ctx, formatter):
+        if self.epilog:
+            formatter.write_paragraph()
+            formatter.write(self.epilog + "\n")
+
+
+@click.group(cls=LicenseGroup, invoke_without_command=True, epilog=LICENSE_TEXT)
 @click.pass_context
 def main(ctx):
     """HydraPoT: Multi Agent Honeypot System"""
