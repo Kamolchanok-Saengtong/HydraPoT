@@ -1,6 +1,7 @@
 """main.py — HydraPoT honeypot orchestrator."""
 import json
 import os
+import posixpath
 import re
 import time
 import random
@@ -14,7 +15,7 @@ from prompt.fi_manager import FILogManager
 from prompt.prompt_manager import PromptManager
 from agent_manager.cloud_agent import CloudAgent
 from ssh_server import start_server
-from router import _is_cloud
+from router import _is_cloud, classify
 import sys 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from plugins.plugin_loader import PluginManager
@@ -24,7 +25,9 @@ ondevice = None
 cloud = None
 
 
-def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str = "?", plugins=None, sri_max_events: int = 10):
+def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str = "?",
+                         plugins=None, sri_max_events: int = 10, sync_state: bool = True,
+                         capture_cost: bool = False):
 
     TOOL_TO_PACKAGE = {
         "nmap": "nmap", "masscan": "masscan", "ncat": "nmap",
@@ -114,6 +117,8 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
     SYSTEM_STATE = {
         "versions":  {},
         "installed": {},
+        "cwd":       "/root",   # tracked so `cd` can be resolved deterministically
+                                 # instead of left to the LLM to guess/hallucinate
         "files":     dict(config.system_state.get("starting_files", {})),
         "users": {
             "root":     {"uid": 0,    "gid": 0,    "home": "/root",       "shell": "/bin/bash"},
@@ -146,7 +151,7 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
         hostname=config.honeypot.hostname,
         os_name=config.honeypot.os,
         builtins   = BUILTIN_TOOLS,
-
+        sync_state = sync_state,
     )
     session = []
 
@@ -165,6 +170,108 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
             return True
         return False
     
+    def _mode_to_perms(mode: str) -> str:
+        """Convert numeric chmod mode (e.g. '777', '600') to ls -la format."""
+        chars = "rwxrwxrwx"
+        bits  = int(mode[-3:], 8)   # use last 3 digits, parse as octal
+        perms = ""
+        for i in range(8, -1, -1):
+            perms += chars[8-i] if bits & (1 << i) else "-"
+        return f"-{perms}"
+
+    # Standard Linux top-level layout — same set already declared to the
+    # LLM in system_setting.txt ("standard Linux layout with /home /tmp
+    # /etc /var /usr"), just enumerated here so `cd` can be resolved
+    # deterministically against it instead of left to the model's guess.
+    _KNOWN_BASE_DIRS = frozenset({
+        "/", "/root", "/home", "/tmp", "/var", "/etc", "/usr", "/bin",
+        "/sbin", "/proc", "/sys", "/dev", "/opt", "/srv", "/mnt", "/media",
+        "/run", "/lib", "/lib64", "/boot", "/var/tmp", "/var/log", "/var/run",
+        "/usr/bin", "/usr/sbin", "/usr/local",
+    })
+
+    def _resolve_cd(actual_cmd: str) -> tuple[bool, str | None]:
+        """
+        Resolves `cd` deterministically against known directories instead of
+        leaving it to the LLM — an LLM that wrongly believes a nonexistent
+        directory exists has no way to un-believe it, and every command for
+        the rest of the session then gets answered as if still inside that
+        hallucinated path (observed: model started echoing a fake
+        'root@host:~/.ssh#' prompt for every subsequent command after
+        wrongly accepting `cd .ssh`).
+
+        Returns (handled, error_message):
+          (True,  None)  -> cd succeeded, SYSTEM_STATE['cwd'] updated, stay silent
+          (True,  "...") -> cd failed, this is the exact bash error to show
+          (False, None)  -> not handled here (e.g. `cd -`), fall through to the agent
+        """
+        args = actual_cmd.split()[1:]
+        # flags aside, real `cd` takes at most one positional path argument
+        positional = [a for a in args if not a.startswith("-")]
+        if len(positional) > 1:
+            return True, "bash: cd: too many arguments"
+
+        target = positional[0] if positional else "~"
+        if target == "-":
+            return False, None   # previous-directory tracking not implemented
+
+        home = SYSTEM_STATE["users"].get("root", {}).get("home", "/root")
+        if target == "~":
+            target = home
+        elif target.startswith("~/"):
+            target = home + target[1:]
+
+        base = target if target.startswith("/") else SYSTEM_STATE["cwd"]
+        joined = target if target.startswith("/") else posixpath.join(SYSTEM_STATE["cwd"], target)
+        resolved = posixpath.normpath(joined)
+
+        known_dirs = _KNOWN_BASE_DIRS | {u["home"] for u in SYSTEM_STATE["users"].values()}
+        known_dirs |= {p for p, f in SYSTEM_STATE["files"].items()
+                       if f.get("perms", "").startswith("d")}
+
+        if resolved in known_dirs:
+            SYSTEM_STATE["cwd"] = resolved
+            return True, None
+
+        tracked = SYSTEM_STATE["files"].get(resolved)
+        if tracked and not tracked.get("perms", "").startswith("d"):
+            return True, f"bash: cd: {target}: Not a directory"
+
+        return True, f"bash: cd: {target}: No such file or directory"
+
+    def _resolve_chmod(actual_cmd: str) -> tuple[bool, str | None]:
+        """
+        Resolves chmod deterministically for the common single-target case,
+        same reasoning as _resolve_cd: the prompt tells the LLM "chmod
+        ALWAYS succeeds as root, stay silent on success" (true — root is
+        never denied by PERMISSION), but that's not the same as the target
+        file existing at all. Without this, the model has no signal that a
+        freshly-referenced malware filename was never actually created, and
+        defaults to silence/echo instead of the real "cannot access ...:
+        No such file or directory" — observed as a 20/20 loss on exactly
+        this pattern (a prompt-only fix wasn't enough to reliably teach the
+        distinction, so it's resolved here instead, same as cd).
+
+        Returns (handled, error_message) — same contract as _resolve_cd.
+        """
+        if re.search(r'--version\b|-V\b', actual_cmd):
+            return False, None   # let the existing version-query path handle it
+        parts = actual_cmd.split()
+        if len(parts) < 3:
+            return False, None   # bare `chmod` or ambiguous — fall through
+        target = parts[-1]
+        if target.startswith("-") or "*" in target or "?" in target:
+            return False, None   # flag-only or wildcard target — too ambiguous here
+
+        if target in SYSTEM_STATE["files"]:
+            update_state(actual_cmd, "")   # existing numeric/+x perms bookkeeping
+            return True, None
+        if target in VIRTUAL_FILES:
+            return True, None
+
+        return True, f"chmod: cannot access '{target}': No such file or directory"
+
+
     # ── Virtual file generation ───────────────────────────────────────────
     # /etc/passwd and /etc/shadow are generated on-demand from SYSTEM_STATE
     # ["users"] / ["shadow"] — no stored content to keep in sync.
@@ -461,11 +568,18 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
         if m:
             user, pw = m.group(1), m.group(2)
             if user in SYSTEM_STATE["users"]:
-                SYSTEM_STATE["shadow"][user] = f"$6$salt${pw}_hashed"
-
+                SYSTEM_STATE["shadow"][user] = f"$6$salt${pw}_hashed"        
+        # chmod +x
         m = re.match(r"^chmod\s+\+x\s+(.+)$", cmd.strip())
         if m and m.group(1).strip() in SYSTEM_STATE["files"]:
             SYSTEM_STATE["files"][m.group(1).strip()]["perms"] = "-rwxr-xr-x"
+
+        # chmod numeric — convert mode to ls -la format
+        m = re.match(r"^chmod\s+(\d{3,4})\s+(.+)$", cmd.strip())
+        if m:
+            target = m.group(2).strip()
+            if target in SYSTEM_STATE["files"]:
+                SYSTEM_STATE["files"][target]["perms"] = _mode_to_perms(m.group(1))
 
         m = re.match(r"^rm\s+(?!.*-rf)(.+)$", cmd.strip())
         if m:
@@ -489,14 +603,25 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
                 SYSTEM_STATE["files"][dst] = SYSTEM_STATE["files"].pop(src)
 
     def sync_history(cmd):
+        safe = cmd.replace("'", "'\\''")
+        housekeeping = f"HISTFILE=~/.bash_history; history -s '{safe}'; history -w"
         try:
-            safe = cmd.replace("'", "'\\''")
-            cowrie.shell.send(f"HISTFILE=~/.bash_history; history -s '{safe}'; history -w\n")
-            time.sleep(0.1)
-            if cowrie.shell.recv_ready():
-                cowrie.shell.recv(9999)
-        except Exception as e:
-            print(f"[sync_history] FAILED: {e}")  # ← add this
+            cowrie.shell.send(housekeeping + "\n")
+            # Drain fully until the shell prompt reappears (same robust logic
+            # send() uses for real commands) instead of a fixed sleep + single
+            # recv — under load that one-shot drain can miss trailing output,
+            # leaving this housekeeping command's own echo in the channel to
+            # bleed into a LATER, unrelated command's captured response.
+            cowrie._collect_until_prompt(housekeeping)
+        except Exception:
+            # Socket died (idle timeout, container hiccup, ...) — same
+            # reconnect-and-retry-once pattern cowrie_agent.send() uses.
+            try:
+                cowrie._connect()
+                cowrie.shell.send(housekeeping + "\n")
+                cowrie._collect_until_prompt(housekeeping)
+            except Exception as e:
+                print(f"[sync_history] FAILED: {e}")
 
     def log(cmd, agent, response, fi_score=0, latency_ms=0.0):
         entry = {
@@ -520,7 +645,8 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
 
     # ── shortcut: log + return ────────────────────────────────────────────
     def _finish(cmd, agent, output, fi_score, t_start, streamed=False):
-        handle.last_agent = agent
+        handle.last_agent  = agent
+        handle.state_size  = len(SYSTEM_STATE["files"]) + len(SYSTEM_STATE["installed"])
         latency_ms = (time.time() - t_start) * 1000
         fi_manager.process(command=cmd, output=output, agent=agent, session_id=SESSION_ID)
         session.append({"cmd": cmd, "agent": agent, "response": output})
@@ -547,12 +673,44 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
         t_start  = time.time()
         output   = ""
         streamed = False
+        handle.last_usage = None
 
         actual_cmd  = cmd.strip()[5:].strip() if cmd.strip().startswith("sudo ") else cmd.strip()
         actual_base = actual_cmd.split()[0] if actual_cmd else ""
         lookup_base = os.path.basename(actual_base)   # strip path for tool-availability checks
 
         fi_score, _ = fi_manager.scorer.score(cmd)
+
+        # ── helper: does this command reference a tracked (LLM/local-only) file? ──
+        def _references_tracked_file(actual_cmd: str) -> str | None:
+            """
+            Returns the matched tracked path if the command references a file
+            that exists in SYSTEM_STATE['files'] but is not guaranteed to exist
+            in Cowrie's real filesystem (i.e. it was created via echo/touch/LLM
+            output rather than something Cowrie itself manages).
+            Returns None if no tracked file is referenced.
+            """
+            for token in actual_cmd.split():
+                token = token.strip('|;&\'"')
+                if token in SYSTEM_STATE["files"]:
+                    return token
+            return None
+        
+        # ── general SRi-state safety net ───────────────────────────────────
+        tracked_path = _references_tracked_file(actual_cmd)
+
+        # ── cd — resolved deterministically, ahead of force_agent so this
+        #    applies uniformly in both production and forced-eval routing ──
+        if actual_base == "cd":
+            handled, cd_error = _resolve_cd(actual_cmd)
+            if handled:
+                return _finish(cmd, "cowrie", cd_error or "", fi_score, t_start)
+
+        # ── chmod — same deterministic treatment as cd, same reason ────────
+        if actual_base == "chmod":
+            handled, chmod_error = _resolve_chmod(actual_cmd)
+            if handled:
+                return _finish(cmd, "cowrie", chmod_error or "", fi_score, t_start)
 
         # ── evaluation-only forced routing ───────────────────────────────────
         # force_agent is only set by the eval framework (run_partB.py).
@@ -563,16 +721,25 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
                 agent = "cloud"
                 if cloud is not None:
                     sys_p, usr_p = prompt_manager.build_cloud_prompt(cmd)
-                    output = cloud.send(sys_p, usr_p)
+                    if capture_cost:
+                        output, usage = cloud.send_with_usage(sys_p, usr_p)
+                        handle.last_usage = usage
+                    else:
+                        output = cloud.send(sys_p, usr_p)
                 else:
                     output = ""
                 sync_history(cmd)
+                update_state(cmd, output)
                 return _finish(cmd, agent, output, fi_score, t_start)
             elif force_agent == "on_device":
                 agent = "on_device"
                 if ondevice is not None:
                     sys_p, usr_p = prompt_manager.build_prompt(cmd)
-                    output = ondevice.send(sys_p, usr_p)
+                    if capture_cost:
+                        output, usage = ondevice.send_with_usage(sys_p, usr_p)
+                        handle.last_usage = usage
+                    else:
+                        output = ondevice.send(sys_p, usr_p)
                 else:
                     output = ""
                 update_state(cmd, output)
@@ -648,14 +815,6 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
             else:
                 return _finish(cmd, "on_device", "", fi_score, t_start)
 
-        # ── chmod on tracked file — handle locally ────────────────────────
-        if actual_base == "chmod" and not re.search(r'--version\b|-V\b', cmd):
-            parts  = actual_cmd.split()
-            target = parts[-1] if len(parts) >= 3 else ""
-            if target in SYSTEM_STATE["files"]:
-                update_state(cmd, "")
-                return _finish(cmd, "cowrie", "", fi_score, t_start)
-        
         # ── find — return plausible results for common attacker queries ───
         if actual_base == "find" and not re.search(r'--version\b', cmd):
             if re.search(r'-perm\s+-?4000', actual_cmd):
@@ -676,51 +835,59 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
                 output = "/var/www/html/.env\n/opt/app/.env"
                 return _finish(cmd, "cowrie", output, fi_score, t_start)
 
+        # ── static commands — guaranteed dispatch, independent of FI/agent ──
+        # nmap/ping/traceroute/tracepath/top/htop/watch/tail-f/vim-nano-emacs/
+        # less-more must ALWAYS produce their dedicated safe fake output
+        # (static_handler.py exists specifically because these hang or behave
+        # badly in real Cowrie) — this can't depend on what FI band or
+        # classify() decides, so it's checked unconditionally here, after the
+        # more specific overrides above (apt/wget-curl/editor-available/etc.)
+        # have had their turn but before routing even runs.
+        if is_static(actual_cmd):
+            output = dispatch_static(actual_cmd, write_fn)
+            update_state(cmd, output)
+            return _finish(cmd, "cowrie", output, fi_score, t_start, streamed=True)
+
+        # ── Route using classify() from router.py ─────────────────────────
+        # classify() returns 'cowrie', 'on_device', or 'cloud'
+        # _needs_llm() is still used for context-aware dispatch within
+        # the on_device branch (file content injection, script execution, etc.)
         needs_llm = _needs_llm(cmd, lookup_base, SYSTEM_STATE)
-        agent = "cowrie"   # ← add this line
-        # ── Step 0: not installed → command not found ─────────────────────
-        skip_not_found = (
-            not actual_base
-            or actual_base in ("echo", "cd", "exit", "logout", "clear")
-            or actual_cmd.startswith("./")
-            or actual_cmd.startswith("apt")
-            or actual_cmd.startswith("dpkg")
-            or needs_llm
-            or _is_tool_available(lookup_base)
-        )
-        if _is_cloud(cmd):
-            agent = "cloud"
+        agent     = classify(cmd, session)
+
+
+        if tracked_path and agent == "cowrie":
+            agent      = "on_device"
+            needs_llm  = True   # forces it into the on_device branch below
+
+        # command not found — only for unknown commands not in any pattern
+        if agent == "cowrie" and not needs_llm and not _is_tool_available(lookup_base):
+            if actual_base and actual_base not in ("echo", "cd", "exit",
+                                                    "logout", "clear"):
+                if not actual_cmd.startswith(("./", "apt", "dpkg")):
+                    output = f"bash: {actual_base}: command not found"
+                    return _finish(cmd, "cowrie", output, fi_score, t_start)
+
+        if agent == "cloud":
             if cloud is not None:
                 sys_p, usr_p = prompt_manager.build_cloud_prompt(cmd)
-                output = cloud.send(sys_p, usr_p)
+                if capture_cost:
+                    output, usage = cloud.send_with_usage(sys_p, usr_p)
+                    handle.last_usage = usage
+                else:
+                    output = cloud.send(sys_p, usr_p)
             else:
                 output = ""
             sync_history(cmd)
-            return _finish(cmd, agent, output, fi_score, t_start)
+            update_state(cmd, output)
 
-        # ── Step 1: not installed → command not found ─────────────────────
-        if not skip_not_found:
-            output = f"bash: {actual_base}: command not found"
-            return _finish(cmd, "cowrie", output, fi_score, t_start)
-
-        # Step 2: FI 4 → cloud
-        elif fi_score == 4:
-            agent = "cloud"
-            if cloud is not None:
-                sys_p, usr_p = prompt_manager.build_cloud_prompt(cmd) 
-                output = cloud.send(sys_p, usr_p)
-            else:
-                output = ""
-            sync_history(cmd)
-
-        # ── Step 3: context-dependent ─────────────────────────────────────
-        elif needs_llm:
+        elif agent == "on_device" or needs_llm:
             if re.search(r'--version\b|-V\b', cmd):
                 agent  = "on_device"
                 output = _handle_version_query(cmd, lookup_base)
                 update_state(cmd, output)
                 return _finish(cmd, agent, output, fi_score, t_start)
-            
+
             elif actual_base == "touch":
                 update_state(cmd, "")
                 return _finish(cmd, "cowrie", "", fi_score, t_start)
@@ -728,14 +895,12 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
             elif actual_base == "mkdir":
                 update_state(cmd, "")
                 return _finish(cmd, "cowrie", "", fi_score, t_start)
-            # ── mv — handle locally if source file is tracked ─────────────────
+
             elif actual_base == "mv":
                 parts = actual_cmd.split()
-                if len(parts) >= 3:
-                    src = parts[1]
-                    if src in SYSTEM_STATE["files"]:
-                        update_state(cmd, "")
-                        return _finish(cmd, "cowrie", "", fi_score, t_start)
+                if len(parts) >= 3 and parts[1] in SYSTEM_STATE["files"]:
+                    update_state(cmd, "")
+                    return _finish(cmd, "cowrie", "", fi_score, t_start)
 
             elif actual_base in ("systemctl", "service"):
                 agent  = "on_device"
@@ -743,15 +908,10 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
                 update_state(cmd, output)
 
             elif actual_base == "sed":
-                agent = "on_device"
+                agent  = "on_device"
                 update_state(cmd, "")
                 output = ""
-                
-            elif is_static(cmd):
-                agent = "cowrie"
-                output = dispatch_static(cmd, write_fn)
-                streamed = True
-    
+
             elif ondevice is not None:
                 agent         = "on_device"
                 script_output = _execute_tracked_script(cmd, write_fn)
@@ -767,10 +927,12 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
                             f"Simulate realistic terminal output as if it executed. "
                             f"3-6 lines max. No explanation, no markdown."
                         )
-                        output = ondevice.send(sys_p, cmd)
+                        if capture_cost:
+                            output, usage = ondevice.send_with_usage(sys_p, cmd)
+                            handle.last_usage = usage
+                        else:
+                            output = ondevice.send(sys_p, cmd)
                     else:
-                        # for cat on virtual/tracked files, inject actual content
-                        # so the LLM doesn't hallucinate — it reads what's really there
                         extra = ""
                         if actual_base == "cat":
                             for p in actual_cmd.split()[1:]:
@@ -782,7 +944,11 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
                         sys_p, usr_p = prompt_manager.build_prompt(cmd)
                         if extra:
                             usr_p = usr_p + extra
-                        output = ondevice.send(sys_p, usr_p)
+                        if capture_cost:
+                            output, usage = ondevice.send_with_usage(sys_p, usr_p)
+                            handle.last_usage = usage
+                        else:
+                            output = ondevice.send(sys_p, usr_p)
                 sync_history(cmd)
                 update_state(cmd, output)
 
@@ -790,8 +956,8 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
                 agent     = "cowrie"
                 output, _ = cowrie.send(cmd)
                 update_state(cmd, output)
-        
-        else:
+
+        else:  # agent == "cowrie"
             agent     = "cowrie"
             output, _ = cowrie.send(cmd)
             update_state(cmd, output)
@@ -819,6 +985,7 @@ def main():
     ondevice = OnDeviceAgent(
         model        = config.agents.on_device.model,
         quantization = config.agents.on_device.quantization,
+        gguf_file    = config.agents.on_device.gguf_file,
         temperature  = config.agents.on_device.temperature,
         max_tokens   = config.agents.on_device.max_tokens,
         do_sample    = config.agents.on_device.do_sample,

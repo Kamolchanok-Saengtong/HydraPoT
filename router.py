@@ -1,77 +1,89 @@
 import re
 
-# ─── Group 1: Cowrie ─────────────────────────────────────────────────────────
-# Handles: basic commands, file ops, package install, sudo, download
+import sys, os
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _HERE)
+from prompt.fi_manager import FIScorer
+from config_loader import load_config
 
-BASIC_PATTERNS = [
-    # File Operations
-    r'^(cat|cp|mv|rm|touch|head|tail|less|more|sort|diff|wc|ln|find|locate|file|stat|readlink|basename|dirname|truncate|tee|xargs|dd)(\s|$)',
-    # Directory Operations
-    r'^(cd|pwd|mkdir|rmdir|du|tree|ls|dir|vdir)(\s|$)',
-    # File Permissions
-    r'^(chmod|chown|chgrp|umask|getfacl|setfacl)(\s|$)',
-    # User Information
-    r'^(whoami|id|who|users|finger|w|last|lastlog|groups)(\s|$)',
-    # Process Information
-    r'^(ps|top|htop|kill|bg|fg|uptime|jobs|nice|renice|pgrep|pkill|killall|pstree|lsof)(\s|$)',
-    # System Information
-    r'^(uname|free|dmesg|arch|date|cal|df|lscpu|lsmem|lsblk|lshw|lspci|lsusb|hostname|hostnamectl|timedatectl)(\s|$)',
-    # Text Processing
-    r'^(grep|awk|sed|cut|tr|echo|sort|uniq|tac|rev|strings|xxd|hexdump|od|column|paste|join|nl)(\s|$)',
-    # Compression
-    r'^(tar|zip|unzip|gzip|gunzip|bzip2|bunzip2|xz|7z|zcat|zless)(\s|$)',
-    # Shell Built-ins
-    # Note: eval and exec appear here but _is_cloud() runs first in classify(),
-    # so eval/exec with execution semantics still routes to cloud correctly.
-    r'^(env|alias|exit|history|printenv|source|eval|exec|type|which|whereis|whatis|man)(\s|$)',
-    r'^export(?!\s+PATH=)\s+',
-    # User/Group Management
-    r'^(adduser|useradd|userdel|usermod|groupadd|groupdel|groupmod|passwd|chpasswd|newgrp)(\s|$)',
-    # Network Tools — download/scan
-    r'^(nmap|masscan|wget|curl|ping|traceroute|arp|dig|nslookup|host|ftp|sftp|scp|whois)(\s|$)',
-    r'^nc\s+',
-    r'^(netstat|ss|ip|ifconfig)(\s|$)',
-    r'^ssh\s+',
-    r'^telnet\s+',
-    # Package Management
-    r'^(apt|apt-get|yum|dnf|pip|pip3|gem|npm|dpkg)\s+',
-    # sudo anything
-    r'^sudo\s+',
-    # Specific patterns
-    r'cat\s+/etc/(passwd|shadow|hosts|hostname|os-release|crontab|sudoers|group|fstab|issue|motd)',
-    r'ls\s+(-\w+\s+)?(\/etc|\/var|\/tmp|\/root|\/home|\/proc|\/sys)',
-    r'uname\s+-\w+',
-    r'find\s+.*-(name|perm|user|exec)',
-    r'ps\s+(-\w+|aux|ef)',
-]
+# Single shared scorer — FIScorer.score() is a pure function of the command
+# text (hardcoded regex bands, no session state), so one module-level
+# instance is safe to share across every session's classify() calls.
+_scorer = FIScorer()
 
-# ─── Group 2: On-Device LLM ──────────────────────────────────────────────────
-# Handles: script execution, version queries, service status, context-dependent
+# ─── Editable routing config — config.yaml is the live source of truth ───────
+# fi_routing/agents.*.enabled are read from config.yaml, not hardcoded here —
+# an operator can hand-edit config.yaml (e.g. "0: cloud") and classify() will
+# honor it immediately, no code change needed. Resolved via router.py's own
+# file location (not cwd-relative "config.yaml") so this works regardless of
+# which script imports router.py or what its working directory is.
+_CONFIG_PATH = os.path.join(_HERE, "config.yaml")
+try:
+    _config = load_config(_CONFIG_PATH)
+    _AGENTS_ENABLED = {
+        "cowrie":    _config.agents.cowrie.enabled,
+        "on_device": _config.agents.on_device.enabled,
+        "cloud":     _config.agents.cloud.enabled,
+    }
+    _FI_ROUTING = {int(k): v for k, v in dict(_config.routing.fi_routing).items()}
+    _FALLBACK   = _config.routing.fallback
+except Exception:
+    # config.yaml not found yet (e.g. router.py imported before `hp init`) —
+    # fall back to today's 3-agent default so nothing breaks at import time
+    _AGENTS_ENABLED = {"cowrie": True, "on_device": True, "cloud": True}
+    _FI_ROUTING = {0: "cowrie", 1: "cowrie", 2: "on_device", 3: "on_device", 4: "on_device"}
+    _FALLBACK   = "cowrie"
 
-ONDEVICE_PATTERNS = [
-    # Service Management
-    r'^(systemctl|service)\s+',
-    # Job Scheduling
-    r'^(crontab|cron|atd)(\s|$)',
-    # User/Group Management
-    r'^(chage|chfn|chsh)(\s|$)',
-    # Kernel & Modules
-    r'^(lsmod|insmod|rmmod|modinfo)(\s|$)',
-    # Logging
-    r'^(journalctl|sar)(\s|$)',
-    # Development Tools
-    r'^(gcc|g\+\+|gdb|make)(\s|$)',
-    # Script execution (running a file, not an inline payload)
-    r'^(python|python3|perl|ruby|php|node|lua)\s+',
-    r'^\./\w+',
-    r'^(bash|sh)\s+\S+',
-    # Environment
-    r'^export\s+PATH=',
-    r'^unset\s+\w+',
-    # Session
-    r'^(screen|stty|tty)(\s|$)',
-]
+# capability rank, weakest to strongest — used only as a fallback when the
+# configured target for a band isn't actually enabled, or cloud/on_device is
+# unavailable for a mechanism-based override (obfuscation / COWRIE_UNIMPLEMENTED)
+_RANK = {"cowrie": 0, "on_device": 1, "cloud": 2}
 
+
+def _strongest(agents: list) -> str:
+    return max(agents, key=lambda a: _RANK.get(a, -1)) if agents else "cowrie"
+
+# ─── Group 0: Cowrie coverage gap ─────────────────────────────────────────────
+# These binaries have no Python command-class handler in this Cowrie instance
+# — invoking any of them always fails with the same generic fallback error
+# ("cannot execute binary file: Exec format error"), regardless of arguments.
+# Verified empirically against the live Cowrie connection (fresh connection
+# per command, no session-state carryover): 70/161 declared base_tools were
+# tested this way and every one of these failed 100% of the time (multiple
+# tested with 4-29 real occurrences each in dataset/mrheinen_linux_commands.json
+# ground truth, always failing). Since several of these would otherwise score
+# an FI band that routes to cowrie (e.g. diff, ln, file, stat, arp, ip), this
+# check must run BEFORE the FI-band lookup so these specific binaries route
+# to on_device instead — any LLM-fabricated answer is strictly better than a
+# guaranteed-wrong error.
+COWRIE_UNIMPLEMENTED = {
+    "arch", "arp", "basename", "blkid", "cal", "cmp", "column", "comm",
+    "diff", "dirname", "expr", "fdisk", "file", "findmnt", "flock", "fold",
+    "getent", "getopt", "gpg", "hexdump", "install", "ionice", "ip", "kmod",
+    "laptop-detect", "lastlog", "linux-version", "ln", "lnstat", "logger",
+    "logname", "lsblk", "lsusb", "mkfifo", "mktemp", "mountpoint", "namei",
+    "nice", "nl", "nstat", "paste", "pgrep", "pmap", "printenv", "pwdx",
+    "readlink", "renice", "rev", "route", "routel", "rpcinfo", "seq",
+    "split", "ss", "ssh-keygen", "stat", "sysctl", "tac", "taskset", "tc",
+    "tempfile", "test", "timeout", "tload", "traceroute", "truncate", "tty",
+    "vdir", "vmstat", "whereis",
+}
+
+
+def _base_cmd(cmd: str) -> str:
+    stripped = cmd.strip()
+    return stripped.split()[0] if stripped else ""
+
+
+# ─── Cowrie vs on_device: driven by FI band, not pattern lists ───────────────
+# Which of {cowrie, on_device} a non-cloud command routes to is now decided
+# entirely by FIScorer's band for that command (see classify() below):
+#   FI 0-1 → cowrie      (read/display, create file/install tool)
+#   FI 2-3 → on_device   (modify/navigate/change shell, service/download/elevate)
+# FI_RULES in prompt/fi_manager.py is the single source of truth for this —
+# no separate pattern lists here anymore. Any command previously routed by
+# BASIC_PATTERNS/ONDEVICE_PATTERNS now needs its FI band correct in FI_RULES
+# instead of a duplicate regex here.
 # ─── Group 3: Cloud LLM ──────────────────────────────────────────────────────
 # Routes commands requiring SEMANTIC RECONSTRUCTION OF EXECUTION INTENT —
 # the real action cannot be determined without decoding, evaluating, or
@@ -282,37 +294,45 @@ def _is_cloud(cmd: str) -> bool:
 def classify(cmd: str, session_history: list) -> str:
     cmd = cmd.strip()
 
-    # Cloud first — requires semantic reconstruction of execution intent
+    enabled = [a for a in ("cowrie", "on_device", "cloud") if _AGENTS_ENABLED.get(a, True)]
+    if not enabled:
+        enabled = ["cowrie"]   # safety net — should never happen, but never route nowhere
+
+    # Single-agent mode: HoneyRouter has no choice to make — everything goes
+    # to the one agent that's actually enabled, no exceptions.
+    if len(enabled) == 1:
+        return enabled[0]
+
+    # Cloud first — requires semantic reconstruction of execution intent.
+    # If cloud is disabled, fall back to the strongest remaining agent rather
+    # than silently losing the obfuscation-detection signal entirely.
     if _is_cloud(cmd):
-        return 'cloud'
+        return 'cloud' if 'cloud' in enabled else _strongest(enabled)
 
-    # Cowrie — basic + install + sudo + download
-    if _matches(cmd, BASIC_PATTERNS):
-        return 'cowrie'
+    # Cowrie coverage gap — this binary always fails on Cowrie regardless of
+    # arguments, so never route it there even though its FI band would
+    # otherwise send it to cowrie. Specifically on_device, not "whatever's
+    # strongest" — these are ordinary low-impact commands Cowrie just can't
+    # execute, not commands that need cloud-grade semantic reconstruction;
+    # sending them to cloud would be an expensive, unintended escalation.
+    if _base_cmd(cmd) in COWRIE_UNIMPLEMENTED:
+        if "on_device" in enabled:
+            return "on_device"
+        return _strongest([a for a in enabled if a != "cowrie"])
 
-    # On-Device — script execution + service status + context-dependent
-    if _matches(cmd, ONDEVICE_PATTERNS):
-        return 'on_device'
-
-    # Fallback
-    return 'cowrie'
-
-# ─── Helpers ─────────────────────────────────────────────────────────────────
-
-def _matches(cmd: str, patterns: list) -> bool:
-    return any(re.search(p, cmd) for p in patterns)
+    # FI band decides the rest — via config.yaml's fi_routing table (see
+    # prompt/fi_manager.py for the FI score itself; fi_routing for which
+    # agent each band maps to, fully hand-editable). Falls back to the
+    # strongest enabled agent if the configured target isn't actually
+    # available (e.g. hand-edited to an agent that got disabled since).
+    fi, _ = _scorer.score(cmd)
+    target = _FI_ROUTING.get(fi, _FALLBACK)
+    return target if target in enabled else _strongest(enabled)
 
 
 if __name__ == "__main__":
     test_cmds = ["hello", "hey", "hi", "wtf", "what"]
-    all_pattern_groups = [
-        ("BASIC", BASIC_PATTERNS),
-        ("ONDEVICE", ONDEVICE_PATTERNS),
-    ]
     for cmd in test_cmds:
         result = classify(cmd, [])
-        print(f"\n{cmd!r} → {result}")
-        for group_name, patterns in all_pattern_groups:
-            for p in patterns:
-                if re.search(p, cmd):
-                    print(f"   matched {group_name}: {p}")
+        fi, method = _scorer.score(cmd)
+        print(f"{cmd!r} → {result}  (FI={fi}, {method})")
