@@ -18,7 +18,7 @@ enabled: false
 type: syslog
 
 connection:
-  host: "your company"
+  host: "your company name bruhhhhhh"
   port: 514
   protocol: "udp"
   format: "cef"

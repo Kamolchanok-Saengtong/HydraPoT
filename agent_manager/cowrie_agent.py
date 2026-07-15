@@ -34,8 +34,8 @@ def strip_ansi(text: str) -> str:
     return text
 
 class CowrieAgent:
-    SLOW_DELAYS         = {'wget': 0.8, 'curl': 0.3, 'masscan': 0.4}
-    INTERACTIVE_TIMEOUT = 60.0   # safety hard-stop for interactive cmds
+    SLOW_DELAYS = {'wget': 0.8, 'curl': 0.3, 'masscan': 0.4, 'apt': 0.3, 'apt-get': 0.3}
+    INTERACTIVE_TIMEOUT = 10.0   # safety hard-stop for interactive cmds
     def __init__(self, host="127.0.0.1", port=2222, username="root", password="root"):
         self.host     = host
         self.port     = port
@@ -51,7 +51,8 @@ class CowrieAgent:
         self.client = paramiko.SSHClient()
         self.client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         self.client.connect(self.host, port=self.port,
-                            username=self.username, password=self.password)
+                            username=self.username, password=self.password,
+                            look_for_keys=False, allow_agent=False)
         
         # term='dumb' tells cowrie not to emit colors / cursor codes
         self.shell = self.client.invoke_shell(term='dumb')
@@ -67,6 +68,11 @@ class CowrieAgent:
 
     def send(self, cmd: str) -> tuple[str, str]:
         """Instant commands. Returns full (output, prompt)."""
+        try:
+            if self.shell.recv_ready():
+                self.shell.recv(9999)
+        except Exception:
+            pass
         if not self.shell:
             return "", ""
         cmd_base = cmd.strip().split()[0] if cmd.strip() else ""
@@ -117,6 +123,11 @@ class CowrieAgent:
         read_fn()       — non-blocking poll for attacker input; returns
                           string or None.
         """
+        try:
+            if self.shell.recv_ready():
+                self.shell.recv(9999)
+        except Exception:
+            pass
         if not self.shell:
             return "", ""
         self.shell.send(cmd + '\n')
@@ -228,7 +239,7 @@ class CowrieAgent:
 
             # 4. safety timeout
             if time.time() - start > self.INTERACTIVE_TIMEOUT:
-                write_fn("\r\n[interactive command timed out]\r\n")
+                # write_fn("\r\n[interactive command timed out]\r\n")
                 self.shell.send('\x03')
                 time.sleep(0.3)
                 if self.shell.recv_ready():
@@ -253,7 +264,7 @@ class CowrieAgent:
 
     def _split(self, raw: str, cmd: str = "") -> tuple[str, str]:
         cleaned = strip_ansi(raw)
-        lines   = [l for l in cleaned.split('\n') if l.strip() != '']
+        lines = [l for l in cleaned.split('\n') if l.strip() != '']
 
         # drop the echoed command — cowrie's PTY repeats whatever we sent
         if cmd and lines:

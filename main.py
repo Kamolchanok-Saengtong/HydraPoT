@@ -679,6 +679,29 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
         actual_base = actual_cmd.split()[0] if actual_cmd else ""
         lookup_base = os.path.basename(actual_base)   # strip path for tool-availability checks
 
+        # busybox is a real multi-call binary — `busybox X args`/`/bin/busybox
+        # X args` IS `X args`, byte-for-byte, whether invoked bare or by full
+        # path (os.path.basename already collapses both to "busybox" above).
+        # Rewriting here (rather than relying on the LLM to reason "busybox
+        # wraps X transparently") turned out necessary: found via a real
+        # 109-session on_device-vs-Cowrie comparison where busybox was 77% of
+        # FI4 losses — a CRITICAL prompt note fixed the "command not found"
+        # hallucination for e.g. chmod, but for `busybox rm -rf x` the model
+        # kept giving a DIFFERENT wrong answer ("invalid option -- 'f'") that
+        # varied run-to-run on the identical input (GPU float non-determinism
+        # at a decision boundary, not something prompt wording can pin down).
+        # Stripping the wrapper here means the applet reuses whatever
+        # handling the bare command already gets — deterministic and, for
+        # rm/chmod/etc., already correct. Only rewrites when an applet name
+        # actually follows; bare `busybox`/`/bin/busybox` (prints its own
+        # usage banner in real life) is left alone, unaffected by this.
+        if lookup_base == "busybox":
+            _bb_parts = actual_cmd.split()
+            if len(_bb_parts) > 1:
+                actual_cmd  = " ".join(_bb_parts[1:])
+                actual_base = _bb_parts[1]
+                lookup_base = os.path.basename(actual_base)
+
         fi_score, _ = fi_manager.scorer.score(cmd)
 
         # ── helper: does this command reference a tracked (LLM/local-only) file? ──
@@ -699,18 +722,37 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
         # ── general SRi-state safety net ───────────────────────────────────
         tracked_path = _references_tracked_file(actual_cmd)
 
-        # ── cd — resolved deterministically, ahead of force_agent so this
-        #    applies uniformly in both production and forced-eval routing ──
-        if actual_base == "cd":
-            handled, cd_error = _resolve_cd(actual_cmd)
-            if handled:
-                return _finish(cmd, "cowrie", cd_error or "", fi_score, t_start)
+        # ── cd/chmod/unset — resolved deterministically, ahead of the
+        #    force_agent dispatch so this applies uniformly in production
+        #    and forced-eval routing — EXCEPT when force_agent=="cowrie"
+        #    explicitly, which must still reach the real Cowrie container
+        #    below. That arm exists specifically to measure Cowrie's own,
+        #    real, unmodified behavior as a baseline; silently answering on
+        #    its behalf here would corrupt that measurement (found after
+        #    the fact — every "Pure Cowrie" score for these three command
+        #    types up to this point was actually scoring this code, not
+        #    Cowrie). Production is unaffected either way: none of cd's/
+        #    chmod's/unset's FI bands route to cowrie in config.yaml, so
+        #    Cowrie would never naturally see these regardless.
+        if force_agent != "cowrie":
+            if actual_base == "cd":
+                handled, cd_error = _resolve_cd(actual_cmd)
+                if handled:
+                    return _finish(cmd, "cowrie", cd_error or "", fi_score, t_start)
 
-        # ── chmod — same deterministic treatment as cd, same reason ────────
-        if actual_base == "chmod":
-            handled, chmod_error = _resolve_chmod(actual_cmd)
-            if handled:
-                return _finish(cmd, "cowrie", chmod_error or "", fi_score, t_start)
+            if actual_base == "chmod":
+                handled, chmod_error = _resolve_chmod(actual_cmd)
+                if handled:
+                    return _finish(cmd, "cowrie", chmod_error or "", fi_score, t_start)
+
+            # unset always succeeds silently in real bash, regardless of
+            # whether the variable existed. No existence-check ambiguity at
+            # all (unlike cd/chmod), so this is the simplest of the three:
+            # "unset" was simply missing from BUILTIN_TOOLS, so the model
+            # had no signal it's always available and guessed "command not
+            # found" (or worse, treated the variable name as the command).
+            if actual_base == "unset":
+                return _finish(cmd, "cowrie", "", fi_score, t_start)
 
         # ── evaluation-only forced routing ───────────────────────────────────
         # force_agent is only set by the eval framework (run_partB.py).
@@ -720,7 +762,7 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
             if force_agent == "cloud":
                 agent = "cloud"
                 if cloud is not None:
-                    sys_p, usr_p = prompt_manager.build_cloud_prompt(cmd)
+                    sys_p, usr_p = prompt_manager.build_cloud_prompt(actual_cmd)
                     if capture_cost:
                         output, usage = cloud.send_with_usage(sys_p, usr_p)
                         handle.last_usage = usage
@@ -734,7 +776,7 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
             elif force_agent == "on_device":
                 agent = "on_device"
                 if ondevice is not None:
-                    sys_p, usr_p = prompt_manager.build_prompt(cmd)
+                    sys_p, usr_p = prompt_manager.build_prompt(actual_cmd)
                     if capture_cost:
                         output, usage = ondevice.send_with_usage(sys_p, usr_p)
                         handle.last_usage = usage
@@ -870,7 +912,7 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
 
         if agent == "cloud":
             if cloud is not None:
-                sys_p, usr_p = prompt_manager.build_cloud_prompt(cmd)
+                sys_p, usr_p = prompt_manager.build_cloud_prompt(actual_cmd)
                 if capture_cost:
                     output, usage = cloud.send_with_usage(sys_p, usr_p)
                     handle.last_usage = usage
@@ -941,7 +983,7 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
                                 content = _virtual_file(p)
                                 if content:
                                     extra += f"\nFILE CONTENT of {p}:\n{content}\n"
-                        sys_p, usr_p = prompt_manager.build_prompt(cmd)
+                        sys_p, usr_p = prompt_manager.build_prompt(actual_cmd)
                         if extra:
                             usr_p = usr_p + extra
                         if capture_cost:
@@ -966,7 +1008,7 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
                 and ("command not found" in (output or "") or "cannot execute binary file" in (output or ""))
                 and _is_tool_available(actual_base)
                 and ondevice is not None):
-            sys_p, usr_p = prompt_manager.build_prompt(cmd)
+            sys_p, usr_p = prompt_manager.build_prompt(actual_cmd)
             llm_out = ondevice.send(sys_p, usr_p)
             if llm_out and "command not found" not in llm_out:
                 output = llm_out

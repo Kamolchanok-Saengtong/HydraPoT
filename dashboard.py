@@ -10,6 +10,8 @@ import os
 import time
 from datetime import datetime
 
+_HERE = os.path.dirname(os.path.abspath(__file__))
+
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -22,9 +24,99 @@ from dash.exceptions import PreventUpdate
 SESSION_DIR  = "data/logs/sessions"
 AUTH_LOG     = "data/logs/auth_log.json"
 REFRESH_MS   = 5000
-LOGO_PATH    = "/mnt/data-partition/honeypot/production/logo.png"
-MMDB_PATH    = "/mnt/data-partition/honeypot/geoip.mmdb"
-MAX_SESSION_FILES = 50
+LOGO_PATH    = os.path.join(_HERE, "production", "logo.png")
+MMDB_PATH    = os.path.join(_HERE, "geoip.mmdb")
+MAX_SESSION_FILES = 7000
+
+# ── Live cost/energy estimation constants ──────────────────────────────────────
+# Production session logs record `agent` + `latency_ms` per command, but NOT
+# tokens/cost (cost capture is off in the real run). So the dashboard ESTIMATES:
+#
+#   on-device electricity  — from the REAL logged latency_ms of on_device
+#     commands (GPU busy time) x measured avg draw, converted via config.yaml's
+#     MEA tariff. This is a genuine per-command estimate, not a flat guess.
+#   cloud cost             — logs have no token count, so this is (# cloud
+#     commands) x a per-cloud-command $ rate measured in Part C. Coarser, but
+#     the only signal available live. Both are clearly labelled "(est.)".
+#
+# Numbers below come from Part C measurement (see NSC/PartC/results/…):
+#   avg GPU draw during on_device inference : 112.89 W  (utilization-scaled;
+#     this GPU's driver reports power.draw as N/A — see estimate_electricity_bill.py)
+#   avg cloud $ per cloud-routed command    : $0.0301 / 67 cmds ≈ $0.000449
+GPU_AVG_WATT              = 112.89
+CLOUD_COST_PER_CLOUD_CMD  = 0.0301 / 67
+# A single on_device inference can't realistically exceed ~2 min of GPU time.
+# Some log records carry corrupt latency_ms (e.g. 1.7e9 ms ≈ 495 h — a bad
+# t_start / timing artifact); left unclamped, a handful of these dominate the
+# whole energy sum (~100x inflation). Cap each command's contribution here.
+LATENCY_CAP_MS            = 120_000
+
+try:
+    import sys as _sys
+    if os.path.join(_HERE, "NSC", "PartA") not in _sys.path:
+        _sys.path.insert(0, os.path.join(_HERE, "NSC", "PartA"))
+    from power_cost import kwh_to_thb as _kwh_to_thb
+    from config_loader import load_config as _load_config
+    _POWER_TARIFF = _load_config().power_tariff
+except Exception:
+    _kwh_to_thb = None
+    _POWER_TARIFF = None
+
+
+def estimate_costs(df):
+    """Live cost/energy estimates scoped to the CURRENT CALENDAR MONTH — so a
+    SOC team reads "what is this honeypot costing this month" at a glance.
+    Month-to-date is the actual accrued figure; on_device_thb_projected
+    extrapolates to a full month at the current rate. Monthly scoping also
+    matches how MEA's progressive tariff is actually billed (per month of kWh).
+    Safe on empty/missing columns."""
+    import calendar
+    out = {"cloud_cost_usd": 0.0, "on_device_kwh": 0.0, "on_device_thb": 0.0,
+           "on_device_thb_projected": 0.0, "projection_ready": False,
+           "n_cloud": 0, "n_on_device": 0,
+           "month_label": datetime.now().strftime("%b %Y")}
+    if df is None or df.empty or "agent" not in df.columns:
+        return out
+
+    # scope to the current calendar month via timestamp (fall back to all rows
+    # if there's no usable timestamp column, so the cards never go blank)
+    mdf = df
+    if "timestamp" in df.columns and df["timestamp"].notna().any():
+        now = datetime.now()
+        ts = df["timestamp"]
+        mdf = df[(ts.dt.year == now.year) & (ts.dt.month == now.month)]
+
+    cloud_mask = mdf["agent"] == "cloud"
+    od_mask    = mdf["agent"] == "on_device"
+    out["n_cloud"]     = int(cloud_mask.sum())
+    out["n_on_device"] = int(od_mask.sum())
+    out["cloud_cost_usd"] = out["n_cloud"] * CLOUD_COST_PER_CLOUD_CMD
+
+    if "latency_ms" in mdf.columns:
+        # clamp per-command latency to exclude corrupt outlier records
+        od_latency_ms = float(
+            mdf.loc[od_mask, "latency_ms"].fillna(0).clip(upper=LATENCY_CAP_MS).sum()
+        )
+        hours = od_latency_ms / 1000.0 / 3600.0
+        out["on_device_kwh"] = GPU_AVG_WATT * hours / 1000.0
+        if _kwh_to_thb and _POWER_TARIFF:
+            out["on_device_thb"] = _kwh_to_thb(out["on_device_kwh"], _POWER_TARIFF)["total_thb"]
+
+        # project month-to-date -> full month at the current daily rate.
+        # Require at least ~1 full day of the month elapsed before projecting:
+        # very early in a month the elapsed fraction is near-zero and dividing
+        # by it produces a wildly inflated (meaningless) projection. Until then
+        # we simply don't project (the card shows the projection as n/a).
+        now = datetime.now()
+        days_in_month = calendar.monthrange(now.year, now.month)[1]
+        elapsed_days = (now.day - 1) + now.hour / 24.0
+        if elapsed_days >= 1.0 and _kwh_to_thb and _POWER_TARIFF:
+            proj_kwh = out["on_device_kwh"] * (days_in_month / elapsed_days)
+            out["on_device_thb_projected"] = _kwh_to_thb(proj_kwh, _POWER_TARIFF)["total_thb"]
+            out["projection_ready"] = True
+        else:
+            out["projection_ready"] = False
+    return out
 
 FI_LABEL = {0:"Read/Display", 1:"Create/Install", 2:"Modify/Navigate",
             3:"Service/Elevate", 4:"High Impact"}
@@ -315,6 +407,14 @@ app.index_string = """
       font-size:0.68rem; color:var(--ink-3); margin-bottom:6px;
     }
     .metric-value { font-weight:800; font-size:1.7rem; color:var(--ink); }
+    /* Cost/energy cards — stand out in green so they read at a glance */
+    .metric-card.cost-card {
+      background:#0f8a4d; border-color:#0a5c34; box-shadow:4px 4px 0 #0a5c34;
+    }
+    .metric-card.cost-card .metric-label { color:#d6ffe6; }
+    .metric-card.cost-card .metric-value { color:#ffffff; }
+    .metric-card.cost-card .metric-sub { color:#bff0d1; font-size:0.65rem;
+      font-family:'JetBrains Mono',monospace; margin-top:4px; }
     .threat-badge { border-radius:14px; padding:12px; text-align:center; border:2px solid var(--ink); flex:1; min-width:140px; }
 
     /* Terminal feed */
@@ -631,6 +731,7 @@ def build_summary_page():
     # Metric cards
     peak_fi = int(df["fi_score"].max())
     tl, tc, ti = THREAT_LEVEL[peak_fi]
+    _costs = estimate_costs(df)
     metrics = html.Div(className="metric-row", children=[
         html.Div(className="metric-card", children=[
             html.Div("Total Commands", className="metric-label"),
@@ -647,6 +748,20 @@ def build_summary_page():
         html.Div(className="metric-card", children=[
             html.Div("High Impact (FI≥3)", className="metric-label"),
             html.Div(f"{int((df['fi_score'] >= 3).sum())}", className="metric-value"),
+        ]),
+        html.Div(className="metric-card cost-card", children=[
+            html.Div(f"☁ Cloud Cost · {_costs['month_label']} (est.)", className="metric-label"),
+            html.Div(f"${_costs['cloud_cost_usd']:.4f}", className="metric-value"),
+            html.Div(f"{_costs['n_cloud']} cloud commands this month", className="metric-sub"),
+        ]),
+        html.Div(className="metric-card cost-card", children=[
+            html.Div(f"⚡ On-device Electricity · {_costs['month_label']} (est.)", className="metric-label"),
+            html.Div(f"{_costs['on_device_thb']:.2f} ฿", className="metric-value"),
+            html.Div(
+                (f"≈ {_costs['on_device_thb_projected']:.2f} ฿ projected full month · "
+                 if _costs['projection_ready'] else "projection pending (early in month) · ")
+                + f"{_costs['on_device_kwh']:.4f} kWh · {_costs['n_on_device']} cmds",
+                className="metric-sub"),
         ]),
         html.Div(className="threat-badge", style={"background": f"{tc}1A"}, children=[
             html.Div(ti, style={"fontSize": "2rem"}),

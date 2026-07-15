@@ -30,7 +30,7 @@ VERSION = "0.1.0"
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 try:
-    with open(os.path.join(_HERE, "LICENSE"), encoding="utf-8") as _f:
+    with open(os.path.join(_HERE, "license"), encoding="utf-8") as _f:
         LICENSE_TEXT = _f.read().strip()
 except FileNotFoundError:
     LICENSE_TEXT = ""

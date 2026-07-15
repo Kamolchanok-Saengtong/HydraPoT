@@ -27,7 +27,7 @@ When an attacker connects via SSH, HydraPoT:
 - **Python 3.10+**
 - **NVIDIA GPU** with CUDA 12+ (for on-device LLM)
 - **Docker** (for Cowrie container)
-- **~4GB VRAM** minimum (for Qwen 4-bit quantized model)
+- **~8GB VRAM** minimum (for Qwen3.5-9B, Q5_K_M quantized GGUF)
 
 ---
 
@@ -72,12 +72,12 @@ This walks you through configuration:
 ╚══════════════════════════════════════════════════╝
 
 ╭─────────────────────── Review Configuration ───────────────────────╮
-│    1       Hostname               svr04                            │
-│    2       OS                     Ubuntu 22.04 LTS                 │
-│    3       Bind address           0.0.0.0:2223                     │
-│    4       Cowrie host:port       127.0.0.1:2222                   │
-│    5       On-device model        unsloth/Qwen3.5-4B-GGUF          │
-│    6       Cloud LLM              disabled                         │
+│    1       Hostname               <your choice, e.g. svr04>        │
+│    2       OS                     <your choice, e.g. Ubuntu 22.04> │
+│    3       Bind address           <your choice, e.g. 0.0.0.0:2223> │
+│    4       Cowrie host:port       <your Cowrie container address>  │
+│    5       On-device model        <any GGUF model you point to>    │
+│    6       Cloud LLM              <any OpenAI-compatible provider> │
 ╰────────────────────────────────────────────────────────────────────╯
   📦 Plugins: 1 rule(s) loaded (crypto mining)
   📤 Exporters: 1 configured (edit in plugins/export/)
@@ -110,41 +110,132 @@ ssh root@localhost -p 2223
 hp dashboard
 ```
 
-Opens the SIEM dashboard at `http://localhost:8501` with live session feed, world map, auth intelligence, and session replay.
+Opens the SIEM dashboard (default `http://localhost:8050`, override with `hp dashboard --host --port`) with live session feed, world map, auth intelligence, and session replay.
+
+---
+
+## Daily Usage (Quick Reference)
+
+Once everything is installed, here's the routine for using it day to day.
+
+### 1. Activate the environment
+
+Do this every time, in every new terminal, before running any `hp` command:
+
+```bash
+cd HydraPoT   # or wherever you cloned it
+source honeypot_new/bin/activate
+```
+
+### 2. Make sure Cowrie is running
+
+```bash
+docker ps
+```
+
+If "cowrie" is not in the list, start it:
+
+```bash
+docker compose up -d
+```
+
+### 3. Run the honeypot
+
+```bash
+hp run
+```
+
+Wait for:
+
+```
+[on_device] Ready.
+[cowrie_agent] Connected.
+[HydraPot] SSH server listening on 0.0.0.0:2223
+```
+
+Keep this terminal open — closing it stops the honeypot.
+
+### 4. Try it out (new terminal)
+
+```bash
+ssh root@localhost -p 2223
+```
+
+Any password works. Try commands like `ls`, `whoami`, `cat /etc/passwd`. Type `exit` to leave.
+
+### 5. Watch the dashboard (new terminal)
+
+```bash
+hp dashboard
+```
+
+Then open `http://localhost:8050` in your browser.
+
+### 6. Check logs from the terminal (optional)
+
+```bash
+hp logs              # recent commands
+hp logs --auth       # recent login attempts
+hp logs -n 50        # show 50 lines instead of the default
+```
+
+### Stopping everything
+
+1. `Ctrl+C` in the `hp run` terminal
+2. `Ctrl+C` in the `hp dashboard` terminal
+3. Optional: `docker compose down`
+
+### Troubleshooting
+
+| Problem | Fix |
+|---|---|
+| `command not found: hp` | You forgot to activate the environment (step 1) |
+| Dashboard is empty | No one has connected yet — try step 4 first |
+| `hp run` can't connect to Cowrie | Cowrie container isn't running — see step 2 |
+| On-device model takes a while to start | Normal — the model is loading into the GPU. Wait for `[on_device] Ready.` |
 
 ---
 
 ## How It Works
 
+FI (Functional Impact) scoring and agent routing are **two independent things** — a command's FI level does not by itself send it to any particular agent.
+
 ```
-Attacker ──SSH──▶ HydraPoT ──▶ FI Scorer ──▶ Router
-                                                │
-                    ┌───────────────────────────┤
-                    │           │               │
-                    ▼           ▼               ▼
-                 Cowrie     On-Device LLM    Cloud LLM
-               (FI 0-1)     (FI 2-3)         (FI 4)
-              fast, static  context-aware   most capable
-               ~100ms       ~2-4 sec        ~1-2 sec
+Attacker ──SSH──▶ HydraPoT ──▶ Router
+                                 │
+                 ┌───────────────┴────────────────────┐
+                 │                                     │
+     obfuscated/indirect command?              ordinary command
+   (mechanism-based detection in router.py,            │
+    independent of FI — e.g. base64 payloads,   FI Scorer (0-4)
+    /dev/tcp redirects, dynamic construction)           │
+                 │                            routing.fi_routing in
+                 ▼                             config.yaml decides the
+             Cloud LLM                         agent per FI level —
+                                                fully configurable
 ```
+
+- **Cloud routing** is triggered by detecting that a command needs semantic reconstruction to know what it actually does — a fixed, mechanism-based check in `router.py`, not tied to FI score.
+- **Everything else** is routed per FI level according to `config.yaml`'s `routing.fi_routing` map — you choose which agent (Cowrie / On-Device / Cloud) handles each FI level.
+- FI score also independently controls which interactions get retained in cross-agent memory (`logging.fi_threshold`).
 
 ### FI Scoring (Functional Impact)
 
-Every command gets a score from 0-4:
+Every command gets a score from 0-4, used for routing decisions (via your configured `fi_routing` map) and memory retention:
 
-| FI | Label | Examples | Agent |
-|----|-------|----------|-------|
-| 0 | Read/Display | `whoami`, `ls`, `cat /etc/passwd` | Cowrie |
-| 1 | Create/Install | `apt install nmap`, `wget`, `touch` | Cowrie |
-| 2 | Modify/Navigate | `chmod`, `sed`, `mv` | On-Device LLM |
-| 3 | Service/Elevate | `systemctl`, `nmap scan`, `sudo` | On-Device LLM |
-| 4 | Impact/Delete | `passwd root`, `rm -rf /`, `useradd` | Cloud LLM |
+| FI | Label | Examples |
+|----|-------|----------|
+| 0 | Read/Display | `whoami`, `ls`, `cat /etc/passwd` |
+| 1 | Create/Install | `apt install nmap`, `wget`, `touch` |
+| 2 | Modify/Navigate | `chmod`, `sed`, `mv` |
+| 3 | Service/Elevate | `systemctl`, `nmap scan`, `sudo` |
+| 4 | Impact/Delete | `passwd root`, `rm -rf /`, `useradd` |
 
 ### Agents
 
 - **Cowrie** — Docker-based SSH emulator. Handles simple commands instantly (~100ms). No context, no memory.
-- **On-Device LLM** — Local GGUF model (Qwen 4B). Handles context-dependent commands. Sees file state, installed packages, and interaction history. (~2-4 seconds)
-- **Cloud LLM** — API-based model (ChatGPT/Claude). Reserved for the most dangerous and obfuscated commands. Most capable but costs money.
+- **On-Device LLM** — Any local GGUF model you point it to (`agents.on_device.model` in `config.yaml`). Handles context-dependent commands. Sees file state, installed packages, and interaction history.
+- **Cloud LLM** — Any OpenAI-compatible API provider you configure (`agents.cloud` in `config.yaml`). Reserved for obfuscated/indirect commands that need semantic reconstruction to execute safely. Most capable but costs money.
 
 ### Cross-Agent State
 
@@ -162,7 +253,7 @@ HydraPoT/
 ├── config.yaml             # Generated by hp init
 ├── config_loader.py        # Loads config into dataclass
 ├── setup_wizard.py         # Interactive setup (hp init)
-├── dashboard.py            # Streamlit SIEM dashboard
+├── dashboard.py            # Dash SIEM dashboard
 ├── hp.py                   # CLI entry point (hp run/init/dashboard)
 │
 ├── agent_manager/
@@ -181,11 +272,11 @@ HydraPoT/
 ├── plugins/                # Extensible plugin system
 │   ├── plugin_loader.py    # Loads rules, static handlers, exporters
 │   ├── rules/              # Custom FI detection rules (YAML)
-│   │   └── crypto_mining.yaml
+│   │   └── crypto_mining.yml
 │   ├── static/             # Custom fake command output (Python)
 │   │   └── fake_docker.py
 │   └── export/             # SIEM export configs (YAML)
-│       └── syslog.yaml
+│       └── syslog.yml
 │
 ├── data/
 │   ├── logs/
@@ -194,13 +285,10 @@ HydraPoT/
 │   │   └── auth_log.json   # Login attempts + port scans
 │   └── hostkey_asyncssh.key
 │
-└── evaluation/             # Research evaluation scripts
-    ├── eval_cowrie.py
-    ├── eval_ondevice.py
-    ├── eval_compare.py
-    ├── fidelity.py         # Cosine, Sequence, BLEU, BERTScore
-    ├── normalizer.py       # Dynamic value normalization
-    └── cost_analysis.py
+└── evaluation/             # Research evaluation scripts (internal, not
+    ├── fidelity.py         #   part of the installed package)
+    ├── normalization.py    # Cosine, Sequence, BLEU, BERTScore, and more
+    └── ...                 # cost/comparison scripts, etc.
 ```
 
 ---
@@ -312,12 +400,14 @@ agents:
     enabled: false           # Enable when ready, costs money
 
 system_state:
-  pre_installed:             # Tools available without apt install
-    - coreutils
-    - bash
-    - wget
-    - curl
+  base_tools:                # Commands the honeypot always simulates as
+    - ls, cat, cp, mv, rm     # available, no install-check needed — list
+    - wget, curl, bash        # is yours, comma-separated per line
     # ... add more as needed
+  starting_files:             # Pre-seeded file state (perms/size) shown
+    /root/.bashrc:             # to attackers before they create anything
+      perms: -rw-r--r--
+      size: 3.7K
 ```
 
 ---
@@ -351,4 +441,4 @@ export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
 
 ## License
 
-This project is part of an academic thesis at Prince of Songkla University.
+This project is part of an academic thesis at Prince of Songkla University. See [`license`](license) for the full usage agreement (NSTDA National Software Contest disclaimer).

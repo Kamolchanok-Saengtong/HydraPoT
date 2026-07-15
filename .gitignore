@@ -13,3 +13,18 @@ __pycache__/
 *.pyc
 honeypot_new/
 HydraPoT.egg-info/
+
+USER_MANUAL.txt
+
+# ── Personal / local tooling (not part of the shippable project) ──
+# (.gitignore has no inline comments — keep patterns on their own lines)
+.agents/
+skills-lock.json
+# Claude Code project-context / implementation briefs, not project code
+hydrapot.md
+partC.md
+
+# ── Evaluation data & results (large, machine-specific, not shipped) ──
+# dataset/ is ~1.3 GB of eval datasets
+dataset/
+eval_cowrie_results.json

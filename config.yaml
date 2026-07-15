@@ -5,7 +5,7 @@
 
 honeypot:
   hostname: psu
-  os: Ubuntu 12.04 LTS
+  os: Ubuntu 22.04 LTS
   host: 127.0.0.1
   port: 2223
 agents:
@@ -17,18 +17,20 @@ agents:
     password: admin
   on_device:
     enabled: true
-    model: Qwen/Qwen2.5-Coder-7B-Instruct-GGUF
-    quantization: 4bit
-    temperature: 0.1
+    model: unsloth/Qwen3.5-9B-GGUF
+    quantization: 8bit
+    gguf_file: Qwen3.5-9B-Q5_K_M.gguf
+    temperature: 0
     max_tokens: 256
     do_sample: true
   cloud:
     enabled: true
     provider: openai
-    model: gpt-4o-mini
-    api_key_env: PSU_API_KEY
+    model: deepseek-v4-flash
+    api_key_env: DEEPSEEK_API_KEY
     temperature: 0.1
-    max_tokens: 512
+    max_tokens: 2048
+    base_url: https://api.deepseek.com
 routing:
   fallback: cowrie
   fi_routing:
@@ -36,7 +38,7 @@ routing:
     1: cowrie
     2: on_device
     3: on_device
-    4: cloud
+    4: on_device
 static_commands:
 - nmap
 - ping
@@ -57,6 +59,22 @@ logging:
   impactful_dir: data/logs/impactful
   auth_log: data/logs/auth_log.json
   fi_threshold: 2
+# MEA/PEA residential tariff (ประเภท 1.2) — Ft changes every 4 months, tiers
+# occasionally revised by the ERC. Verify against
+# https://www.mea.or.th/our-services/mea-service/e-service/electric-monthly-calculate
+# before citing in the thesis.
+power_tariff:
+  tiers:
+    - max_units: 15
+      rate_thb_per_unit: 2.3488
+    - max_units: 150
+      rate_thb_per_unit: 3.2484
+    - max_units: 400
+      rate_thb_per_unit: 4.2218
+    - max_units: null
+      rate_thb_per_unit: 4.4217
+  ft_surcharge_thb_per_unit: 0.1623
+  vat_rate: 0.07
 system_state:
   base_tools:
   - ls, cat, cp, mv, rm, mkdir, rmdir, touch, echo, pwd, head, tail, sort, uniq
@@ -76,8 +94,21 @@ system_state:
   - apt, apt-get, apt-cache, dpkg, dpkg-query, update-alternatives
   - systemctl, journalctl, loginctl, timedatectl, hostnamectl, sudo, sudoedit, service
   - bash, sh, ssh, scp, sftp, ssh-keygen, perl, python3, gpg, curl, wget, openssl
-  - dig, nslookup, host, xxd, at, finger, ltrace, strace
+  - dig, nslookup, host, xxd, at, finger, ltrace, strace,busybox
+  - iostat, pcre2-config, hciconfig, pidstat, tempfile, ibus, networkctl, getconf
+  - lspci, lsusb, hashcat, getent, gsettings, listres, traceroute, lnstat, getfacl
+  - getcap, kmod, linux-version, lshw, lsipc, p11-kit, pactl, routel, rpcinfo
+  - lastlog, time, b2sum, cupsctl, gpgconf, iwconfig, laptop-detect
   starting_files:
     /var/log:
       perms: drwxr-xr-x
       size: 4.0K
+    /root/.bashrc:
+      perms: -rw-r--r--
+      size: 3.7K
+    /root/.profile:
+      perms: -rw-r--r--
+      size: 161B
+    /root/.bash_history:
+      perms: -rw-------
+      size: 0B

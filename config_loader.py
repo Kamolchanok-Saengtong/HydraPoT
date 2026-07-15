@@ -39,6 +39,7 @@ class OnDeviceCfg:
     enabled: bool = True
     model: str = "Qwen/Qwen2.5-Coder-7B-Instruct"
     quantization: str = "4bit"
+    gguf_file: str = ""   # which cached .gguf file to load when `model` has multiple variants
     temperature: float = 0.7
     max_tokens: int = 256
     do_sample: bool = True
@@ -49,6 +50,7 @@ class CloudCfg:
     provider: str = "openai"
     model: str = "gpt-4o-mini"
     api_key_env: str = "OPENAI_API_KEY"
+    base_url: Optional[str] = None          # ← add this
     temperature: float = 0.3
     max_tokens: int = 512
 
@@ -66,7 +68,7 @@ class RoutingCfg:
         1: "cowrie",
         2: "on_device",
         3: "on_device",
-        4: "cloud",
+        4: "on_device",
     })
 
 @dataclass
@@ -82,18 +84,32 @@ class Config:
     agents: AgentsCfg = field(default_factory=AgentsCfg)
     routing: RoutingCfg = field(default_factory=RoutingCfg)
     logging: LoggingCfg = field(default_factory=LoggingCfg)
-    static_commands: list = field(default_factory=lambda: [
-        "nmap", "ping", "traceroute", "tracepath",
-        "top", "htop", "watch", "tail",
-        "vim", "vi", "nano", "emacs",
-        "less", "more",
-    ])
+    static_commands: list = field(default_factory=lambda: [...])
+    # MEA/PEA residential tariff (ประเภท 1.2) — plain dict like system_state
+    # below, since tiers is a list-of-dicts that doesn't map cleanly onto a
+    # typed dataclass. See config.yaml's power_tariff section for the shape.
+    power_tariff: dict = field(default_factory=lambda: {
+        "tiers": [
+            {"max_units": 15,  "rate_thb_per_unit": 2.3488},
+            {"max_units": 150, "rate_thb_per_unit": 3.2484},
+            {"max_units": 400, "rate_thb_per_unit": 4.2218},
+            {"max_units": None, "rate_thb_per_unit": 4.4217},
+        ],
+        "ft_surcharge_thb_per_unit": 0.1623,
+        "vat_rate": 0.07,
+    })
     system_state: dict = field(default_factory=lambda: {
+        "pre_installed": [
+            "coreutils", "bash", "ssh", "apt", "apt-get", "dpkg",
+            "grep", "sed", "awk", "tar", "gzip", "net-tools",
+            "procps", "util-linux", "cron", "sudo", "passwd",
+            "wget", "curl",
+        ],
         "starting_files": {
             "/etc/passwd": {"perms": "-rw-r--r--", "size": "2.1K"},
             "/etc/shadow": {"perms": "-rw-r-----", "size": "1.4K"},
             "/var/log":    {"perms": "drwxr-xr-x", "size": "4.0K"},
-        }
+        },
     })
 
 
@@ -148,14 +164,17 @@ def load_config(path: str = CONFIG_PATH) -> Config:
     routing  = _merge_dict_into_dataclass(RoutingCfg,   raw.get("routing"))
     logging_ = _merge_dict_into_dataclass(LoggingCfg,   raw.get("logging"))
 
-    static_cmds  = raw.get("static_commands")
-    system_state = raw.get("system_state")
+    static_cmds   = raw.get("static_commands")
+    system_state  = raw.get("system_state")
+    power_tariff  = raw.get("power_tariff")
 
     # handle the field defaults properly
     if static_cmds is None:
         static_cmds = Config().static_commands
     if system_state is None:
         system_state = Config().system_state
+    if power_tariff is None:
+        power_tariff = Config().power_tariff
 
     return Config(
         honeypot=honeypot,
@@ -164,6 +183,7 @@ def load_config(path: str = CONFIG_PATH) -> Config:
         logging=logging_,
         static_commands=static_cmds,
         system_state=system_state,
+        power_tariff=power_tariff,
     )
 
 

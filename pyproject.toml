@@ -8,7 +8,7 @@ requires-python = ">=3.10"
 authors         = [
     { name = "Kamolchanok Saengtong" },
 ]
-license = { file = "LICENSE" }
+license = { file = "license" }
 
 # ─── Runtime dependencies ───────────────────────────────────────────────────
 dependencies = [
@@ -20,18 +20,28 @@ dependencies = [
     "transformers>=4.40",
     "torch>=2.0",
     "accelerate>=0.27",
+    "bitsandbytes>=0.43",
+    "llama-cpp-python>=0.2.90",
+    "huggingface_hub>=0.23",
+
+    # LLM (cloud)
+    "openai>=1.30",
+    "requests>=2.31",
 
     # CLI / wizard
     "click>=8.1",
     "rich>=13.7",
+    "questionary>=2.0",
+    "readchar>=4.1",
 
     # Config
     "PyYAML>=6.0",
 
     # Dashboard
-    "streamlit>=1.30",
+    "dash>=2.16",
     "plotly>=5.18",
     "pandas>=2.0",
+    "geoip2>=4.8",
 ]
 
 
@@ -59,10 +69,9 @@ py-modules = [
     "dashboard",
     "ssh_server",
     "router",
-    "fi_manager",
-    "prompt_manager",
 ]
 packages = [
     "agent_manager",
     "prompt",
+    "plugins",
 ]
