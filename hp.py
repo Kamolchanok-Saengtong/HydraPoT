@@ -109,9 +109,35 @@ def run(host, port):
 @click.option("--debug/--no-debug", default=False, help="Enable Flask debug/reloader")
 def dashboard(port, host, debug):
     """Open the analytics dashboard."""
+    # First-run: make sure the geolocation DB exists so the world map works
+    # out of the box. No-op if it's already present; never blocks startup on
+    # failure (map just stays empty if offline).
+    try:
+        from geoip_fetch import ensure_geoip
+        ensure_geoip()
+    except Exception:
+        pass
     click.echo(f"🍯 Opening dashboard on http://{host}:{port} ...")
     from dashboard import app as dash_app
     dash_app.run(host=host, port=port, debug=debug)
+
+
+@main.command()
+@click.option("--update", "force_update", is_flag=True,
+              help="Re-download even if the database already exists (refresh to the latest month)")
+def geoip(force_update):
+    """Download / refresh the DB-IP geolocation database for the dashboard map."""
+    from geoip_fetch import update_geoip, ensure_geoip, DEFAULT_MMDB
+    if force_update:
+        click.echo("🌍 Refreshing DB-IP geolocation database...")
+        ok = update_geoip(DEFAULT_MMDB)
+    else:
+        if os.path.exists(DEFAULT_MMDB):
+            click.echo(f"🌍 Geolocation database already present: {DEFAULT_MMDB}")
+            click.echo("   Use `hp geoip --update` to refresh to the latest month.")
+            return
+        ok = ensure_geoip(DEFAULT_MMDB)
+    click.echo("✅ Done." if ok else "⚠️  Could not download (offline?). Map will be unavailable.")
 
 
 @main.command()

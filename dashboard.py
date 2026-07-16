@@ -867,6 +867,15 @@ def build_summary_page():
         html.Div("Attacker Origin Map", className="section-header"),
         map_chart,
         ip_table_component,
+        # CC BY 4.0 attribution required for the DB-IP City Lite database
+        html.Div(
+            ["IP geolocation by ",
+             html.A("DB-IP", href="https://db-ip.com", target="_blank",
+                    style={"color": "inherit"}),
+             " — City Lite, CC BY 4.0"],
+            className="caption",
+            style={"fontSize": "0.68rem", "opacity": "0.6", "marginTop": "6px"},
+        ),
     ])
 
     # Auth intelligence
