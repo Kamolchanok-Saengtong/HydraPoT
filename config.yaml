@@ -76,6 +76,33 @@ power_tariff:
   ft_surcharge_thb_per_unit: 0.1623
   vat_rate: 0.07
 system_state:
+  # Packages the OS ships with. These are seeded into SYSTEM_STATE["installed"]
+  # at startup (main.py), so the LLM is told they are present — without this,
+  # SRi reported no packages installed and the model answered
+  # "wget: command not found" for tools that clearly exist.
+  # They also mark the BASELINE: a package in "installed" but NOT listed here
+  # was installed by the attacker during the session, which _needs_llm() treats
+  # as interesting and routes to the LLM.
+  pre_installed:
+  - coreutils
+  - bash
+  - ssh
+  - apt
+  - apt-get
+  - dpkg
+  - grep
+  - sed
+  - awk
+  - tar
+  - gzip
+  - net-tools
+  - procps
+  - util-linux
+  - cron
+  - sudo
+  - passwd
+  - wget
+  - curl
   base_tools:
   - ls, cat, cp, mv, rm, mkdir, rmdir, touch, echo, pwd, head, tail, sort, uniq
   - wc, cut, tr, tee, dd, df, du, chmod, chown, chgrp, ln, basename, dirname

@@ -239,13 +239,26 @@ class PromptManager:
                 "applet's own normal failure conditions apply."
             )
 
-            # installed packages — most important for tool availability
+            # installed packages — this tracks packages the attacker installs
+            # DURING the session (apt install ...), NOT the total software on
+            # the box. The old empty-state wording "(none beyond coreutils)"
+            # read as "nothing but coreutils exists here", which directly
+            # CONTRADICTED the AVAILABLE TOOLS line above (curl/wget/awk are
+            # not coreutils) — and the model believed the contradiction,
+            # answering "bash: wget: command not found" for tools that are in
+            # base_tools. Verified live: rewording alone fixes wget/awk.
+            # Keep the literal phrase "installed packages" — system_setting.txt
+            # refers to it by that name.
             if self.system_state.get("installed"):
                 sri_lines.append(
-                    f"installed packages: {', '.join(self.system_state['installed'])}"
+                    "installed packages: " + ", ".join(self.system_state["installed"])
                 )
             else:
-                sri_lines.append("installed packages: (none beyond coreutils)")
+                sri_lines.append(
+                    "installed packages: (none recorded) — this does NOT limit "
+                    "AVAILABLE TOOLS above: every tool listed there ships with the "
+                    "base system and already works."
+                )
 
             # cached versions
             for tool, ver in self.system_state["versions"].items():

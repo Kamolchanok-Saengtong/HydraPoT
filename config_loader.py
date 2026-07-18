@@ -171,10 +171,23 @@ def load_config(path: str = CONFIG_PATH) -> Config:
     # handle the field defaults properly
     if static_cmds is None:
         static_cmds = Config().static_commands
-    if system_state is None:
-        system_state = Config().system_state
     if power_tariff is None:
         power_tariff = Config().power_tariff
+
+    # system_state: merge PER-KEY with the defaults rather than replacing the
+    # whole dict. Previously any config.yaml that defined system_state at all
+    # replaced the default wholesale, so a key it happened to omit silently
+    # became absent — this is exactly how "pre_installed" went missing and the
+    # LLM started reporting "wget: command not found". Merging keeps this
+    # loader's documented promise ("missing fields, defaults fill in") true for
+    # nested keys too, while anything the user DOES specify still wins.
+    _default_state = Config().system_state
+    if system_state is None:
+        system_state = _default_state
+    else:
+        merged = dict(_default_state)
+        merged.update(system_state)
+        system_state = merged
 
     return Config(
         honeypot=honeypot,
