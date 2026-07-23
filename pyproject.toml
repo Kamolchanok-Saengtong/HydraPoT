@@ -74,4 +74,5 @@ packages = [
     "agent_manager",
     "prompt",
     "plugins",
+    "threat_intel",
 ]

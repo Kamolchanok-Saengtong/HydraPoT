@@ -16,6 +16,14 @@ import os
 import sys
 import click
 
+# Ensure the project root is importable even when `hp` runs from an editable
+# install's entry point (whose finder only exposes packages declared in
+# pyproject.toml). Lets local packages like threat_intel/ import without a
+# reinstall after being added.
+_ROOT = os.path.dirname(os.path.abspath(__file__))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+
 try:
     from rich.console import Console
     from rich.table import Table
@@ -138,6 +146,68 @@ def geoip(force_update):
             return
         ok = ensure_geoip(DEFAULT_MMDB)
     click.echo("✅ Done." if ok else "⚠️  Could not download (offline?). Map will be unavailable.")
+
+
+@main.command()
+@click.option("--out", "out_dir", default="data/threat_intel",
+              help="Directory to write the IOC report into")
+@click.option("--format", "fmt", type=click.Choice(["all", "json", "csv", "stix"]),
+              default="all", help="Export format(s)")
+@click.option("--min-fi", default=0, type=int,
+              help="Only include IOCs whose max FI score is >= this")
+def intel(out_dir, fmt, min_fi):
+    """Extract Indicators of Compromise (IOCs) from the logs into a threat feed."""
+    import json, glob
+    from config_loader import load_config
+    from threat_intel.ioc_extractor import build_iocs, to_json, to_csv, to_stix
+
+    cfg = load_config()
+    sess_dir = cfg.logging.session_dir
+    auth_path = cfg.logging.auth_log
+
+    rows = []
+    for fp in glob.glob(os.path.join(sess_dir, "*.json")):
+        try:
+            d = json.load(open(fp))
+            rows.extend(d if isinstance(d, list) else [d])
+        except Exception:
+            pass
+    auth = []
+    if os.path.exists(auth_path):
+        try:
+            a = json.load(open(auth_path))
+            auth = a if isinstance(a, list) else [a]
+        except Exception:
+            pass
+
+    if not rows and not auth:
+        click.echo("No logs found yet — run the honeypot first (`hp run`).")
+        return
+
+    store = build_iocs(rows, auth)
+    recs = [r for r in store.records() if r["max_fi"] >= min_fi]
+
+    os.makedirs(out_dir, exist_ok=True)
+    written = []
+    if fmt in ("all", "json"):
+        written.append(to_json(store, os.path.join(out_dir, "iocs.json")))
+    if fmt in ("all", "csv"):
+        written.append(to_csv(store, os.path.join(out_dir, "iocs.csv")))
+    if fmt in ("all", "stix"):
+        written.append(to_stix(store, os.path.join(out_dir, "iocs_stix.json")))
+
+    from collections import Counter
+    by_type = Counter(r["type"] for r in recs)
+    click.echo(f"\n🔎 Extracted {len(recs)} unique IOCs from {len(rows)} commands "
+               f"+ {len(auth)} auth attempts")
+    click.echo("   " + "  ".join(f"{t}:{n}" for t, n in by_type.most_common()))
+    click.echo("\n   Top indicators (by severity, then frequency):")
+    for r in recs[:10]:
+        click.echo(f"     [{r['type']:10}] {r['value'][:48]:48} "
+                   f"×{r['count']} (FI {r['max_fi']}, {r['session_count']} sessions)")
+    click.echo("\n   Files written:")
+    for w in written:
+        click.echo(f"     {w}")
 
 
 @main.command()

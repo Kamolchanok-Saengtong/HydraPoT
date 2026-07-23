@@ -16,13 +16,31 @@ from prompt.prompt_manager import PromptManager
 from agent_manager.cloud_agent import CloudAgent
 from ssh_server import start_server
 from router import _is_cloud, classify
-import sys 
+import sys
+import threading 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from plugins.plugin_loader import PluginManager
 
 config   = None
 ondevice = None
 cloud = None
+
+# Multi-channel alerting (threat_intel/alerts.yml) — loaded once, lazily. False
+# is a sentinel meaning "tried and failed to load, don't retry". Dispatch is
+# gated on there being at least one enabled channel, so this is a zero-cost
+# no-op for anyone who hasn't configured alerts.
+_alert_manager = None
+
+def _get_alert_manager():
+    global _alert_manager
+    if _alert_manager is None:
+        try:
+            from threat_intel.alerting import AlertManager
+            _alert_manager = AlertManager()
+        except Exception as e:
+            print(f"[alert] alerting unavailable: {e}")
+            _alert_manager = False
+    return _alert_manager or None
 
 
 def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str = "?",
@@ -190,30 +208,36 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
         "/usr/bin", "/usr/sbin", "/usr/local",
     })
 
-    def _resolve_cd(actual_cmd: str) -> tuple[bool, str | None]:
+    def _compute_cd(actual_cmd: str) -> tuple[bool, str | None, str | None]:
         """
-        Resolves `cd` deterministically against known directories instead of
-        leaving it to the LLM — an LLM that wrongly believes a nonexistent
-        directory exists has no way to un-believe it, and every command for
-        the rest of the session then gets answered as if still inside that
-        hallucinated path (observed: model started echoing a fake
-        'root@host:~/.ssh#' prompt for every subsequent command after
-        wrongly accepting `cd .ssh`).
+        PURE path logic for `cd` — resolves the target and decides the outcome
+        WITHOUT touching any state. Deliberately side-effect free so it can be
+        called from two places that need the same answer:
 
-        Returns (handled, error_message):
-          (True,  None)  -> cd succeeded, SYSTEM_STATE['cwd'] updated, stay silent
-          (True,  "...") -> cd failed, this is the exact bash error to show
-          (False, None)  -> not handled here (e.g. `cd -`), fall through to the agent
+          _resolve_cd()  -> to produce the response (deterministic agents)
+          update_state() -> to keep SYSTEM_STATE['cwd'] correct no matter WHICH
+                            agent actually answered the command
+
+        Splitting these apart is what lets `cd` be routed to any agent
+        (including cloud) without losing directory tracking: previously the
+        cwd update lived inside the response path, so if an LLM answered `cd`
+        the honeypot silently forgot where the attacker was, and every later
+        path/prompt was wrong.
+
+        Returns (handled, new_cwd_or_None, error_or_None):
+          (True,  "/tmp", None)  -> cd succeeds, caller should set cwd="/tmp"
+          (True,  None,  "...")  -> cd fails, this is the exact bash error
+          (False, None,  None)   -> not handled here (e.g. `cd -`)
         """
         args = actual_cmd.split()[1:]
         # flags aside, real `cd` takes at most one positional path argument
         positional = [a for a in args if not a.startswith("-")]
         if len(positional) > 1:
-            return True, "bash: cd: too many arguments"
+            return True, None, "bash: cd: too many arguments"
 
         target = positional[0] if positional else "~"
         if target == "-":
-            return False, None   # previous-directory tracking not implemented
+            return False, None, None   # previous-directory tracking not implemented
 
         home = SYSTEM_STATE["users"].get("root", {}).get("home", "/root")
         if target == "~":
@@ -221,7 +245,6 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
         elif target.startswith("~/"):
             target = home + target[1:]
 
-        base = target if target.startswith("/") else SYSTEM_STATE["cwd"]
         joined = target if target.startswith("/") else posixpath.join(SYSTEM_STATE["cwd"], target)
         resolved = posixpath.normpath(joined)
 
@@ -230,14 +253,36 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
                        if f.get("perms", "").startswith("d")}
 
         if resolved in known_dirs:
-            SYSTEM_STATE["cwd"] = resolved
-            return True, None
+            return True, resolved, None
 
         tracked = SYSTEM_STATE["files"].get(resolved)
         if tracked and not tracked.get("perms", "").startswith("d"):
-            return True, f"bash: cd: {target}: Not a directory"
+            return True, None, f"bash: cd: {target}: Not a directory"
 
-        return True, f"bash: cd: {target}: No such file or directory"
+        return True, None, f"bash: cd: {target}: No such file or directory"
+
+    def _resolve_cd(actual_cmd: str) -> tuple[bool, str | None]:
+        """
+        Deterministic `cd` response — an LLM that wrongly believes a
+        nonexistent directory exists has no way to un-believe it, and every
+        later command gets answered as if still inside that hallucinated path
+        (observed: model echoed a fake 'root@host:~/.ssh#' prompt for the rest
+        of the session after wrongly accepting `cd .ssh`).
+
+        Thin wrapper over _compute_cd() — the path logic lives there so
+        update_state() can reuse the exact same rules.
+
+        Returns (handled, error_message):
+          (True,  None)  -> cd succeeded, SYSTEM_STATE['cwd'] updated, stay silent
+          (True,  "...") -> cd failed, this is the exact bash error to show
+          (False, None)  -> not handled here (e.g. `cd -`), fall through to the agent
+        """
+        handled, new_cwd, error = _compute_cd(actual_cmd)
+        if not handled:
+            return False, None
+        if new_cwd is not None:
+            SYSTEM_STATE["cwd"] = new_cwd
+        return True, error
 
     def _resolve_chmod(actual_cmd: str) -> tuple[bool, str | None]:
         """
@@ -509,6 +554,20 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
             )
 
     def update_state(cmd, response):
+        # `cd` — track the working directory on EVERY path, not just the
+        # deterministic one. update_state() runs for every agent (cowrie /
+        # on_device / cloud), so putting cwd here means `cd` can be routed
+        # anywhere and the honeypot still knows where the attacker is.
+        # Uses the same _compute_cd() rules as the deterministic responder, so
+        # the two can never disagree. Idempotent: re-running it for a command
+        # _resolve_cd() already handled recomputes the identical cwd.
+        _cd_base = cmd.strip()[5:].strip() if cmd.strip().startswith("sudo ") else cmd.strip()
+        if _cd_base.split()[:1] == ["cd"]:
+            _handled, _new_cwd, _err = _compute_cd(_cd_base)
+            if _handled and _new_cwd is not None:
+                SYSTEM_STATE["cwd"] = _new_cwd
+            return   # nothing else in update_state applies to `cd`
+
         if re.search(r'\b(apt|apt-get)\s+(remove|purge)\b', cmd):
             parts    = cmd.strip().split()
             verb_idx = next((i for i, p in enumerate(parts) if p in ("remove", "purge")), -1)
@@ -652,14 +711,23 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
         session.append({"cmd": cmd, "agent": agent, "response": output})
         log(cmd, agent, output, fi_score, latency_ms)
 
+        event = {
+            "session_id": SESSION_ID, "src_ip": src_ip,
+            "timestamp": datetime.now().isoformat(),
+            "cmd": cmd, "agent": agent, "fi_score": fi_score,
+            "latency_ms": round(latency_ms, 2),
+        }
+
         # export to SIEM
         if plugins:
-            plugins.export_event({
-                "session_id": SESSION_ID, "src_ip": src_ip,
-                "timestamp": datetime.now().isoformat(),
-                "cmd": cmd, "agent": agent, "fi_score": fi_score,
-                "latency_ms": round(latency_ms, 2),
-            })
+            plugins.export_event(event)
+
+        # real-time alerting — fire on a daemon thread so a slow Slack/webhook
+        # POST never blocks the attacker's session response. Only spawns a
+        # thread when alerts are actually configured (enabled channels present).
+        am = _get_alert_manager()
+        if am and am._enabled_channels():
+            threading.Thread(target=am.alert, args=(dict(event),), daemon=True).start()
 
         return ("", "") if streamed else (output, "")
 
@@ -704,6 +772,38 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
 
         fi_score, _ = fi_manager.scorer.score(cmd)
 
+        # ── shell SYNTAX that produces no output — handle like real bash ──────
+        #    A real bash (and Cowrie's real container) treats these as silent;
+        #    HydraPoT's command-not-found handler was instead reading the first
+        #    token as a "command" and wrongly printing "bash: X: command not
+        #    found" (found: 125 FI0 commands lost to Cowrie on this alone).
+        #      1. VAR=value / VAR=$(...) [VAR2=... ...]   pure assignment(s) -> silent
+        #      2. VAR=value  cmd args...                  env-prefix -> run the REAL cmd
+        #      3. >file  / >>file  (redirect only)         -> silent (creates/truncates)
+        #    Skipped for force_agent=="cowrie" so the Pure-Cowrie benchmark keeps
+        #    measuring the real container, same rule as the cd/chmod block below.
+        # one assignment token: NAME= then a value that may be single/double
+        # quoted, a $(...) substitution, or bare (bare stops at whitespace) —
+        # so VER=$(uname -a) and YEL='[1 ; 33m' count as ONE assignment each.
+        _ASSIGN = r"[A-Za-z_][A-Za-z0-9_]*=(?:'[^']*'|\"[^\"]*\"|\$\([^)]*\)|[^\s]*)"
+        _PURE_ASSIGN = re.compile(r"^\s*(?:" + _ASSIGN + r"\s*)+$")
+        _ENV_PREFIX  = re.compile(r"^\s*(?:" + _ASSIGN + r"\s+)+(\S.*)$", re.S)
+        if force_agent != "cowrie" and actual_cmd:
+            if _PURE_ASSIGN.match(actual_cmd):
+                # pure assignment(s): wdir="/bin", VER=$(uname -a), A=1 B=2
+                # -> bash assigns and prints nothing
+                return _finish(cmd, "cowrie", "", fi_score, t_start)
+            _m = _ENV_PREFIX.match(actual_cmd)
+            if _m:
+                # env-var prefix (LC_ALL=C ls) -> evaluate the REAL command
+                actual_cmd  = _m.group(1)
+                actual_base = actual_cmd.split()[0]
+                lookup_base = os.path.basename(actual_base)
+            elif actual_cmd.lstrip().startswith((">", "<")):
+                # redirect with no command (>file, >>file, >.dropper) -> silent
+                update_state(cmd, "")
+                return _finish(cmd, "cowrie", "", fi_score, t_start)
+
         # ── helper: does this command reference a tracked (LLM/local-only) file? ──
         def _references_tracked_file(actual_cmd: str) -> str | None:
             """
@@ -734,13 +834,51 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
         #    Cowrie). Production is unaffected either way: none of cd's/
         #    chmod's/unset's FI bands route to cowrie in config.yaml, so
         #    Cowrie would never naturally see these regardless.
+        # Does this command's routing send it to the CLOUD agent?
+        #
+        # The deterministic handlers below (chmod/passwd/useradd) exist to stop
+        # the weaker agents hallucinating — but they also fire for commands the
+        # router wants to send to cloud, which never then reaches cloud at all.
+        # Measured head-to-head on the same 175 FI4 commands: cloud 0.975 vs
+        # these rules 0.919 BERTScore (cloud better on 38, worse on 0) — so for
+        # cloud-routed commands the rules are a downgrade, not a safety net.
+        #
+        # Deliberately NOT bypassed for cowrie/on_device routing (they do need
+        # the help), and never for `cd`/`unset` — `cd` also syncs the Cowrie
+        # shell above, and `unset` is trivially always-silent.
+        def _routes_to_cloud() -> bool:
+            if force_agent is not None:
+                return force_agent == "cloud"
+            if _is_cloud(actual_cmd):      # obfuscated -> cloud regardless of FI
+                return True
+            try:
+                return str(config.routing.fi_routing.get(fi_score)) == "cloud"
+            except Exception:
+                return False
+
+        cloud_routed = _routes_to_cloud()
+
         if force_agent != "cowrie":
             if actual_base == "cd":
                 handled, cd_error = _resolve_cd(actual_cmd)
                 if handled:
+                    # Keep the REAL Cowrie shell in step with SYSTEM_STATE['cwd'].
+                    # Cowrie holds one persistent SSH shell with its own working
+                    # directory, but this branch answers `cd` itself and never
+                    # forwards it — so the container stayed wherever it started
+                    # while our tracked cwd moved. Any later cowrie-routed
+                    # command then ran in the WRONG directory (e.g. `cd /tmp`
+                    # then `ls` listed /root), which an attacker spots instantly.
+                    # Send the RESOLVED absolute path so relative forms (`..`,
+                    # `~`, symlinked paths) land in the same place on both sides.
+                    if cd_error is None:
+                        try:
+                            cowrie.send(f"cd {SYSTEM_STATE['cwd']}")
+                        except Exception:
+                            pass   # sync is best-effort: never break the session
                     return _finish(cmd, "cowrie", cd_error or "", fi_score, t_start)
 
-            if actual_base == "chmod":
+            if actual_base == "chmod" and not cloud_routed:
                 handled, chmod_error = _resolve_chmod(actual_cmd)
                 if handled:
                     return _finish(cmd, "cowrie", chmod_error or "", fi_score, t_start)
@@ -817,13 +955,13 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
             update_state(cmd, output)
             return _finish(cmd, "cowrie", output, fi_score, t_start, streamed=True)
 
-        if actual_base == "passwd":
+        if actual_base == "passwd" and not cloud_routed:
             fi_manager.process(command=cmd, output="", agent="on_device", session_id=SESSION_ID)
             session.append({"cmd": cmd, "agent": "on_device", "response": ""})
             log(cmd, "on_device", "", fi_score, t_start)
             return "", ""
         
-        if actual_base in INTERACTIVE:
+        if actual_base in INTERACTIVE and not cloud_routed:
             parts = actual_cmd.strip().split()
             if len(parts) < 2:
                 output, _ = cowrie.send(cmd)

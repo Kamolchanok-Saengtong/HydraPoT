@@ -26,19 +26,19 @@ agents:
   cloud:
     enabled: true
     provider: openai
-    model: deepseek-v4-flash
-    api_key_env: DEEPSEEK_API_KEY
+    model: qwen/qwen3.7-plus
+    api_key_env: PSU_API_KEY
     temperature: 0.1
     max_tokens: 2048
-    base_url: https://api.deepseek.com
+    base_url: https://ai.psu.blue/v1
 routing:
   fallback: cowrie
   fi_routing:
     0: cowrie
-    1: cowrie
+    1: on_device
     2: on_device
-    3: on_device
-    4: on_device
+    3: cloud
+    4: cloud
 static_commands:
 - nmap
 - ping

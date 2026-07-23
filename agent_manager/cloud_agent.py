@@ -1,8 +1,32 @@
 """cloud_agent.py — OpenAI-compatible cloud LLM agent for HydraPoT."""
 
 import os
+import re
 import requests
 from openai import OpenAI
+
+# Safety-net for "chatty" models. A real terminal NEVER emits a lone meta-note
+# like "<nothing>" or "(no output)" or "(empty response - command succeeded)"
+# as its ENTIRE stdout — it either prints real bytes or nothing. Some models
+# (e.g. GLM-5) describe the emptiness instead of being empty, which tanks
+# fidelity on silent-success commands (rm/chmod/echo>file, common in FI4). The
+# prompt forbids this, but as belt-and-suspenders we also strip it in code.
+#
+# SAFETY: only fires when the WHOLE trimmed response is a single bracketed/
+# angled note containing an emptiness keyword. Genuine command output is never
+# a lone "(...)"/"<...>"/"[...]" wrapper of these words, so this can never
+# truncate or corrupt real output — it can only turn a pure meta-note empty.
+_META_WORDS = re.compile(
+    r"no\s*output|empty|blank|nothing|silent|succeed|success|completed|executed|no\s+response",
+    re.I,
+)
+
+
+def _strip_whole_annotation(text: str) -> str:
+    s = (text or "").strip()
+    if len(s) >= 2 and s[0] in "(<[" and s[-1] in ")>]" and _META_WORDS.search(s):
+        return ""
+    return text
 
 # DeepSeek doesn't return billed cost in the response — compute locally from
 # published per-1M-token rates. Keyed by the *served* model (response "model"
@@ -83,7 +107,7 @@ class CloudAgent:
             if chunk_cost_details is not None:
                 cost_details = chunk_cost_details
 
-        text = "".join(chunks).strip()
+        text = _strip_whole_annotation("".join(chunks).strip())
 
         usage = None
         if want_usage and (usage_obj is not None or cost_val is not None):
@@ -175,8 +199,13 @@ class CloudAgent:
             return "", None
 
         try:
-            text = data["choices"][0]["message"]["content"].strip()
-        except (KeyError, IndexError, TypeError):
+            # content can be None (not "") when the model returns an empty
+            # response — obedient models like gpt-4o-mini legitimately do this
+            # for silent-success commands. `None or ""` keeps it an empty string
+            # instead of crashing on None.strip().
+            _content = data["choices"][0]["message"]["content"] or ""
+            text = _strip_whole_annotation(_content.strip())
+        except (KeyError, IndexError, TypeError, AttributeError):
             print(f"[CloudAgent] Error: unexpected response shape - {data}")
             return "", None
 

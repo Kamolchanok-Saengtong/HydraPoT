@@ -1,0 +1,67 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# HydraPoT Alert Channels
+# ═══════════════════════════════════════════════════════════════════════════════
+# Choose which channel(s) you want alerts on. Turn one on by setting
+# `enabled: true` and filling in its settings, then restart.
+#
+# SECRETS (webhook URLs, bot tokens, email passwords) are NEVER written here.
+# You put the NAME of an environment variable, then export the value, e.g.:
+#     export SLACK_WEBHOOK_URL="https://hooks.slack.com/services/XXX/YYY/ZZZ"
+# This keeps credentials out of the repo/config file.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Only alert on events at or above this severity (FI 0-4). 3 = HIGH and above.
+min_fi: 3
+
+# Also send an alert for login attempts (auth events)?
+include_auth: false
+
+# Don't spam: minimum seconds between alerts for the same source IP.
+cooldown_sec: 60
+
+channels:
+
+  # ── Slack ──────────────────────────────────────────────────────────────────
+  # Create an "Incoming Webhook" in your Slack workspace, then:
+  #   export SLACK_WEBHOOK_URL="https://hooks.slack.com/services/..."
+  slack:
+    enabled: false
+    webhook_env: SLACK_WEBHOOK_URL
+
+  # ── Discord ────────────────────────────────────────────────────────────────
+  # Server Settings > Integrations > Webhooks > New Webhook > Copy URL, then:
+  #   export DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/..."
+  discord:
+    enabled: false
+    webhook_env: DISCORD_WEBHOOK_URL
+
+  # ── Telegram ───────────────────────────────────────────────────────────────
+  # Talk to @BotFather to make a bot (get its token). Get your chat_id from
+  # @userinfobot. Then:
+  #   export TELEGRAM_BOT_TOKEN="123456:ABC-DEF..."
+  #   export TELEGRAM_CHAT_ID="987654321"
+  telegram:
+    enabled: false
+    bot_token_env: TELEGRAM_BOT_TOKEN
+    chat_id_env: TELEGRAM_CHAT_ID
+
+  # ── Generic webhook ────────────────────────────────────────────────────────
+  # POST the alert as JSON to any URL you control (your own API, n8n, Zapier…).
+  #   export ALERT_WEBHOOK_URL="https://your-endpoint.example.com/hook"
+  webhook:
+    enabled: false
+    url_env: ALERT_WEBHOOK_URL
+
+  # ── Email (SMTP) ───────────────────────────────────────────────────────────
+  # For Gmail, use an App Password (not your real password), then:
+  #   export ALERT_EMAIL_USER="you@gmail.com"
+  #   export ALERT_EMAIL_PASS="your-app-password"
+  email:
+    enabled: false
+    smtp_host: smtp.gmail.com
+    smtp_port: 587
+    username_env: ALERT_EMAIL_USER
+    password_env: ALERT_EMAIL_PASS
+    from_addr: "honeypot@example.com"
+    to_addrs:
+      - "soc@example.com"
