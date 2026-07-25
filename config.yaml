@@ -26,11 +26,11 @@ agents:
   cloud:
     enabled: true
     provider: openai
-    model: qwen/qwen3.7-plus
-    api_key_env: PSU_API_KEY
+    model: nvidia/nemotron-3-super-120b-a12b:free
+    api_key_env: OPENROUTER_API_KEY
     temperature: 0.1
     max_tokens: 2048
-    base_url: https://ai.psu.blue/v1
+    base_url: https://openrouter.ai/api/v1
 routing:
   fallback: cowrie
   fi_routing:

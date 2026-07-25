@@ -28,3 +28,5 @@ partC.md
 # dataset/ is ~1.3 GB of eval datasets
 dataset/
 eval_cowrie_results.json
+
+.claude/

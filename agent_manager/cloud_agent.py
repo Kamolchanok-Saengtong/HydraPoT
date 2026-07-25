@@ -2,6 +2,7 @@
 
 import os
 import re
+import time
 import requests
 from openai import OpenAI
 
@@ -179,18 +180,41 @@ class CloudAgent:
             ],
         }
 
-        try:
-            resp = requests.post(url, headers=headers, json=payload, timeout=30)
-        except requests.exceptions.Timeout:
-            print("[CloudAgent] Error: request timed out")
-            return "", None
-        except requests.exceptions.RequestException as e:
-            print(f"[CloudAgent] Error: {e}")
-            return "", None
+        # Retry with backoff. Without this, ONE slow/hiccuping proxy response
+        # returned an empty string that was then recorded as the model's actual
+        # answer — a silently corrupted data point that scores as a blank
+        # response. Big models (qwen *-plus) regularly exceed a 30s budget, and
+        # the PSU proxy intermittently 502s under load, so both are retried
+        # rather than surfaced as fake "empty" answers.
+        _RETRY_STATUS = {408, 429, 500, 502, 503, 504}
+        resp = None
+        delay = 2.0
+        last_err = "unknown"
+        for attempt in range(4):
+            try:
+                resp = requests.post(url, headers=headers, json=payload, timeout=120)
+                if resp.status_code == 200:
+                    break
+                last_err = f"HTTP {resp.status_code}"
+                if resp.status_code not in _RETRY_STATUS:
+                    print(f"[CloudAgent] Error: HTTP {resp.status_code} - {resp.text[:200]}")
+                    return "", None
+            except requests.exceptions.Timeout:
+                last_err = "timeout"
+                resp = None
+            except requests.exceptions.RequestException as e:
+                last_err = str(e)[:120]
+                resp = None
+            if attempt < 3:
+                print(f"[CloudAgent] {last_err} — retry {attempt + 1}/3 in {delay:.0f}s")
+                time.sleep(delay)
+                delay = min(delay * 2, 20)
 
-        if resp.status_code != 200:
-            print(f"[CloudAgent] Error: HTTP {resp.status_code} - {resp.text[:300]}")
-            return "", None
+        if resp is None or resp.status_code != 200:
+            # Do NOT return a bare "" — that would be scored as a real (blank)
+            # answer. Mark it so corrupt records are identifiable afterwards.
+            print(f"[CloudAgent] Error: giving up after retries ({last_err})")
+            return f"[cloud error: {last_err}]", None
 
         try:
             data = resp.json()
