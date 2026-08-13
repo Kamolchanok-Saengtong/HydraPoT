@@ -111,12 +111,29 @@ def run(host, port):
     import main as honeypot_main
     honeypot_main.main()
 
-@main.command()
-@click.option("--port", default=8050, type=int, help="Dash port")
-@click.option("--host", default="127.0.0.1", help="Bind address (use 0.0.0.0 to expose externally)")
-@click.option("--debug/--no-debug", default=False, help="Enable Flask debug/reloader")
-def dashboard(port, host, debug):
-    """Open the analytics dashboard."""
+_HP_DIR       = os.path.dirname(os.path.abspath(__file__))
+DASHBOARD_PID = os.path.join(_HP_DIR, "data", "dashboard.pid")
+DASHBOARD_LOG = os.path.join(_HP_DIR, "data", "dashboard.log")
+
+
+def _dash_pid():
+    """PID of a live background dashboard, or None (stale pidfile is cleaned)."""
+    try:
+        pid = int(open(DASHBOARD_PID).read().strip())
+    except Exception:
+        return None
+    try:
+        os.kill(pid, 0)          # signal 0 = existence check, doesn't touch it
+        return pid
+    except OSError:
+        try:
+            os.remove(DASHBOARD_PID)
+        except OSError:
+            pass
+        return None
+
+
+def _serve_dashboard(host, port, debug):
     # First-run: make sure the geolocation DB exists so the world map works
     # out of the box. No-op if it's already present; never blocks startup on
     # failure (map just stays empty if offline).
@@ -125,9 +142,124 @@ def dashboard(port, host, debug):
         ensure_geoip()
     except Exception:
         pass
-    click.echo(f"🍯 Opening dashboard on http://{host}:{port} ...")
+    # Werkzeug logs one line per HTTP request, and Dash fires several per
+    # interval tick — so an idle dashboard scrolls the terminal forever with
+    # "GET /_dash-update-component 200". Only surface real problems.
+    import logging
+    logging.getLogger("werkzeug").setLevel(logging.ERROR)
+
     from dashboard import app as dash_app
-    dash_app.run(host=host, port=port, debug=debug)
+    # threaded=True: Flask's dev server is single-request-at-a-time by
+    # default. The Threat Intel "Generate Intelligence" button runs a real
+    # ~11s regex extraction (build_ioc_snapshot over all sessions) — without
+    # threading, THAT ONE request blocks the entire dashboard (every tab,
+    # every page, the auto-refresh interval) until it finishes.
+    dash_app.run(host=host, port=port, debug=debug, threaded=True)
+
+
+@main.command()
+@click.option("--port", default=8050, type=int, help="Dash port")
+@click.option("--host", default="127.0.0.1", help="Bind address (use 0.0.0.0 to expose externally)")
+@click.option("--debug/--no-debug", default=False, help="Enable Flask debug/reloader")
+@click.option("--foreground", is_flag=True,
+              help="Run in this terminal (blocking) instead of the background")
+def dashboard(port, host, debug, foreground):
+    """Start the analytics dashboard in the background (stop: hp dashboard-stop)."""
+    if foreground:
+        click.echo(f"🍯 Dashboard on http://{host}:{port}  (Ctrl+C to stop)")
+        _serve_dashboard(host, port, debug)
+        return
+
+    running = _dash_pid()
+    if running:
+        click.echo(f"🍯 Dashboard already running (pid {running}) → http://{host}:{port}")
+        click.echo("   Stop it with: hp dashboard-stop")
+        return
+
+    os.makedirs(os.path.dirname(DASHBOARD_PID), exist_ok=True)
+    # Re-invoke this same CLI in --foreground mode as a detached child, so the
+    # parent can return your shell prompt immediately. start_new_session
+    # detaches it from this terminal's process group, so closing the terminal
+    # (or Ctrl+C in it) doesn't take the dashboard down with it.
+    import subprocess
+    log = open(DASHBOARD_LOG, "ab", buffering=0)
+    proc = subprocess.Popen(
+        [sys.argv[0], "dashboard", "--foreground",
+         "--host", str(host), "--port", str(port)] + (["--debug"] if debug else []),
+        stdout=log, stderr=log, stdin=subprocess.DEVNULL,
+        start_new_session=True, cwd=_HP_DIR,
+    )
+    # Wait until it's actually serving before reporting success. Without this
+    # a child that dies immediately (port already in use, import error) still
+    # got a pidfile and a cheerful "started" message, and you'd only discover
+    # it when the browser showed nothing.
+    import socket
+    import time as _time
+    deadline = _time.time() + 25
+    up = False
+    while _time.time() < deadline:
+        if proc.poll() is not None:
+            break                                  # child exited — failed
+        with socket.socket() as s:
+            s.settimeout(0.3)
+            if s.connect_ex((host, port)) == 0:
+                up = True
+                break
+        _time.sleep(0.3)
+
+    if not up:
+        try:
+            with open(DASHBOARD_LOG, "rb") as f:
+                tail = f.read()[-800:].decode("utf-8", "replace").strip()
+        except OSError:
+            tail = "(no log)"
+        click.echo("❌ Dashboard failed to start:", err=True)
+        for line in tail.splitlines()[-8:]:
+            click.echo(f"   {line}", err=True)
+        try:
+            proc.kill()
+        except OSError:
+            pass
+        sys.exit(1)
+
+    with open(DASHBOARD_PID, "w") as f:
+        f.write(str(proc.pid))
+
+    click.echo(f"🍯 Dashboard started (pid {proc.pid}) → http://{host}:{port}")
+    click.echo(f"   logs: {DASHBOARD_LOG}")
+    click.echo("   stop: hp dashboard-stop")
+
+
+@main.command("dashboard-stop")
+def dashboard_stop():
+    """Stop the background dashboard."""
+    import signal
+    import time as _time
+
+    pid = _dash_pid()
+    if not pid:
+        click.echo("No dashboard is running.")
+        return
+
+    os.kill(pid, signal.SIGTERM)
+    # Give it a moment to close the socket; escalate if it ignores SIGTERM
+    # (asyncio/Flask servers sometimes do), otherwise the port stays bound and
+    # the next `hp dashboard` fails with "address already in use".
+    for _ in range(20):
+        _time.sleep(0.1)
+        try:
+            os.kill(pid, 0)
+        except OSError:
+            break
+    else:
+        os.kill(pid, signal.SIGKILL)
+        click.echo(f"   (pid {pid} ignored SIGTERM — force-killed)")
+
+    try:
+        os.remove(DASHBOARD_PID)
+    except OSError:
+        pass
+    click.echo(f"🛑 Dashboard stopped (pid {pid}).")
 
 
 @main.command()

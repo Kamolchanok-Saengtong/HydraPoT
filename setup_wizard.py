@@ -10,6 +10,7 @@ and offers to launch the honeypot or dashboard.
 
 import os
 import sys
+import time
 import yaml
 import questionary
 from questionary import Style
@@ -98,9 +99,10 @@ def build_default_config(existing: dict) -> dict:
 
     return build_config(
         honeypot   = {
-            "hostname": hp.get("hostname", "svr04"),
-            "os":       hp.get("os",       "Ubuntu 12.04 LTS"),
-            "port":     hp.get("port",     2223),
+            "hostname":      hp.get("hostname", "svr04"),
+            "instance_name": hp.get("instance_name", "default"),
+            "os":            hp.get("os",       "Ubuntu 12.04 LTS"),
+            "port":          hp.get("port",     2223),
         },
         deployment = {"host": hp.get("host", "127.0.0.1")},
         cowrie     = {
@@ -219,29 +221,93 @@ def _confirm(text: str, default: bool = True) -> bool:
 
 # ─── Welcome Banner ──────────────────────────────────────────────────────────
 
+_HYDRAPOT_LOGO = r"""
+██╗  ██╗██╗   ██╗██████╗ ██████╗  █████╗ ██████╗  ██████╗ ████████╗
+██║  ██║╚██╗ ██╔╝██╔══██╗██╔══██╗██╔══██╗██╔══██╗██╔═══██╗╚══██╔══╝
+███████║ ╚████╔╝ ██║  ██║██████╔╝███████║██████╔╝██║   ██║   ██║
+██╔══██║  ╚██╔╝  ██║  ██║██╔══██╗██╔══██║██╔═══╝ ██║   ██║   ██║
+██║  ██║   ██║   ██████╔╝██║  ██║██║  ██║██║     ╚██████╔╝   ██║
+╚═╝  ╚═╝   ╚═╝   ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝      ╚═════╝    ╚═╝
+"""
+
+# tiny pixel-art squid — no emoji, built from block/box-drawing characters.
+# Sits to the LEFT of the wordmark (both rendered as one banner), body still
+# while the tentacles wiggle, same spirit as Claude Code's animated intro glyph.
+# Every row is 9 cells wide and the eye row is a palindrome, so the face
+# can't drift off-centre (the old 5-wide "█▄█▄█" put an eye on one side of
+# the middle column and a solid block on the other, which read as lopsided).
+_SQUID_BODY = [
+    " ▄█████▄ ",
+    " █▀███▀█ ",
+    " ███████ ",
+]
+_SQUID_TENTACLES = {
+    "straight": " │ │ │ │ ",
+    "left":     " ╲ │ │ ╱ ",
+    "right":    " ╱ │ │ ╲ ",
+}
+_SQUID_SEQUENCE = ["straight", "left", "straight", "right"]
+
+
+def _squid_frame(variant: str) -> str:
+    """Just the squid, for the solo intro before the wordmark appears."""
+    return "\n".join(_SQUID_BODY + [_SQUID_TENTACLES[variant]])
+
+
+def _banner_frame(variant: str) -> str:
+    """Squid beside the HYDRAPOT wordmark, squid vertically centred against it."""
+    squid = _SQUID_BODY + [_SQUID_TENTACLES[variant]]
+    logo  = _HYDRAPOT_LOGO.strip("\n").splitlines()
+    sw    = max(len(s) for s in squid)
+    lw    = max(len(l) for l in logo)
+    pad   = max(0, (len(logo) - len(squid)) // 2)
+    squid = [""] * pad + squid
+    squid += [""] * (len(logo) - len(squid))
+    # BOTH columns padded to a fixed width: rich centres each line on its own,
+    # so ragged line lengths made the wordmark rows drift sideways.
+    return "\n".join(f"{s:<{sw}} {l:<{lw}}" for s, l in zip(squid, logo))
+
+
+def _play_squid_intro(loops: int = 2):
+    """Two beats: the squid wiggles on its own, then the wordmark joins it.
+
+    Phase 1 is transient (Live clears it), so the squid appears to swim in
+    place and then slide into the finished banner rather than being drawn
+    twice."""
+    if not console:
+        return
+    from rich.live import Live
+    from rich.align import Align
+    banner = Text(_banner_frame("straight"), style="bold #F59E0B")
+    try:
+        with Live(console=console, refresh_per_second=14, transient=True) as live:
+            for _ in range(loops):
+                for variant in _SQUID_SEQUENCE:
+                    live.update(Align.center(Text(_squid_frame(variant), style="bold #F59E0B")))
+                    time.sleep(0.16)
+        console.print(banner, justify="center")
+    except Exception:
+        # cosmetic only — never let a terminal quirk block the wizard
+        console.print(banner, justify="center")
+
+
 def show_welcome():
     if console:
-        banner = Text()
-        banner.append("\n")
-        banner.append("Welcome to HydraPoT\n", style="bold yellow")
-        banner.append("  Honeypot Framework Setup\n\n", style="dim")
-        banner.append("  An Intelligent Honeypot Framework Using\n", style="")
-        banner.append("  Large Language Models for Interactive\n", style="")
-        banner.append("  Attack Analysis\n\n", style="")
-        banner.append("  by Kamolchanok Saengtong\n", style="dim italic")
-        console.print(Panel(banner, border_style="yellow", box=box.DOUBLE_EDGE,
-                            width=52, padding=(0, 2)))
+        _play_squid_intro()
+        subtitle = Text()
+        subtitle.append("  An Intelligent Honeypot Framework Using Large Language\n", style="")
+        subtitle.append("  Models for Interactive Attack Analysis\n\n", style="")
+        subtitle.append("  by Kamolchanok Saengtong\n", style="dim italic")
+        console.print(Panel(subtitle, border_style="#F59E0B", box=box.DOUBLE_EDGE,
+                            width=68, padding=(0, 2)))
     else:
-        print("=" * 52)
-        print("Welcome to HydraPoT")
-        print("  Honeypot Framework Setup")
-        print("")
-        print("  An Intelligent Honeypot Framework Using")
-        print("  Large Language Models for Interactive")
-        print("  Attack Analysis")
+        print("=" * 68)
+        print(_banner_frame("straight"))
+        print("  An Intelligent Honeypot Framework Using Large Language")
+        print("  Models for Interactive Attack Analysis")
         print("")
         print("  by Kamolchanok Saengtong")
-        print("=" * 52)
+        print("=" * 68)
 
     print()
     _print("This wizard will configure your honeypot.", style="bold")
@@ -292,6 +358,7 @@ def ask_honeypot(existing: dict) -> dict:
 
     return {
         "hostname": hostname,
+        "instance_name": hp.get("instance_name", "default"),
         "os": chosen_os,
         "port": port,
     }
@@ -802,10 +869,11 @@ def build_config(honeypot: dict, deployment: dict, cowrie: dict,
 
     return {
         "honeypot": {
-            "hostname": honeypot["hostname"],
-            "os":       honeypot["os"],
-            "host":     deployment["host"],
-            "port":     honeypot["port"],
+            "hostname":      honeypot["hostname"],
+            "instance_name": honeypot.get("instance_name", "default"),
+            "os":            honeypot["os"],
+            "host":          deployment["host"],
+            "port":          honeypot["port"],
         },
         "agents": {
             "cowrie":    cowrie,

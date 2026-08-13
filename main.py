@@ -12,7 +12,9 @@ from agent_manager.cowrie_agent import CowrieAgent
 from agent_manager.ondevice_agent import OnDeviceAgent
 from agent_manager.static_handler import is_static, dispatch_static
 from prompt.fi_manager import FILogManager
-from prompt.prompt_manager import PromptManager
+from prompt.prompt_manager import PromptManager, _decode_echo_payload
+from threat_intel.mitre_mapper import tag as mitre_tag
+import storage
 from agent_manager.cloud_agent import CloudAgent
 from ssh_server import start_server
 from router import _is_cloud, classify
@@ -41,6 +43,56 @@ def _get_alert_manager():
             print(f"[alert] alerting unavailable: {e}")
             _alert_manager = False
     return _alert_manager or None
+
+
+# `echo [flags] <content> >|>> <path>` — one pattern for all three real forms.
+# Parsing them with a single loose regex is what broke SRi: for
+# `echo -e '\xNN...' > f` the old pattern kept the flag AND the opening quote
+# but ate the closing one, leaving an unbalanced string. _decode_echo_payload()
+# then skipped its quote-strip (it requires matching quotes) and decoded the
+# stray quote as a literal byte, so SRi showed the LLM "'Grop/tmp" instead of
+# "Grop/tmp" — and agents faithfully echoed that corruption back.
+# The flag must survive (echo only expands \xNN with -e/-ne) and the quotes
+# must stay balanced for that decode to work.
+# `>(?!>)` keeps this from also matching `>>` and storing a junk "> path" key.
+_ECHO_WRITE_RE = re.compile(
+    r"""^echo\s+
+        (?P<flag>-[a-zA-Z]+\s+)?
+        (?:(?P<q>['"])(?P<qbody>.*)(?P=q)|(?P<body>.+?))
+        \s*(?P<op>>>|>(?!>))\s*
+        (?P<path>.+)$""",
+    re.VERBOSE,
+)
+
+
+def _echo_write_parts(cmd: str):
+    """(flag, quote, body, op, path) for an echo-redirect, else None."""
+    m = _ECHO_WRITE_RE.match(cmd.strip())
+    if not m:
+        return None
+    flag = (m.group("flag") or "").strip()
+    if m.group("q") is not None:
+        quote, body = m.group("q"), m.group("qbody")
+    else:
+        quote, body = "", (m.group("body") or "").strip()
+    return flag, quote, body, m.group("op"), m.group("path").strip()
+
+
+def _split_raw_arg(raw: str):
+    """Inverse of _join_raw_arg: "-ne '\\xea'" -> ('-ne', "'", '\\xea')."""
+    s = (raw or "").strip()
+    m = re.match(r"^(-[a-zA-Z]+)\s+(.*)$", s, re.DOTALL)
+    flag = m.group(1) if m else ""
+    if m:
+        s = m.group(2)
+    if len(s) >= 2 and s[0] == s[-1] and s[0] in ("'", '"'):
+        return flag, s[0], s[1:-1]
+    return flag, "", s
+
+
+def _join_raw_arg(flag: str, quote: str, body: str) -> str:
+    """Rebuild the raw echo argument, quotes balanced so decoding works."""
+    return (f"{flag} " if flag else "") + (f"{quote}{body}{quote}" if quote else body)
 
 
 def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str = "?",
@@ -138,6 +190,11 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
         "cwd":       "/root",   # tracked so `cd` can be resolved deterministically
                                  # instead of left to the LLM to guess/hallucinate
         "files":     dict(config.system_state.get("starting_files", {})),
+        # F3 (systemctl/service) state — otherwise `start`/`stop` were never
+        # remembered and `status` always claimed "active (running)" regardless
+        # of prior actions, an internal inconsistency an attacker could probe
+        # (stop a service, then immediately query status and see it "running").
+        "services":  {},   # {service_name: {"active": bool, "enabled": bool}}
         "users": {
             "root":     {"uid": 0,    "gid": 0,    "home": "/root",       "shell": "/bin/bash"},
             "daemon":   {"uid": 1,    "gid": 1,    "home": "/usr/sbin",   "shell": "/bin/sh"},
@@ -152,6 +209,30 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
             "phil": "$6$ErqInBoz$FibX212AFnHMvyZdWW87bq5Cm3214CoffqFuUyzz.ZKmZ725zKqSPRRlQ1fGGP02V/WawQWQrDda6YiKERNR61",
         },
     }
+
+    def _resolve_path(p: str) -> str:
+        """Absolute, normalized form of `p` as the shell would see it from the
+        current cwd, so SYSTEM_STATE['files'] has ONE key per real file.
+
+        A real filesystem doesn't care which spelling you used: `foo`,
+        `./foo` and `/root/foo` are the same file, and `cd /tmp; touch bar`
+        makes `/tmp/bar`, not a second `bar` in whatever directory you
+        happen to read from later. Storing raw strings broke all of that —
+        `touch foo` then `cat /root/foo` looked like two unrelated files,
+        and files of the same name in different directories collided on one
+        key. `cd` already resolved this way (_compute_cd), so every file
+        operation has to agree with it or state silently diverges."""
+        if not p:
+            return p
+        s = p.strip().strip("\"'")
+        home = SYSTEM_STATE["users"].get("root", {}).get("home", "/root")
+        if s == "~":
+            s = home
+        elif s.startswith("~/"):
+            s = home + s[1:]
+        if not s.startswith("/"):
+            s = posixpath.join(SYSTEM_STATE["cwd"], s)
+        return posixpath.normpath(s)
 
     for pkg in config.system_state.get("pre_installed", []):
         if pkg not in SYSTEM_STATE["installed"]:
@@ -308,6 +389,7 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
         if target.startswith("-") or "*" in target or "?" in target:
             return False, None   # flag-only or wildcard target — too ambiguous here
 
+        target = _resolve_path(target)
         if target in SYSTEM_STATE["files"]:
             update_state(actual_cmd, "")   # existing numeric/+x perms bookkeeping
             return True, None
@@ -348,8 +430,27 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
         """Return generated content for virtual files, None for real tracked files."""
         if path in VIRTUAL_FILES:
             return VIRTUAL_FILES[path]()
-        f = SYSTEM_STATE["files"].get(path, {})
+        f = SYSTEM_STATE["files"].get(_resolve_path(path), {})
         return f.get("content") if f else None
+
+    def _cat_file_content_extra(actual_cmd: str, actual_base: str) -> str:
+        """For `cat <file>`, inject content for VIRTUAL_FILES only (/etc/passwd,
+        /etc/shadow — synthetic, generated content that SRi's per-file loop in
+        prompt_manager.py never sees, since that loop only iterates
+        SYSTEM_STATE['files']). Any regular tracked file is ALREADY covered by
+        SRi with correctly hex-decoded content — re-injecting it here from
+        _virtual_file()'s raw (undecoded) fallback would just contradict SRi's
+        clean version with a second, worse-quality copy of the same file."""
+        extra = ""
+        if actual_base == "cat":
+            for p in actual_cmd.split()[1:]:
+                if p.startswith("-") or p.startswith("|"):
+                    continue
+                if p in VIRTUAL_FILES:
+                    content = VIRTUAL_FILES[p]()
+                    if content:
+                        extra += f"\nFILE CONTENT of {p}:\n{content}\n"
+        return extra
 
     def _handle_version_query(cmd: str, cmd_base: str) -> str:
         if cmd_base in SYSTEM_STATE["versions"]:
@@ -371,22 +472,48 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
             service, action = parts[1], parts[2]
         else:
             action, service = parts[1], parts[2]
+
+        # Default a never-touched service to active+enabled — matches a real
+        # fresh server where common services already run without the attacker
+        # starting them. Explicit start/stop/enable/disable below then persist,
+        # so a later `status` reflects what the attacker actually did instead
+        # of always claiming "active (running)".
+        svc = SYSTEM_STATE["services"].setdefault(service, {"active": True, "enabled": True})
+
         if action == "status":
+            enabled_str = "enabled" if svc["enabled"] else "disabled"
+            if svc["active"]:
+                return (
+                    f"● {service}.service - {service.upper()} Service\n"
+                    f"     Loaded: loaded (/lib/systemd/system/{service}.service; {enabled_str})\n"
+                    f"     Active: active (running) since Mon 2026-05-05 03:22:11 UTC; 3 days ago\n"
+                    f"   Main PID: {1000 + hash(service) % 9000} ({service})\n"
+                    f"      Tasks: {2 + hash(service) % 8}\n"
+                    f"     Memory: {4 + hash(service) % 60}.{hash(service) % 10}M\n"
+                    f"        CPU: {hash(service) % 500}ms\n"
+                    f"     CGroup: /system.slice/{service}.service"
+                )
             return (
                 f"● {service}.service - {service.upper()} Service\n"
-                f"     Loaded: loaded (/lib/systemd/system/{service}.service; enabled)\n"
-                f"     Active: active (running) since Mon 2026-05-05 03:22:11 UTC; 3 days ago\n"
-                f"   Main PID: {1000 + hash(service) % 9000} ({service})\n"
-                f"      Tasks: {2 + hash(service) % 8}\n"
-                f"     Memory: {4 + hash(service) % 60}.{hash(service) % 10}M\n"
-                f"        CPU: {hash(service) % 500}ms\n"
-                f"     CGroup: /system.slice/{service}.service"
+                f"     Loaded: loaded (/lib/systemd/system/{service}.service; {enabled_str})\n"
+                f"     Active: inactive (dead)"
             )
-        elif action in ("restart", "start", "stop", "reload"):
+        elif action == "start":
+            svc["active"] = True
+            return ""
+        elif action == "stop":
+            svc["active"] = False
+            return ""
+        elif action == "restart":
+            svc["active"] = True
+            return ""
+        elif action == "reload":
             return ""
         elif action == "enable":
+            svc["enabled"] = True
             return f"Created symlink /etc/systemd/system/multi-user.target.wants/{service}.service"
         elif action == "disable":
+            svc["enabled"] = False
             return f"Removed /etc/systemd/system/multi-user.target.wants/{service}.service"
         return f"systemctl: unknown command '{action}'"
 
@@ -425,7 +552,7 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
                     continue
                 if p in VIRTUAL_FILES:          # virtual: always has content
                     return True
-                if p in files and files[p].get("content"):
+                if _resolve_path(p) in files and files[_resolve_path(p)].get("content"):
                     return True
         if cmd_base == "sed":
             parts = cmd.strip().split()
@@ -446,7 +573,7 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
             script = parts[1]
         else:
             return None
-        file_info = SYSTEM_STATE["files"].get(script, {})
+        file_info = SYSTEM_STATE["files"].get(_resolve_path(script), {})
         content   = file_info.get("content", "")
         if not content or content.startswith("[downloaded from"):
             return None
@@ -582,31 +709,44 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
             if tool not in SYSTEM_STATE["versions"]:
                 SYSTEM_STATE["versions"][tool] = response.strip().splitlines()[0]
 
-        m = re.match(r"^echo\s+['\"]?(.+?)['\"]?\s*>\s*(.+)$", cmd.strip())
-        if m:
-            SYSTEM_STATE["files"][m.group(2).strip()] = {
-                "content": m.group(1), "perms": "-rw-r--r--", "size": f"{len(m.group(1))}B",
-            }
+        parts = _echo_write_parts(cmd)
+        if parts:
+            flag, quote, body, op, path = parts
+            path = _resolve_path(path)
+            existing = SYSTEM_STATE["files"].get(path, {})
 
-        m = re.match(r"^echo\s+['\"]?(.+?)['\"]?\s*>>\s*(.+)$", cmd.strip())
-        if m:
-            path = m.group(2).strip()
-            if path in SYSTEM_STATE["files"] and "content" in SYSTEM_STATE["files"][path]:
-                SYSTEM_STATE["files"][path]["content"] += "\n" + m.group(1)
+            if op == ">>" and "content" in existing:
+                prev_flag, prev_quote, prev_body = _split_raw_arg(existing["content"])
+                if prev_flag == flag:
+                    # Same echo form on both writes — merge the payload BODIES
+                    # inside one quote pair so the result stays a single valid
+                    # escape string. `-n`/`-ne` suppress echo's trailing
+                    # newline, so those chunks concatenate directly (this is
+                    # how the chunked-ELF droppers rebuild a binary); every
+                    # other form gets the real newline echo would have added.
+                    sep  = "" if "n" in flag else "\n"
+                    body = prev_body + sep + body
+                    quote = quote or prev_quote
+                    content = _join_raw_arg(flag, quote, body)
+                else:
+                    content = existing["content"] + "\n" + _join_raw_arg(flag, quote, body)
             else:
-                SYSTEM_STATE["files"][path] = {
-                    "content": m.group(1), "perms": "-rw-r--r--", "size": f"{len(m.group(1))}B",
-                }
+                content = _join_raw_arg(flag, quote, body)
+
+            SYSTEM_STATE["files"][path] = {
+                "content": content, "perms": existing.get("perms", "-rw-r--r--"),
+                "size": f"{len(_decode_echo_payload(content))}B",
+            }
 
         m = re.match(r"^touch\s+(.+)$", cmd.strip())
         if m:
-            path = m.group(1).strip()
+            path = _resolve_path(m.group(1))
             if path not in SYSTEM_STATE["files"]:
                 SYSTEM_STATE["files"][path] = {"content": "", "perms": "-rw-r--r--", "size": "0B"}
 
         m_curl_o = re.match(r"^curl\s+.*?-o\s+(\S+)", cmd.strip())
         if m_curl_o:
-            dest  = m_curl_o.group(1)
+            dest  = _resolve_path(m_curl_o.group(1))
             url_m = re.search(r"https?://\S+", cmd)
             url   = url_m.group(0) if url_m else "unknown"
             SYSTEM_STATE["files"][dest] = {
@@ -617,7 +757,7 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
             m = re.match(r"^(wget|curl)\s+.*?(https?://\S+)", cmd.strip())
             if m:
                 url      = m.group(2)
-                filename = url.rstrip("/").split("/")[-1] or "index.html"
+                filename = _resolve_path(url.rstrip("/").split("/")[-1] or "index.html")
                 SYSTEM_STATE["files"][filename] = {
                     "content": f"[downloaded from {url}]", "source": url,
                     "perms": "-rw-r--r--", "size": "4.2K",
@@ -630,34 +770,42 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
                 SYSTEM_STATE["shadow"][user] = f"$6$salt${pw}_hashed"        
         # chmod +x
         m = re.match(r"^chmod\s+\+x\s+(.+)$", cmd.strip())
-        if m and m.group(1).strip() in SYSTEM_STATE["files"]:
-            SYSTEM_STATE["files"][m.group(1).strip()]["perms"] = "-rwxr-xr-x"
+        if m and _resolve_path(m.group(1)) in SYSTEM_STATE["files"]:
+            SYSTEM_STATE["files"][_resolve_path(m.group(1))]["perms"] = "-rwxr-xr-x"
 
         # chmod numeric — convert mode to ls -la format
         m = re.match(r"^chmod\s+(\d{3,4})\s+(.+)$", cmd.strip())
         if m:
-            target = m.group(2).strip()
+            target = _resolve_path(m.group(2))
             if target in SYSTEM_STATE["files"]:
                 SYSTEM_STATE["files"][target]["perms"] = _mode_to_perms(m.group(1))
 
         m = re.match(r"^rm\s+(?!.*-rf)(.+)$", cmd.strip())
         if m:
-            SYSTEM_STATE["files"].pop(m.group(1).strip(), None)
+            SYSTEM_STATE["files"].pop(_resolve_path(m.group(1)), None)
 
         m = re.match(r"^mkdir\s+(?:-p\s+)?(.+)$", cmd.strip())
         if m:
-            SYSTEM_STATE["files"][m.group(1).strip()] = {"perms": "drwxr-xr-x", "size": "4.0K"}
+            # Store under the SAME resolved-absolute key _compute_cd() looks
+            # up with — otherwise `mkdir test` (relative) stores key "test"
+            # while `cd test` resolves to "/root/test" before checking
+            # known_dirs, so the two never match and cd wrongly reports
+            # "No such file or directory" even though mkdir just ran.
+            target = m.group(1).strip()
+            resolved = target if target.startswith("/") else posixpath.join(SYSTEM_STATE["cwd"], target)
+            resolved = posixpath.normpath(resolved)
+            SYSTEM_STATE["files"][resolved] = {"perms": "drwxr-xr-x", "size": "4.0K"}
 
         m = re.match(r"^sed\s+(-i\s+)?'s/(.+?)/(.+?)/(g?)'\s+(.+)$", cmd.strip())
         if m:
-            old, new, g, path = m.group(2), m.group(3), m.group(4), m.group(5).strip()
+            old, new, g, path = m.group(2), m.group(3), m.group(4), _resolve_path(m.group(5))
             if path in SYSTEM_STATE["files"] and "content" in SYSTEM_STATE["files"][path]:
                 c = SYSTEM_STATE["files"][path]["content"]
                 SYSTEM_STATE["files"][path]["content"] = c.replace(old, new) if g else c.replace(old, new, 1)
 
         m = re.match(r"^mv\s+(\S+)\s+(\S+)$", cmd.strip())
         if m:
-            src, dst = m.group(1).strip(), m.group(2).strip()
+            src, dst = _resolve_path(m.group(1)), _resolve_path(m.group(2))
             if src in SYSTEM_STATE["files"]:
                 SYSTEM_STATE["files"][dst] = SYSTEM_STATE["files"].pop(src)
 
@@ -689,8 +837,31 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
             "timestamp":  datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "cmd": cmd, "agent": agent, "response": response,
             "fi_score": fi_score, "latency_ms": round(latency_ms, 2),
-
+            # self-describing origin — lets a central SOC dashboard aggregate
+            # many HydraPoT instances without relying on which host/folder a
+            # log file was collected from (see config.yaml's honeypot.instance_name)
+            "instance": getattr(getattr(config, "honeypot", None), "instance_name", "default"),
         }
+        # MITRE ATT&CK tag — technique detected by our own rules, name/tactic
+        # from MITRE's official STIX. None for commands we can't confidently
+        # map, which stay untagged rather than being forced into a technique.
+        _mitre = mitre_tag(cmd)
+        if _mitre:
+            entry.update(_mitre)
+
+        # Primary store. One indexed INSERT, and it is what the dashboard reads
+        # — a command is visible there as soon as this returns.
+        try:
+            storage.insert_command(entry)
+        except Exception as e:
+            # A logging failure must never take down the session the attacker
+            # is in; the JSON write below still captures the command.
+            print(f"[storage] insert failed ({e}) — JSON copy still written")
+
+        # Secondary/archive copy. Kept deliberately: the JSON files are the
+        # fallback if anything is ever wrong with the DB, and they are what
+        # storage.migrate_from_json() rebuilds from. Costs a full rewrite of
+        # this session's file per command, but a session is ~100 commands.
         existing = []
         if os.path.exists(LOG_FILE):
             try:
@@ -716,7 +887,11 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
             "timestamp": datetime.now().isoformat(),
             "cmd": cmd, "agent": agent, "fi_score": fi_score,
             "latency_ms": round(latency_ms, 2),
+            "instance": getattr(getattr(config, "honeypot", None), "instance_name", "default"),
         }
+        _ev_mitre = mitre_tag(cmd)
+        if _ev_mitre:
+            event.update(_ev_mitre)
 
         # export to SIEM
         if plugins:
@@ -892,6 +1067,23 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
             if actual_base == "unset":
                 return _finish(cmd, "cowrie", "", fi_score, t_start)
 
+            # systemctl/service — resolved deterministically, UNCONDITIONALLY
+            # (unlike chmod, not gated by `not cloud_routed`). This isn't about
+            # single-response quality (where cloud is measurably better) — it's
+            # about STATE CONSISTENCY across many turns: neither on_device nor
+            # cloud gets a "services" section injected into their prompt today,
+            # so an LLM answering `systemctl status X` has no way to know a
+            # prior `stop X` ever happened. Routing this to any agent, cloud
+            # included, would keep answering "active (running)" forever
+            # regardless of history — an inconsistency an attacker can trivially
+            # probe (stop a service, immediately check status). Only a single
+            # shared, deterministic source of truth (SYSTEM_STATE["services"])
+            # closes that gap.
+            if actual_base in ("systemctl", "service"):
+                output = _handle_systemctl(actual_cmd)
+                update_state(cmd, output)
+                return _finish(cmd, "on_device", output, fi_score, t_start)
+
         # ── evaluation-only forced routing ───────────────────────────────────
         # force_agent is only set by the eval framework (run_partB.py).
         # Production always calls handle(cmd, write_fn, read_fn) — force_agent
@@ -901,6 +1093,7 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
                 agent = "cloud"
                 if cloud is not None:
                     sys_p, usr_p = prompt_manager.build_cloud_prompt(actual_cmd)
+                    usr_p += _cat_file_content_extra(actual_cmd, actual_base)
                     if capture_cost:
                         output, usage = cloud.send_with_usage(sys_p, usr_p)
                         handle.last_usage = usage
@@ -1051,6 +1244,7 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
         if agent == "cloud":
             if cloud is not None:
                 sys_p, usr_p = prompt_manager.build_cloud_prompt(actual_cmd)
+                usr_p += _cat_file_content_extra(actual_cmd, actual_base)
                 if capture_cost:
                     output, usage = cloud.send_with_usage(sys_p, usr_p)
                     handle.last_usage = usage
@@ -1078,14 +1272,14 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
 
             elif actual_base == "mv":
                 parts = actual_cmd.split()
-                if len(parts) >= 3 and parts[1] in SYSTEM_STATE["files"]:
+                if len(parts) >= 3 and _resolve_path(parts[1]) in SYSTEM_STATE["files"]:
                     update_state(cmd, "")
                     return _finish(cmd, "cowrie", "", fi_score, t_start)
 
-            elif actual_base in ("systemctl", "service"):
-                agent  = "on_device"
-                output = _handle_systemctl(actual_cmd)
-                update_state(cmd, output)
+            # systemctl/service now handled deterministically, unconditionally,
+            # ahead of routing (see the block above `if actual_base == "unset"`)
+            # — this branch is unreachable but kept documented here for anyone
+            # reading the on_device dispatch top-to-bottom.
 
             elif actual_base == "sed":
                 agent  = "on_device"
@@ -1099,7 +1293,7 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
                     output, streamed = script_output, True
                 else:
                     file_key  = cmd.strip()[2:].split()[0] if cmd.strip().startswith("./") else actual_cmd.split()[-1]
-                    file_info = SYSTEM_STATE["files"].get(file_key, {})
+                    file_info = SYSTEM_STATE["files"].get(_resolve_path(file_key), {})
                     if file_info.get("content", "").startswith("[downloaded from"):
                         sys_p = (
                             f"You are a Linux terminal. The attacker ran: {cmd}\n"
@@ -1113,14 +1307,7 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
                         else:
                             output = ondevice.send(sys_p, cmd)
                     else:
-                        extra = ""
-                        if actual_base == "cat":
-                            for p in actual_cmd.split()[1:]:
-                                if p.startswith("-") or p.startswith("|"):
-                                    continue
-                                content = _virtual_file(p)
-                                if content:
-                                    extra += f"\nFILE CONTENT of {p}:\n{content}\n"
+                        extra = _cat_file_content_extra(actual_cmd, actual_base)
                         sys_p, usr_p = prompt_manager.build_prompt(actual_cmd)
                         if extra:
                             usr_p = usr_p + extra
@@ -1154,6 +1341,8 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
                 update_state(cmd, output)
         return _finish(cmd, agent, output, fi_score, t_start, streamed)
 
+    handle.fi_manager = fi_manager
+    handle.prompt_manager = prompt_manager
     return handle
 # ─── Main ─────────────────────────────────────────────────────────────────────
 def main():
@@ -1190,7 +1379,26 @@ def main():
             username = config.agents.cowrie.username,
             password = config.agents.cowrie.password,
         )
-        c._connect()
+        # Cowrie backend login can fail — most often the config creds don't match
+        # Cowrie's userdb (e.g. the username was changed to one Cowrie doesn't know).
+        # We must NOT let that exception propagate: it is raised at session setup,
+        # so an uncaught failure kills the attacker's whole session with a bare
+        # "connection closed by remote host" and no hint why. Instead: print a loud,
+        # clear diagnostic and return the agent UNCONNECTED. CowrieAgent.send()
+        # returns ("","") on a dead/None shell, so cowrie-routed commands degrade
+        # quietly while the session (and the LLM paths) keep working.
+        try:
+            c._connect()
+        except Exception as e:
+            print("=" * 72)
+            print(f"[HydraPot] ⚠  COWRIE BACKEND LOGIN FAILED as "
+                  f"'{config.agents.cowrie.username}:{config.agents.cowrie.password}'")
+            print(f"[HydraPot] ⚠  {type(e).__name__}: {e}")
+            print(f"[HydraPot] ⚠  Fix: make config.yaml agents.cowrie creds match "
+                  f"Cowrie's userdb (Cowrie's default is root/admin).")
+            print(f"[HydraPot] ⚠  Session continues WITHOUT Cowrie — cowrie-routed "
+                  f"commands will be degraded, but the attacker is not disconnected.")
+            print("=" * 72)
         return c
 
     try:
