@@ -5,6 +5,7 @@
 
 honeypot:
   hostname: psu
+  instance_name: default
   os: Ubuntu 22.04 LTS
   host: 127.0.0.1
   port: 2223
@@ -20,25 +21,25 @@ agents:
     model: unsloth/Qwen3.5-9B-GGUF
     quantization: 8bit
     gguf_file: Qwen3.5-9B-Q5_K_M.gguf
-    temperature: 0
+    temperature: 0.0
     max_tokens: 256
     do_sample: true
   cloud:
     enabled: true
     provider: openai
-    model: nvidia/nemotron-3-super-120b-a12b:free
-    api_key_env: OPENROUTER_API_KEY
+    model: deepseek-v4-flash
+    api_key_env: DEEPSEEK_API_KEY
     temperature: 0.1
     max_tokens: 2048
-    base_url: https://openrouter.ai/api/v1
+    base_url: https://api.deepseek.com/v1
 routing:
   fallback: cowrie
   fi_routing:
     0: cowrie
-    1: on_device
+    1: cowrie
     2: on_device
-    3: cloud
-    4: cloud
+    3: on_device
+    4: on_device
 static_commands:
 - nmap
 - ping
@@ -59,30 +60,7 @@ logging:
   impactful_dir: data/logs/impactful
   auth_log: data/logs/auth_log.json
   fi_threshold: 2
-# MEA/PEA residential tariff (ประเภท 1.2) — Ft changes every 4 months, tiers
-# occasionally revised by the ERC. Verify against
-# https://www.mea.or.th/our-services/mea-service/e-service/electric-monthly-calculate
-# before citing in the thesis.
-power_tariff:
-  tiers:
-    - max_units: 15
-      rate_thb_per_unit: 2.3488
-    - max_units: 150
-      rate_thb_per_unit: 3.2484
-    - max_units: 400
-      rate_thb_per_unit: 4.2218
-    - max_units: null
-      rate_thb_per_unit: 4.4217
-  ft_surcharge_thb_per_unit: 0.1623
-  vat_rate: 0.07
 system_state:
-  # Packages the OS ships with. These are seeded into SYSTEM_STATE["installed"]
-  # at startup (main.py), so the LLM is told they are present — without this,
-  # SRi reported no packages installed and the model answered
-  # "wget: command not found" for tools that clearly exist.
-  # They also mark the BASELINE: a package in "installed" but NOT listed here
-  # was installed by the attacker during the session, which _needs_llm() treats
-  # as interesting and routes to the LLM.
   pre_installed:
   - coreutils
   - bash
@@ -139,3 +117,46 @@ system_state:
     /root/.bash_history:
       perms: -rw-------
       size: 0B
+sensors:
+  dbserver:
+    instance_name: Database Server
+    hostname: db-prod-01
+    host: 127.0.0.1
+    port: 2223
+    cowrie_host: 127.0.0.1
+    cowrie_port: 2222
+    session_dir: data/logs/sessions_dbserver
+    impactful_dir: data/logs/impactful_dbserver
+    auth_log: data/logs/auth_log_dbserver.json
+  dmz:
+    instance_name: DMZ Web Server
+    hostname: dmz-web-01
+    host: 127.0.0.1
+    port: 2233
+    cowrie_host: 127.0.0.1
+    cowrie_port: 2232
+    session_dir: data/logs/sessions_dmz
+    impactful_dir: data/logs/impactful_dmz
+    auth_log: data/logs/auth_log_dmz.json
+  internal:
+    instance_name: Internal Network
+    hostname: corp-internal-01
+    host: 127.0.0.1
+    port: 2243
+    cowrie_host: 127.0.0.1
+    cowrie_port: 2242
+    session_dir: data/logs/sessions_internal
+    impactful_dir: data/logs/impactful_internal
+    auth_log: data/logs/auth_log_internal.json
+power_tariff:
+  tiers:
+  - max_units: 15
+    rate_thb_per_unit: 2.3488
+  - max_units: 150
+    rate_thb_per_unit: 3.2484
+  - max_units: 400
+    rate_thb_per_unit: 4.2218
+  - max_units: null
+    rate_thb_per_unit: 4.4217
+  ft_surcharge_thb_per_unit: 0.1623
+  vat_rate: 0.07

@@ -81,6 +81,27 @@ def load_log(filepath: str) -> list[dict]:
     return entries
 
 
+def load_from_sqlite() -> list[dict]:
+    """Load every recorded command from the honeypot database.
+
+    This is the default source now: the sensor writes commands straight to
+    SQLite instead of one JSON file per session, so there is no directory to
+    scan. Rows already carry session_id/cmd/response/agent/fi_score/timestamp,
+    which is exactly the shape the rest of this script expects."""
+    try:
+        import storage
+    except ImportError as e:
+        console.print(f"[red]Cannot import storage.py: {e}[/red]")
+        sys.exit(1)
+
+    entries = storage.query_all()
+    if not entries:
+        console.print("[red]No sessions in the database yet — run the honeypot "
+                      "first (`hp run`), or pass --file / --dir for JSON logs.[/red]")
+        sys.exit(1)
+    return entries
+
+
 def load_from_directory(dirpath: str) -> list[dict]:
     """Load and merge all *.json session files in a directory.
 
@@ -387,17 +408,22 @@ def main():
 
     print_banner()
 
-    # ── Load entries: explicit single file takes priority, else scan dir ──
+    # ── Load entries ──────────────────────────────────────────────────────
+    # Priority: explicit --file, then an explicit --dir the user actually
+    # passed, then SQLite (where the honeypot writes now). The file/dir
+    # loaders are kept so old exported JSON and NSC's own logs still replay.
     if args.file:
         if not os.path.exists(args.file):
             console.print(f"[red]File not found: {args.file}[/red]")
             sys.exit(1)
         entries = load_log(args.file)
-    else:
+    elif args.dir != DEFAULT_SESSIONS_DIR:
         if not os.path.isdir(args.dir):
             console.print(f"[red]Directory not found: {args.dir}[/red]")
             sys.exit(1)
         entries = load_from_directory(args.dir)
+    else:
+        entries = load_from_sqlite()
 
     groups = group_by_session(entries)
 

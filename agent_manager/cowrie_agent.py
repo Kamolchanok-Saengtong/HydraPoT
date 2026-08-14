@@ -95,8 +95,17 @@ class CowrieAgent:
             self.shell.send(cmd + '\n')
         except (OSError, EOFError, paramiko.SSHException):
             print("[cowrie_agent] Socket closed — reconnecting...")
-            self._connect()
-            self.shell.send(cmd + '\n')
+            # Reconnect can itself fail (e.g. Cowrie down, or config creds no
+            # longer accepted by Cowrie's userdb). Do NOT let that raise: this is
+            # called from inside a live attacker session, so an uncaught error
+            # would drop the attacker. Degrade to empty output instead.
+            try:
+                self._connect()
+                self.shell.send(cmd + '\n')
+            except Exception as e:
+                print(f"[cowrie_agent] reconnect FAILED ({type(e).__name__}: {e}) "
+                      f"— returning empty output, session stays alive")
+                return "", ""
 
         return self._collect_until_prompt(cmd)
 

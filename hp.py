@@ -293,24 +293,14 @@ def intel(out_dir, fmt, min_fi):
     from config_loader import load_config
     from threat_intel.ioc_extractor import build_iocs, to_json, to_csv, to_stix
 
-    cfg = load_config()
-    sess_dir = cfg.logging.session_dir
-    auth_path = cfg.logging.auth_log
+    import storage
 
-    rows = []
-    for fp in glob.glob(os.path.join(sess_dir, "*.json")):
-        try:
-            d = json.load(open(fp))
-            rows.extend(d if isinstance(d, list) else [d])
-        except Exception:
-            pass
-    auth = []
-    if os.path.exists(auth_path):
-        try:
-            a = json.load(open(auth_path))
-            auth = a if isinstance(a, list) else [a]
-        except Exception:
-            pass
+    load_config()   # validates config / applies the active sensor profile
+
+    # Both come from SQLite now — the sensor no longer writes JSON logs.
+    # Sessions include `response`: IOCs are extracted from command output too.
+    rows = storage.query_all()
+    auth = storage.query_auth()
 
     if not rows and not auth:
         click.echo("No logs found yet — run the honeypot first (`hp run`).")
@@ -352,37 +342,26 @@ def logs(auth, lines):
     from config_loader import load_config
     config = load_config()
 
+    import storage
+
     if auth:
-        path = config.logging.auth_log
+        data = storage.query_auth()
         title = "Auth Attempts"
+        if not data:
+            click.echo("No auth attempts recorded yet.")
+            return
     else:
-        # find most recent session log
-        session_dir = config.logging.session_dir
-        if not os.path.exists(session_dir):
-            click.echo(f"No logs found in {session_dir}")
+        # Sessions live in SQLite. Ask for the newest rows and show the session
+        # they belong to, instead of picking the alphabetically-last filename —
+        # which was never reliably the most recent session anyway.
+        import storage
+        newest = storage.query_recent(1)
+        if not newest:
+            click.echo("No session logs found — run the honeypot first (`hp run`).")
             return
-        files = sorted(
-            [f for f in os.listdir(session_dir) if f.endswith(".json")],
-            reverse=True
-        )
-        if not files:
-            click.echo("No session logs found.")
-            return
-        path = os.path.join(session_dir, files[0])
-        title = f"Session: {files[0]}"
-
-    if not os.path.exists(path):
-        click.echo(f"Log file not found: {path}")
-        return
-
-    try:
-        with open(path) as f:
-            data = json.load(f)
-        if not isinstance(data, list):
-            data = []
-    except Exception:
-        click.echo(f"Error reading {path}")
-        return
+        sid = newest[0]["session_id"]
+        data = storage.query_session(sid, instance=newest[0].get("instance"))
+        title = f"Session: {sid}"
 
     entries = data[-lines:]
 

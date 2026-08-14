@@ -14,6 +14,9 @@ IOC types extracted:
   domain        — bare domains referenced in commands
   md5/sha1/sha256 — file hashes appearing in commands/output
   wallet        — BTC / ETH / Monero cryptocurrency addresses (miner configs)
+  cve           — CVE identifiers referenced in commands/output (exploit tools
+                  frequently name the CVE they target, e.g. log4shell scripts)
+  email         — email addresses (C2 drop addresses, spam/phishing tooling)
   credential    — username:password pairs tried against the honeypot
 
 Each indicator is aggregated with metadata: occurrence count, first/last seen,
@@ -46,6 +49,9 @@ _RE = {
     "wallet_xmr": re.compile(r'\b4[0-9AB][1-9A-HJ-NP-Za-km-z]{93}\b'),
     # bare domain (has a dot + a TLD-ish suffix), matched loosely then filtered
     "domain": re.compile(r'\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}\b', re.I),
+    # CVE identifiers — canonical form is CVE-YYYY-NNNN+ (4-digit year, 4+ digit sequence)
+    "cve": re.compile(r'\bCVE-\d{4}-\d{4,7}\b', re.I),
+    "email": re.compile(r'\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,24}\b'),
 }
 
 # domains that are the honeypot's own noise / not attacker infrastructure
@@ -115,6 +121,19 @@ def extract_from_text(text: str) -> list:
     def _inside_url(pos):
         return any(a <= pos < b for a, b in url_spans)
 
+    # Emails next (so an email's domain half isn't separately double-counted
+    # as a bare "domain", same reasoning as URLs above)
+    email_spans = []
+    for m in _RE["email"].finditer(text):
+        add("email", m.group(0).lower())
+        email_spans.append((m.start(), m.end()))
+
+    def _inside_email(pos):
+        return any(a <= pos < b for a, b in email_spans)
+
+    for m in _RE["cve"].finditer(text):
+        add("cve", m.group(0).upper())
+
     for t in ("sha256", "sha1", "md5"):
         for m in _RE[t].finditer(text):
             h = m.group(0).lower()
@@ -137,7 +156,7 @@ def extract_from_text(text: str) -> list:
 
     for m in _RE["domain"].finditer(text):
         v = m.group(0).lower().rstrip('.')
-        if _inside_url(m.start()):
+        if _inside_url(m.start()) or _inside_email(m.start()):
             continue
         if v in _DOMAIN_IGNORE or v.endswith(_DOMAIN_IGNORE_SUFFIX):
             continue
@@ -272,16 +291,25 @@ _STIX_PATTERN = {
     "md5":    lambda v: f"[file:hashes.'MD5' = '{v}']",
     "sha1":   lambda v: f"[file:hashes.'SHA-1' = '{v}']",
     "sha256": lambda v: f"[file:hashes.'SHA-256' = '{v}']",
+    "email":  lambda v: "[email-addr:value = '{}']".format(v.replace("'", "\\'")),
+    # cve has no standard STIX Cyber Observable type — falls through to the
+    # generic x-honeypot pattern below, same as wallets/credentials.
 }
 
 
-def to_stix(store: IOCStore, path: str):
+def to_stix(store_or_records, path: str):
     """Minimal STIX 2.1 bundle of indicator SDOs. Wallets/credentials have no
     standard STIX object type, so they're emitted as generic indicators with a
-    custom pattern comment rather than skipped."""
+    custom pattern comment rather than skipped.
+
+    Accepts either a live IOCStore (the `hp intel` CLI path) or a plain list
+    of already-computed record dicts (IOCStore.records()'s own output shape —
+    the dashboard's Threat Intel page caches just the records, since an
+    IOCStore itself isn't JSON-serializable into a browser-side dcc.Store)."""
+    records = store_or_records.records() if hasattr(store_or_records, "records") else store_or_records
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
     objects = []
-    for r in store.records():
+    for r in records:
         t, v = r["type"], r["value"]
         patt_fn = _STIX_PATTERN.get(t)
         pattern = patt_fn(v) if patt_fn else f"[x-honeypot:{t} = '{v}']"

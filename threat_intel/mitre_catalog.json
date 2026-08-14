@@ -1,0 +1,257 @@
+{
+  "T1003.008": {
+    "name": "/etc/passwd and /etc/shadow",
+    "tactic": "Credential Access",
+    "tactics": [
+      "Credential Access"
+    ],
+    "url": "https://attack.mitre.org/techniques/T1003/008"
+  },
+  "T1016": {
+    "name": "System Network Configuration Discovery",
+    "tactic": "Discovery",
+    "tactics": [
+      "Discovery"
+    ],
+    "url": "https://attack.mitre.org/techniques/T1016"
+  },
+  "T1021.004": {
+    "name": "SSH",
+    "tactic": "Lateral Movement",
+    "tactics": [
+      "Lateral Movement"
+    ],
+    "url": "https://attack.mitre.org/techniques/T1021/004"
+  },
+  "T1027": {
+    "name": "Obfuscated Files or Information",
+    "tactic": "Stealth",
+    "tactics": [
+      "Stealth"
+    ],
+    "url": "https://attack.mitre.org/techniques/T1027"
+  },
+  "T1033": {
+    "name": "System Owner/User Discovery",
+    "tactic": "Discovery",
+    "tactics": [
+      "Discovery"
+    ],
+    "url": "https://attack.mitre.org/techniques/T1033"
+  },
+  "T1046": {
+    "name": "Network Service Discovery",
+    "tactic": "Discovery",
+    "tactics": [
+      "Discovery"
+    ],
+    "url": "https://attack.mitre.org/techniques/T1046"
+  },
+  "T1049": {
+    "name": "System Network Connections Discovery",
+    "tactic": "Discovery",
+    "tactics": [
+      "Discovery"
+    ],
+    "url": "https://attack.mitre.org/techniques/T1049"
+  },
+  "T1053.003": {
+    "name": "Cron",
+    "tactic": "Execution",
+    "tactics": [
+      "Execution",
+      "Persistence",
+      "Privilege Escalation"
+    ],
+    "url": "https://attack.mitre.org/techniques/T1053/003"
+  },
+  "T1057": {
+    "name": "Process Discovery",
+    "tactic": "Discovery",
+    "tactics": [
+      "Discovery"
+    ],
+    "url": "https://attack.mitre.org/techniques/T1057"
+  },
+  "T1059.004": {
+    "name": "Unix Shell",
+    "tactic": "Execution",
+    "tactics": [
+      "Execution"
+    ],
+    "url": "https://attack.mitre.org/techniques/T1059/004"
+  },
+  "T1070.003": {
+    "name": "Clear Command History",
+    "tactic": "Stealth",
+    "tactics": [
+      "Stealth"
+    ],
+    "url": "https://attack.mitre.org/techniques/T1070/003"
+  },
+  "T1070.006": {
+    "name": "Timestomp",
+    "tactic": "Stealth",
+    "tactics": [
+      "Stealth"
+    ],
+    "url": "https://attack.mitre.org/techniques/T1070/006"
+  },
+  "T1078.003": {
+    "name": "Local Accounts",
+    "tactic": "Stealth",
+    "tactics": [
+      "Stealth",
+      "Persistence",
+      "Privilege Escalation",
+      "Initial Access"
+    ],
+    "url": "https://attack.mitre.org/techniques/T1078/003"
+  },
+  "T1082": {
+    "name": "System Information Discovery",
+    "tactic": "Discovery",
+    "tactics": [
+      "Discovery"
+    ],
+    "url": "https://attack.mitre.org/techniques/T1082"
+  },
+  "T1083": {
+    "name": "File and Directory Discovery",
+    "tactic": "Discovery",
+    "tactics": [
+      "Discovery"
+    ],
+    "url": "https://attack.mitre.org/techniques/T1083"
+  },
+  "T1098.004": {
+    "name": "SSH Authorized Keys",
+    "tactic": "Persistence",
+    "tactics": [
+      "Persistence",
+      "Privilege Escalation"
+    ],
+    "url": "https://attack.mitre.org/techniques/T1098/004"
+  },
+  "T1105": {
+    "name": "Ingress Tool Transfer",
+    "tactic": "Command And Control",
+    "tactics": [
+      "Command And Control"
+    ],
+    "url": "https://attack.mitre.org/techniques/T1105"
+  },
+  "T1136.001": {
+    "name": "Local Account",
+    "tactic": "Persistence",
+    "tactics": [
+      "Persistence"
+    ],
+    "url": "https://attack.mitre.org/techniques/T1136/001"
+  },
+  "T1140": {
+    "name": "Deobfuscate/Decode Files or Information",
+    "tactic": "Stealth",
+    "tactics": [
+      "Stealth"
+    ],
+    "url": "https://attack.mitre.org/techniques/T1140"
+  },
+  "T1222.002": {
+    "name": "Linux and Mac Permissions",
+    "tactic": "Defense Impairment",
+    "tactics": [
+      "Defense Impairment"
+    ],
+    "url": "https://attack.mitre.org/techniques/T1222/002"
+  },
+  "T1485": {
+    "name": "Data Destruction",
+    "tactic": "Impact",
+    "tactics": [
+      "Impact"
+    ],
+    "url": "https://attack.mitre.org/techniques/T1485"
+  },
+  "T1489": {
+    "name": "Service Stop",
+    "tactic": "Impact",
+    "tactics": [
+      "Impact"
+    ],
+    "url": "https://attack.mitre.org/techniques/T1489"
+  },
+  "T1496": {
+    "name": "Resource Hijacking",
+    "tactic": "Impact",
+    "tactics": [
+      "Impact"
+    ],
+    "url": "https://attack.mitre.org/techniques/T1496"
+  },
+  "T1518": {
+    "name": "Software Discovery",
+    "tactic": "Discovery",
+    "tactics": [
+      "Discovery"
+    ],
+    "url": "https://attack.mitre.org/techniques/T1518"
+  },
+  "T1531": {
+    "name": "Account Access Removal",
+    "tactic": "Impact",
+    "tactics": [
+      "Impact"
+    ],
+    "url": "https://attack.mitre.org/techniques/T1531"
+  },
+  "T1543.002": {
+    "name": "Systemd Service",
+    "tactic": "Persistence",
+    "tactics": [
+      "Persistence",
+      "Privilege Escalation"
+    ],
+    "url": "https://attack.mitre.org/techniques/T1543/002"
+  },
+  "T1548.003": {
+    "name": "Sudo and Sudo Caching",
+    "tactic": "Privilege Escalation",
+    "tactics": [
+      "Privilege Escalation"
+    ],
+    "url": "https://attack.mitre.org/techniques/T1548/003"
+  },
+  "T1552.003": {
+    "name": "Shell History",
+    "tactic": "Credential Access",
+    "tactics": [
+      "Credential Access"
+    ],
+    "url": "https://attack.mitre.org/techniques/T1552/003"
+  },
+  "T1552.004": {
+    "name": "Private Keys",
+    "tactic": "Credential Access",
+    "tactics": [
+      "Credential Access"
+    ],
+    "url": "https://attack.mitre.org/techniques/T1552/004"
+  },
+  "T1685": {
+    "name": "Disable or Modify Tools",
+    "tactic": "Defense Impairment",
+    "tactics": [
+      "Defense Impairment"
+    ],
+    "url": "https://attack.mitre.org/techniques/T1685"
+  },
+  "T1686": {
+    "name": "Disable or Modify System Firewall",
+    "tactic": "Defense Impairment",
+    "tactics": [
+      "Defense Impairment"
+    ],
+    "url": "https://attack.mitre.org/techniques/T1686"
+  }
+}

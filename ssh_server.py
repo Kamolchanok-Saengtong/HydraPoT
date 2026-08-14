@@ -12,8 +12,13 @@ import json
 import asyncssh
 from datetime import datetime
 
+from config_loader import load_config
+import storage
+
 HOST_KEY_PATH = "data/hostkey_asyncssh.key"
-AUTH_LOG_PATH = "data/logs/auth_log.json"
+_cfg = load_config()
+AUTH_LOG_PATH = _cfg.logging.auth_log
+INSTANCE_NAME = _cfg.honeypot.instance_name
 
 async def _read_hidden(process, prompt_text: str) -> str:
     """Read password input — accepts one line then returns."""
@@ -25,20 +30,18 @@ async def _read_hidden(process, prompt_text: str) -> str:
         return ""
 
 def _append_json(path, entry):
-    """Append entry to a JSON list file. Creates file if missing."""
-    existing = []
-    if os.path.exists(path):
-        try:
-            with open(path) as f:
-                existing = json.load(f)
-            if not isinstance(existing, list):
-                existing = []
-        except json.JSONDecodeError:
-            existing = []
-    existing.append(entry)
-    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    with open(path, "w") as f:
-        json.dump(existing, f, indent=2)
+    """Record one auth event. `path` is kept in the signature for the callers
+    but is no longer written to — auth attempts live in SQLite now.
+
+    This used to read the entire auth_log.json, append one entry, and write the
+    whole array back. Unlike the session logs that file is shared by every
+    session and never rolls over, so the cost of recording a login attempt grew
+    with every login attempt ever recorded — worst possible shape for the one
+    file an internet-facing honeypot appends to most."""
+    try:
+        storage.insert_auth(entry)
+    except Exception as e:
+        print(f"[storage] auth insert failed: {e}")
 
 
 def get_host_key():
@@ -71,6 +74,7 @@ class HoneypotServer(asyncssh.SSHServer):
             "username":  None,
             "password":  None,
             "auth_type": "tcp_connect",
+            "instance":  INSTANCE_NAME,
         })
 
     def connection_lost(self, exc):
@@ -92,6 +96,7 @@ class HoneypotServer(asyncssh.SSHServer):
             "username":  username,
             "password":  password,
             "auth_type": "password",
+            "instance":  INSTANCE_NAME,
         })
         self.username = username
         return True
@@ -111,6 +116,7 @@ class HoneypotServer(asyncssh.SSHServer):
             "username":  username,
             "password":  fp,
             "auth_type": "publickey",
+            "instance":  INSTANCE_NAME,
         })
         self.username = username
         return True

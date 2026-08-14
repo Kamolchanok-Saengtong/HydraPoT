@@ -25,6 +25,12 @@ class HoneypotCfg:
     os: str = "Ubuntu 12.04 LTS"
     host: str = "127.0.0.1"
     port: int = 2223
+    # Self-identifies this deployment in every log record it writes (e.g.
+    # "Database Server", "DMZ Web Server") — set once via `hp init`, not a
+    # runtime flag. Lets a central SOC dashboard aggregate many HydraPoT
+    # instances and tell them apart WITHOUT relying on which folder/host a
+    # log file happened to be collected from.
+    instance_name: str = "default"
 
 @dataclass
 class CowrieCfg:
@@ -84,6 +90,11 @@ class Config:
     agents: AgentsCfg = field(default_factory=AgentsCfg)
     routing: RoutingCfg = field(default_factory=RoutingCfg)
     logging: LoggingCfg = field(default_factory=LoggingCfg)
+    # {sensor_key: {instance_name, hostname, host, port, cowrie_host,
+    # cowrie_port, session_dir, impactful_dir, auth_log}} — multi-sensor
+    # deployments. Selected via HYDRAPOT_SENSOR env var, merged onto
+    # honeypot/agents.cowrie/logging above at load time.
+    sensors: dict = field(default_factory=dict)
     static_commands: list = field(default_factory=lambda: [...])
     # MEA/PEA residential tariff (ประเภท 1.2) — plain dict like system_state
     # below, since tiers is a list-of-dicts that doesn't map cleanly onto a
@@ -164,6 +175,23 @@ def load_config(path: str = CONFIG_PATH) -> Config:
     routing  = _merge_dict_into_dataclass(RoutingCfg,   raw.get("routing"))
     logging_ = _merge_dict_into_dataclass(LoggingCfg,   raw.get("logging"))
 
+    sensors = raw.get("sensors") or {}
+    sensor_key = os.environ.get("HYDRAPOT_SENSOR")
+    if sensor_key and sensor_key in sensors:
+        s = sensors[sensor_key]
+        honeypot.hostname      = s.get("hostname", honeypot.hostname)
+        honeypot.instance_name = s.get("instance_name", honeypot.instance_name)
+        honeypot.host          = s.get("host", honeypot.host)
+        honeypot.port          = s.get("port", honeypot.port)
+        cowrie.host            = s.get("cowrie_host", cowrie.host)
+        cowrie.port            = s.get("cowrie_port", cowrie.port)
+        logging_.session_dir   = s.get("session_dir", logging_.session_dir)
+        logging_.impactful_dir = s.get("impactful_dir", logging_.impactful_dir)
+        logging_.auth_log      = s.get("auth_log", logging_.auth_log)
+    elif sensor_key:
+        print(f"[config] HYDRAPOT_SENSOR={sensor_key!r} not found in config.yaml's "
+              f"sensors: section — using top-level honeypot/logging values.")
+
     static_cmds   = raw.get("static_commands")
     system_state  = raw.get("system_state")
     power_tariff  = raw.get("power_tariff")
@@ -194,6 +222,7 @@ def load_config(path: str = CONFIG_PATH) -> Config:
         agents=agents,
         routing=routing,
         logging=logging_,
+        sensors=sensors,
         static_commands=static_cmds,
         system_state=system_state,
         power_tariff=power_tariff,

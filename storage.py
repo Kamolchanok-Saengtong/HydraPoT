@@ -67,6 +67,42 @@ CREATE INDEX IF NOT EXISTS ix_sessions_instance  ON sessions(instance);
 -- query filters by instance and then sorts the matches; with it the rows are
 -- already in the right order and SQLite just walks back N of them.
 CREATE INDEX IF NOT EXISTS ix_sessions_inst_ts   ON sessions(instance, timestamp);
+
+CREATE TABLE IF NOT EXISTS auth (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    instance   TEXT NOT NULL DEFAULT 'default',
+    timestamp  TEXT,
+    src_ip     TEXT,
+    src_port   INTEGER,
+    username   TEXT,
+    password   TEXT,
+    auth_type  TEXT,
+    event      TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_auth_timestamp ON auth(timestamp);
+CREATE INDEX IF NOT EXISTS ix_auth_instance  ON auth(instance, timestamp);
+
+CREATE TABLE IF NOT EXISTS impactful (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    instance     TEXT NOT NULL DEFAULT 'default',
+    session_id   TEXT,
+    timestamp    REAL,      -- epoch float, as FILogManager records it
+    datetime     TEXT,      -- ISO string, same instant
+    command      TEXT,
+    output       TEXT,
+    agent        TEXT,
+    fi           INTEGER,
+    fi_label     TEXT,
+    score_method TEXT       -- rule vs LLM; the one field `sessions` lacks
+);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_impactful_natural
+    ON impactful(session_id, timestamp, command);
+CREATE INDEX IF NOT EXISTS ix_impactful_session ON impactful(session_id);
+CREATE INDEX IF NOT EXISTS ix_impactful_ts      ON impactful(timestamp);
+-- Login attempts have no natural key: the same IP can retry the same
+-- credentials in the same second, and those really are distinct events. So
+-- dedupe for the one-off JSON import is done by the importer, not by a UNIQUE
+-- index that would silently discard real repeats at runtime.
 """
 
 
@@ -190,6 +226,303 @@ def query_recent(limit: int = 30, instance: str = None, path: str = DB_PATH) -> 
         return []
 
 
+AUTH_COLUMNS = ("instance", "timestamp", "src_ip", "src_port",
+                "username", "password", "auth_type", "event")
+
+
+def insert_auth(entry: dict, path: str = DB_PATH):
+    """Append one login attempt / connection event."""
+    with connect(path) as conn:
+        row = {**entry, "instance": entry.get("instance") or "default"}
+        conn.execute(
+            f"INSERT INTO auth ({','.join(AUTH_COLUMNS)}) "
+            f"VALUES ({','.join('?' * len(AUTH_COLUMNS))})",
+            tuple(row.get(c) for c in AUTH_COLUMNS),
+        )
+
+
+def query_auth(instance: str = None, limit: int = None, path: str = DB_PATH) -> list:
+    """Login attempts, oldest first — the order the dashboard feed expects."""
+    try:
+        with connect(path) as conn:
+            if limit:
+                # newest N, then flipped back into chronological order
+                q = "SELECT * FROM auth{} ORDER BY timestamp DESC LIMIT ?"
+                args = ([instance, limit] if instance and instance != "all" else [limit])
+                cur = conn.execute(q.format(" WHERE instance=?" if len(args) == 2 else ""), args)
+                return [dict(r) for r in cur][::-1]
+            if instance and instance != "all":
+                cur = conn.execute(
+                    "SELECT * FROM auth WHERE instance=? ORDER BY timestamp", (instance,))
+            else:
+                cur = conn.execute("SELECT * FROM auth ORDER BY timestamp")
+            return [dict(r) for r in cur]
+    except sqlite3.Error:
+        return []
+
+
+def migrate_auth_from_json(auth_glob: str = None, path: str = DB_PATH) -> dict:
+    """One-off import of the legacy auth_log*.json files.
+
+    Idempotent by comparing against what is already stored rather than by a
+    UNIQUE index — see the schema comment: genuine duplicate login attempts
+    must still be insertable at runtime."""
+    if auth_glob is None:
+        auth_glob = os.path.join(_HERE, "data", "logs", "auth_log*.json")
+
+    init_db(path)
+    stats = {"files": 0, "rows_seen": 0, "rows_inserted": 0}
+
+    with connect(path) as conn:
+        seen = {tuple(r) for r in conn.execute(
+            f"SELECT {','.join(AUTH_COLUMNS)} FROM auth")}
+        for fp in sorted(glob.glob(auth_glob)):
+            try:
+                with open(fp, encoding="utf-8") as f:
+                    rows = json.load(f)
+            except Exception:
+                continue
+            if not isinstance(rows, list):
+                continue
+            stats["files"] += 1
+            for r in rows:
+                stats["rows_seen"] += 1
+                key = tuple({**r, "instance": r.get("instance") or "default"}.get(c)
+                            for c in AUTH_COLUMNS)
+                if key in seen:
+                    continue
+                seen.add(key)
+                conn.execute(
+                    f"INSERT INTO auth ({','.join(AUTH_COLUMNS)}) "
+                    f"VALUES ({','.join('?' * len(AUTH_COLUMNS))})", key)
+                stats["rows_inserted"] += 1
+    return stats
+
+
+IMPACTFUL_COLUMNS = ("instance", "session_id", "timestamp", "datetime", "command",
+                     "output", "agent", "fi", "fi_label", "score_method")
+
+
+def insert_impactful(entry: dict, path: str = DB_PATH):
+    """Append one impactful (FI >= threshold) event.
+
+    INSERT OR IGNORE against the natural key so a retry can't double-record.
+    Note this is an audit log only: the H_i the model actually sees comes from
+    MemoryPruner's in-memory buffer, never from here."""
+    with connect(path) as conn:
+        row = {**entry, "instance": entry.get("instance") or "default"}
+        conn.execute(
+            f"INSERT OR IGNORE INTO impactful ({','.join(IMPACTFUL_COLUMNS)}) "
+            f"VALUES ({','.join('?' * len(IMPACTFUL_COLUMNS))})",
+            tuple(row.get(c) for c in IMPACTFUL_COLUMNS),
+        )
+
+
+def query_impactful(session_id: str = None, instance: str = None,
+                    path: str = DB_PATH) -> list:
+    """Impactful events, oldest first; optionally for one session."""
+    try:
+        with connect(path) as conn:
+            where, args = [], []
+            if session_id:
+                where.append("session_id=?"); args.append(str(session_id))
+            if instance and instance != "all":
+                where.append("instance=?"); args.append(instance)
+            q = "SELECT * FROM impactful"
+            if where:
+                q += " WHERE " + " AND ".join(where)
+            return [dict(r) for r in conn.execute(q + " ORDER BY timestamp", args)]
+    except sqlite3.Error:
+        return []
+
+
+def count_impactful(session_id: str = None, path: str = DB_PATH) -> int:
+    """Row count — what FILogManager's summary used to get by re-reading a file."""
+    try:
+        with connect(path) as conn:
+            if session_id:
+                return conn.execute(
+                    "SELECT COUNT(*) FROM impactful WHERE session_id=?",
+                    (str(session_id),)).fetchone()[0]
+            return conn.execute("SELECT COUNT(*) FROM impactful").fetchone()[0]
+    except sqlite3.Error:
+        return 0
+
+
+def migrate_impactful_from_json(imp_glob: str = None, path: str = DB_PATH) -> dict:
+    """One-off import of the production impactful logs.
+
+    Deliberately scoped to data/logs/impactful* — NSC keeps its own JSON logs
+    (NSC/results/_direct_fi.json and friends) and must not be touched."""
+    if imp_glob is None:
+        imp_glob = os.path.join(_HERE, "data", "logs", "impactful*", "*.json")
+
+    init_db(path)
+    stats = {"files": 0, "rows_seen": 0, "rows_inserted": 0, "empty": 0}
+
+    with connect(path) as conn:
+        for fp in sorted(glob.glob(imp_glob)):
+            try:
+                with open(fp, encoding="utf-8") as f:
+                    rows = json.load(f)
+            except Exception:
+                continue
+            if not isinstance(rows, list):
+                continue
+            stats["files"] += 1
+            if not rows:
+                stats["empty"] += 1
+                continue
+            payload = []
+            for r in rows:
+                stats["rows_seen"] += 1
+                payload.append(tuple({**r, "instance": r.get("instance") or "default"}
+                                     .get(c) for c in IMPACTFUL_COLUMNS))
+            before = conn.total_changes
+            conn.executemany(
+                f"INSERT OR IGNORE INTO impactful ({','.join(IMPACTFUL_COLUMNS)}) "
+                f"VALUES ({','.join('?' * len(IMPACTFUL_COLUMNS))})", payload)
+            stats["rows_inserted"] += conn.total_changes - before
+    return stats
+
+
+# ── Read-only browsing (dashboard "Database" page) ───────────────────────────
+#
+# Everything below opens the DB through SQLite's own read-only URI mode. That
+# is the whole security model: writes are refused by the engine, not by us
+# inspecting the SQL. Blocklisting statement keywords is the usual approach and
+# it is the wrong one — "SELECT ... " can carry sub-statements, PRAGMA can
+# change behaviour, and ATTACH can reach other files. mode=ro makes all of that
+# moot: the connection physically cannot modify anything.
+
+MAX_BROWSE_ROWS = 500      # hard cap on rows returned to the browser at once
+
+
+def _deny_attach(action, arg1, arg2, db_name, trigger):
+    """Authorizer: refuse ATTACH/DETACH, allow everything else.
+
+    mode=ro protects THIS database, but it does not stop ATTACH — a read-only
+    connection can still attach any other SQLite file the process can read and
+    select out of it. Verified: without this, `ATTACH DATABASE '/tmp/x.db'`
+    succeeded. So the file-access hole is closed here, and the write hole by
+    mode=ro; neither alone is sufficient."""
+    if action in (sqlite3.SQLITE_ATTACH, sqlite3.SQLITE_DETACH):
+        return sqlite3.SQLITE_DENY
+    return sqlite3.SQLITE_OK
+
+
+def connect_readonly(path: str = DB_PATH) -> sqlite3.Connection:
+    """A connection that cannot write and cannot reach other files. Raises if
+    the DB doesn't exist yet (mode=ro will not create one, which is what we
+    want)."""
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=10)
+    conn.row_factory = sqlite3.Row
+    conn.set_authorizer(_deny_attach)
+    return conn
+
+
+def list_tables(path: str = DB_PATH) -> list:
+    """[{name, rows}] for each real table, biggest first."""
+    try:
+        with connect_readonly(path) as conn:
+            names = [r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' "
+                "AND name NOT LIKE 'sqlite_%' ORDER BY name")]
+            out = []
+            for n in names:
+                # table names come from sqlite_master, never from user input,
+                # so this f-string can't be injected through
+                cnt = conn.execute(f'SELECT COUNT(*) FROM "{n}"').fetchone()[0]
+                out.append({"name": n, "rows": cnt})
+            return sorted(out, key=lambda t: -t["rows"])
+    except sqlite3.Error:
+        return []
+
+
+def table_schema(table: str, path: str = DB_PATH) -> list:
+    """[{name, type, pk}] for one table, or [] if it doesn't exist."""
+    try:
+        with connect_readonly(path) as conn:
+            if not _table_exists(conn, table):
+                return []
+            return [{"name": r["name"], "type": r["type"] or "", "pk": bool(r["pk"])}
+                    for r in conn.execute(f'PRAGMA table_info("{table}")')]
+    except sqlite3.Error:
+        return []
+
+
+def _table_exists(conn, table: str) -> bool:
+    return conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+        (table,)).fetchone() is not None
+
+
+def browse_table(table: str, limit: int = 50, offset: int = 0,
+                 sort_by: str = None, descending: bool = False,
+                 search: str = None, path: str = DB_PATH) -> dict:
+    """One page of a table. Returns {columns, rows, total, error}.
+
+    `table` and `sort_by` are validated against the real schema rather than
+    interpolated blindly — they can't be parameterised in SQL, so the only safe
+    approach is to accept them only if they match something that exists."""
+    try:
+        with connect_readonly(path) as conn:
+            if not _table_exists(conn, table):
+                return {"columns": [], "rows": [], "total": 0,
+                        "error": f"no such table: {table}"}
+
+            cols = [r["name"] for r in conn.execute(f'PRAGMA table_info("{table}")')]
+            where, args = "", []
+            if search:
+                # match the search across every column, as text
+                where = " WHERE " + " OR ".join(
+                    f'CAST("{c}" AS TEXT) LIKE ?' for c in cols)
+                args = [f"%{search}%"] * len(cols)
+
+            total = conn.execute(
+                f'SELECT COUNT(*) FROM "{table}"{where}', args).fetchone()[0]
+
+            order = ""
+            if sort_by in cols:                      # ignored unless it's a real column
+                order = f' ORDER BY "{sort_by}" ' + ("DESC" if descending else "ASC")
+
+            limit = max(1, min(int(limit), MAX_BROWSE_ROWS))
+            rows = [dict(r) for r in conn.execute(
+                f'SELECT * FROM "{table}"{where}{order} LIMIT ? OFFSET ?',
+                (*args, limit, max(0, int(offset))))]
+            return {"columns": cols, "rows": rows, "total": total, "error": None}
+    except sqlite3.Error as e:
+        return {"columns": [], "rows": [], "total": 0, "error": str(e)}
+
+
+def run_readonly_query(sql: str, limit: int = MAX_BROWSE_ROWS,
+                       path: str = DB_PATH) -> dict:
+    """Run an arbitrary query on a read-only connection.
+
+    Any write is rejected by SQLite itself ("attempt to write a readonly
+    database"), so this needs no keyword filtering to be safe. The row cap is
+    about not shipping 132k rows into the browser, not about security."""
+    sql = (sql or "").strip().rstrip(";")
+    if not sql:
+        return {"columns": [], "rows": [], "error": None, "truncated": False}
+    try:
+        with connect_readonly(path) as conn:
+            cur = conn.execute(sql)
+            if cur.description is None:      # e.g. a statement returning nothing
+                return {"columns": [], "rows": [], "error": None, "truncated": False}
+            cols = [d[0] for d in cur.description]
+            rows = [dict(r) for r in cur.fetchmany(limit + 1)]
+            truncated = len(rows) > limit
+            return {"columns": cols, "rows": rows[:limit],
+                    "error": None, "truncated": truncated}
+    # sqlite3.Warning (raised for "only one statement at a time") is NOT a
+    # subclass of sqlite3.Error, so catching Error alone let it escape as a
+    # 500. Any failure here is user-supplied SQL going wrong: report it in the
+    # UI, never crash the page.
+    except Exception as e:
+        return {"columns": [], "rows": [], "error": str(e), "truncated": False}
+
+
 def migrate_from_json(session_glob: str = None, path: str = DB_PATH) -> dict:
     """One-off import of the legacy per-session JSON files.
 
@@ -253,6 +586,12 @@ if __name__ == "__main__":
         print(f"[storage] rows inserted  : {s['rows_inserted']}  (dupes skipped)")
         if s["unreadable"]:
             print(f"[storage] unreadable     : {s['unreadable']}")
+        a = migrate_auth_from_json()
+        print(f"[storage] auth files     : {a['files']}")
+        print(f"[storage] auth inserted  : {a['rows_inserted']} of {a['rows_seen']} seen")
+        m = migrate_impactful_from_json()
+        print(f"[storage] impactful files: {m['files']} ({m['empty']} empty)")
+        print(f"[storage] impactful rows : {m['rows_inserted']} of {m['rows_seen']} seen")
     st = stats()
     print(f"[storage] db: {DB_PATH}")
     print(f"[storage] {st['rows']:,} rows across {st['sessions']:,} sessions")

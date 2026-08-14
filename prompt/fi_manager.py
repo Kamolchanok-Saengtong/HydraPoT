@@ -195,21 +195,38 @@ class FILogManager:
         llm_fn         = None,
         max_events     = 10,
         min_fi         = 2,
+        store          = "json",
+        instance       = "default",
     ):
+        """store: where impactful events are recorded.
+
+          "json"   — one file per session (the original behaviour). This is the
+                     DEFAULT on purpose: the NSC experiment harness builds its
+                     own FILogManager and must keep writing its own JSON, so
+                     production opting in explicitly is what keeps the two
+                     apart.
+          "sqlite" — the shared DB, used by the live honeypot (main.py).
+
+        Either way this is an audit log only. The H_i the model sees is built
+        from MemoryPruner's in-memory buffer, so the choice cannot change
+        model behaviour or experiment results."""
         self.impactful_path = impactful_path
+        self.store          = store
+        self.instance       = instance
         self.scorer         = FIScorer(llm_fn=llm_fn)
         self.pruner         = MemoryPruner(max_events, min_fi)
 
-        # main.py passes per-session paths like:
-        #   data/logs/impactful/20260503_142201.json
-        # ensure the parent directory exists.
-        parent = os.path.dirname(impactful_path)
-        if parent:
-            os.makedirs(parent, exist_ok=True)
+        if store == "json":
+            # main.py used to pass per-session paths like:
+            #   data/logs/impactful/20260503_142201.json
+            # ensure the parent directory exists.
+            parent = os.path.dirname(impactful_path)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
 
-        if not os.path.exists(impactful_path):
-            with open(impactful_path, "w") as f:
-                json.dump([], f)
+            if not os.path.exists(impactful_path):
+                with open(impactful_path, "w") as f:
+                    json.dump([], f)
 
     def process(self, command: str, output: str, agent: str, session_id: str) -> dict:
         fi, method = self.scorer.score(command)
@@ -287,6 +304,18 @@ class FILogManager:
 
     # ── log file helpers ──────────────────────────────────────────────────
     def _append_log(self, path: str, event: dict):
+        if self.store == "sqlite":
+            try:
+                import storage
+                storage.insert_impactful({**event, "instance": self.instance})
+            except Exception as e:
+                print(f"[FILogManager] SQLite write error: {e}")
+            return
+
+        # JSON mode (NSC / default). Kept exactly as it was: read the array,
+        # append, write it back. That is O(n^2) over a session — one session
+        # here rewrote ~118 MB across 844 events — which is precisely why
+        # production moved to "sqlite".
         try:
             with open(path, "r") as f:
                 data = json.load(f)
@@ -297,6 +326,12 @@ class FILogManager:
             print(f"[FILogManager] Log write error: {e}")
 
     def _count_log(self, path: str) -> int:
+        if self.store == "sqlite":
+            try:
+                import storage
+                return storage.count_impactful()
+            except Exception:
+                return 0
         try:
             with open(path, "r") as f:
                 return len(json.load(f))

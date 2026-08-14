@@ -18,7 +18,7 @@ enabled: false
 type: syslog
 
 connection:
-  host: "your-siem-host.example.com""
+  host: "your-siem-host.example.com"
   port: 514
   protocol: "udp"
   format: "cef"

@@ -30,3 +30,5 @@ dataset/
 eval_cowrie_results.json
 
 .claude/
+# MITRE ATT&CK STIX bundle (46MB, regenerate: see threat_intel/mitre_mapper.py)
+threat_intel/enterprise-attack.json

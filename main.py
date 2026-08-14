@@ -173,13 +173,17 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
 
     os.makedirs(config.logging.session_dir,   exist_ok=True)
     os.makedirs(config.logging.impactful_dir, exist_ok=True)
-    LOG_FILE       = f"{config.logging.session_dir}/{SESSION_ID}.json"
     impactful_file = f"{config.logging.impactful_dir}/{SESSION_ID}.json"
 
     fi_manager = FILogManager(
-        impactful_path=impactful_file,
+        impactful_path=impactful_file,   # unused under store="sqlite"
         max_events=sri_max_events,
         min_fi=config.logging.fi_threshold,
+        # Production records impactful events in the shared DB. NSC builds its
+        # own FILogManager and keeps the JSON default, so the experiment
+        # harness is unaffected by this.
+        store="sqlite",
+        instance=getattr(getattr(config, "honeypot", None), "instance_name", "default"),
     )
     if plugins:
         plugins.apply_fi_rules(fi_manager.scorer)
@@ -849,29 +853,26 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
         if _mitre:
             entry.update(_mitre)
 
-        # Primary store. One indexed INSERT, and it is what the dashboard reads
-        # — a command is visible there as soon as this returns.
+        # The only write on the hot path: one indexed INSERT, O(1) in session
+        # length, and the dashboard sees the command as soon as it returns.
+        #
+        # This used to also keep a .json file per session, rewritten in full on
+        # every command — read the whole array, append one record, dump it back.
+        # That is O(n^2) bytes over a session and it bought nothing the DB does
+        # not already do. The historical .json files are kept on disk as an
+        # archive (storage.migrate_from_json() imported them), but nothing
+        # writes to them any more.
         try:
             storage.insert_command(entry)
-        except Exception as e:
-            # A logging failure must never take down the session the attacker
-            # is in; the JSON write below still captures the command.
-            print(f"[storage] insert failed ({e}) — JSON copy still written")
-
-        # Secondary/archive copy. Kept deliberately: the JSON files are the
-        # fallback if anything is ever wrong with the DB, and they are what
-        # storage.migrate_from_json() rebuilds from. Costs a full rewrite of
-        # this session's file per command, but a session is ~100 commands.
-        existing = []
-        if os.path.exists(LOG_FILE):
+        except Exception:
+            # SQLite failures here are essentially always a transient writer
+            # lock (several sensors share one DB), so retry once before giving
+            # up. Never raise: a logging problem must not kill a live session.
             try:
-                with open(LOG_FILE) as f:
-                    existing = json.load(f)
-            except json.JSONDecodeError:
-                pass
-        existing.append(entry)
-        with open(LOG_FILE, "w") as f:
-            json.dump(existing, f, indent=2)
+                time.sleep(0.2)
+                storage.insert_command(entry)
+            except Exception as e:
+                print(f"[storage] LOST command for {SESSION_ID}: {e}")
 
     # ── shortcut: log + return ────────────────────────────────────────────
     def _finish(cmd, agent, output, fi_score, t_start, streamed=False):
