@@ -338,16 +338,7 @@ def load_auth_log() -> list:
     if _cache["auth"] is not None and (now - _cache["auth_ts"]) < TTL:
         return _cache["auth"]
 
-    data = []
-    for path in _discover_auth_logs():
-        try:
-            with open(path) as f:
-                raw = json.load(f)
-            if isinstance(raw, list):
-                data.extend(raw)
-        except Exception:
-            pass
-
+    data = storage.query_auth()
     _cache["auth"] = data
     _cache["auth_ts"] = now
     return data
@@ -436,12 +427,24 @@ def build_ioc_snapshot(scope="all", **scope_kwargs) -> dict:
 
 # ── Plotly chart chrome helper (consistent ink/amber theme) ───────────────────
 
+# Every dcc.Graph uses this. `responsive` is the important half: without it
+# Plotly measures the container ONCE at mount and bakes that pixel width into
+# the SVG. Collapsing the sidebar widens the content area via CSS, but the
+# chart keeps its old width — which is why bars looked lopsided (chart offset
+# inside a container that had grown around it). With responsive:True Plotly
+# watches the container and re-lays out on resize.
+GRAPH_CONFIG = {"displayModeBar": False, "responsive": True}
+
+
 def theme_layout(fig, height=None, legend=False):
     layout_kwargs = dict(
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         font=dict(family="JetBrains Mono, monospace", color=INK_3, size=12),
         margin=dict(t=10, b=10, l=10, r=10),
+        # let the figure take its width from the container instead of pinning
+        # whatever width happened to exist at first render
+        autosize=True,
     )
     if height:
         layout_kwargs["height"] = height
@@ -489,7 +492,13 @@ app.index_string = """
     * { box-sizing: border-box; }
     html, body {
       margin: 0;
-      overflow-x: hidden;
+      /* `clip`, NOT `hidden`. Both stop sideways scrolling, but `hidden` makes
+         overflow-y compute to `auto`, which turns body into a scroll
+         container — and then the sticky sidebar anchors to body (which scrolls
+         away with the page) instead of the viewport, so it never sticks.
+         `clip` contains the overflow without creating a scroll container, so
+         sticky keeps working. */
+      overflow-x: clip;
       width: 100%;
     }
     body {
@@ -504,12 +513,18 @@ app.index_string = """
 
     .app-shell {
       display:flex; min-height:100vh;
-      overflow-x: hidden;
       width: 100%;
       max-width: 100vw;
+      /* NO overflow here on purpose. `overflow-x: hidden` used to sit on this
+         rule, and per spec that makes overflow-y compute to `auto` — turning
+         .app-shell into a scroll container. position:sticky then resolves
+         against .app-shell instead of the viewport, so the sidebar would
+         scroll away exactly as before and the sticky would look broken for no
+         visible reason. Horizontal overflow is still contained: .content has
+         its own `overflow-x: hidden` + `min-width: 0`, which is what actually
+         fixed the sideways-scrolling page. */
     }
-    /* the nav sidebar is a normal flex child, so it scrolls WITH the page and
-       only ever collapses in/out — it must never be what widens the layout */
+    /* the nav sidebar must never be what widens the layout */
     .sidebar { flex-shrink: 0; }
 
     /* Sidebar */
@@ -520,15 +535,53 @@ app.index_string = """
   padding: 70px 20px 24px 20px;   /* was: 24px 20px — extra top padding clears the floating button */
   display:flex; flex-direction:column; gap:14px;
   transition: width 0.2s ease, padding 0.2s ease, opacity 0.15s ease;
-  overflow: hidden;
+
+  /* Stick to the viewport instead of scrolling away with the page. On a long
+     Summary page the nav used to disappear upward and leave a blank yellow
+     column behind it.
+       align-self:flex-start — REQUIRED. A flex child defaults to
+         align-self:stretch, which makes the sidebar as tall as the whole
+         scrolling page; sticky then has nothing to travel within and never
+         engages. This one line is what makes position:sticky actually work.
+       max-height/overflow-y — if the nav is ever taller than the viewport it
+         scrolls on its own rather than being clipped.
+       overflow-x stays hidden so the width collapse animation still clips. */
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  /* height, NOT max-height. align-self:flex-start is required for sticky to
+     engage, but it also stops the sidebar stretching to the container height —
+     so with max-height the column was only as tall as its own content and the
+     yellow panel + right border ended partway down the screen, leaving bare
+     page below it. A fixed 100vh keeps it a full-height column at every scroll
+     position (box-sizing is border-box globally, so padding is included). */
+  height: 100vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+
+  /* Keep the overflow behaviour, hide the scrollbar chrome. On a short window
+     the nav is taller than 100vh, so `overflow-y: auto` drew a second
+     scrollbar down the middle of the layout next to the page's own. The nav
+     still scrolls (wheel/trackpad/keyboard) — only the bar is hidden, which is
+     the usual treatment for a short nav column. */
+  scrollbar-width: none;        /* Firefox */
+  -ms-overflow-style: none;     /* old Edge/IE */
 }
+.sidebar::-webkit-scrollbar { width: 0; height: 0; }   /* Chrome/Safari */
 .sidebar.collapsed {
   width: 0;
   padding: 70px 0 24px 0;   /* keep top padding consistent on collapse */
   opacity: 0;
   pointer-events: none;
 }
-    .sidebar-logo { font-size:1.3rem; font-weight:800; display:flex; align-items:center; gap:8px; white-space:nowrap; }
+    .sidebar-logo { font-size:1.3rem; font-weight:800; display:flex; align-items:center; gap:10px; white-space:nowrap; }
+
+    /* The logo already carries its own drop shadow, so it needs no border or
+       box-shadow from us. flex-shrink:0 keeps it square while the sidebar
+       animates its width on collapse — without it the mark squashes. */
+    .brand-mark { width:30px; height:30px; flex-shrink:0; display:block; }
+    .brand-mark-lg { width:34px; height:34px; }
+    .page-title { display:flex; align-items:center; gap:11px; }
     .sidebar-caption { font-size:0.78rem; color:var(--ink-3); line-height:1.5; font-family:'JetBrains Mono',monospace; }
     .sidebar-divider { border-top: 1.5px solid var(--line-strong); margin: 6px 0; }
     .nav-pill {
@@ -761,13 +814,21 @@ TABLE_STYLE = dict(
 
 toggle_btn = html.Button("☰", id="sidebar-toggle-btn", className="sidebar-toggle", n_clicks=0)
 sidebar = html.Div(className="sidebar", id="sidebar", children=[
-    html.Div(className="sidebar-logo", children=["🍯 HydraPoT"]),
+    html.Div(className="sidebar-logo", children=[
+        # served from assets/ by Dash. The source PNG is 56% transparent
+        # margin, so assets/hydrapot_logo.png is the cropped+squared version —
+        # using the raw file would render the mark tiny and off-centre here.
+        html.Img(src=app.get_asset_url("hydrapot_logo.png"),
+                 className="brand-mark", alt="HydraPoT"),
+        html.Span("HydraPoT"),
+    ]),
     html.Div(className="sidebar-caption",
              children="An Intelligent Honeypot Framework Using Large Language Models (LLM) for Interactive Attack Analysis"),
     html.Div(className="sidebar-divider"),
     html.Button("Summary", id="nav-summary", className="nav-pill active", n_clicks=0),
     html.Button("Threat Intel", id="nav-intel", className="nav-pill", n_clicks=0),
     html.Button("MITRE ATT&CK", id="nav-mitre", className="nav-pill", n_clicks=0),
+    html.Button("Database", id="nav-db", className="nav-pill", n_clicks=0),
     html.Div(className="sidebar-divider"),
     html.Div(className="toggle-row", children=[
         "Auto-refresh",
@@ -803,6 +864,20 @@ app.clientside_callback(
     function(n_clicks, current) {
         if (!n_clicks) { return [false, "sidebar"]; }
         const collapsed = !current;
+
+        // The sidebar animates its width over 0.2s and .content is flex:1, so
+        // every chart's container keeps growing/shrinking for 200ms AFTER this
+        // callback returns. Plotly re-lays out on window resize, and toggling
+        // a CSS class never fires one — so the charts kept the width they were
+        // first drawn at and sat off-centre in their grown container.
+        // Fire during the animation so they track it, and once after it
+        // settles so the final width is exact.
+        [60, 140, 260].forEach(function (t) {
+            setTimeout(function () {
+                window.dispatchEvent(new Event("resize"));
+            }, t);
+        });
+
         return [collapsed, collapsed ? "sidebar collapsed" : "sidebar"];
     }
     """,
@@ -845,18 +920,24 @@ app.clientside_callback(
     Output("nav-summary", "className"),
     Output("nav-intel", "className"),
     Output("nav-mitre", "className"),
+    Output("nav-db", "className"),
     Input("nav-summary", "n_clicks"),
     Input("nav-intel", "n_clicks"),
     Input("nav-mitre", "n_clicks"),
+    Input("nav-db", "n_clicks"),
     prevent_initial_call=True,
 )
-def switch_page(n_summary, n_intel, n_mitre):
+def switch_page(n_summary, n_intel, n_mitre, n_db):
     triggered = ctx.triggered_id
+    off = "nav-pill"
+    on = "nav-pill active"
     if triggered == "nav-intel":
-        return "Threat Intel", "nav-pill", "nav-pill active", "nav-pill"
+        return "Threat Intel", off, on, off, off
     if triggered == "nav-mitre":
-        return "MITRE ATT&CK", "nav-pill", "nav-pill", "nav-pill active"
-    return "Summary", "nav-pill active", "nav-pill", "nav-pill"
+        return "MITRE ATT&CK", off, off, on, off
+    if triggered == "nav-db":
+        return "Database", off, off, off, on
+    return "Summary", on, off, off, off
 
 
 # ── GeoIP status badge ──────────────────────────────────────────────────────────
@@ -911,6 +992,12 @@ def render_router(page, sensor_filter):
         if ctx.triggered_id == "sensor-filter-store":
             raise PreventUpdate
         return _cached_page(("mitre",), build_mitre_page)
+    if page == "Database":
+        # Not cached: the whole point is to show what is in the DB *now*, and
+        # it is cheap anyway (one page of rows, not the full dataset).
+        if ctx.triggered_id in ("interval", "sensor-filter-store"):
+            raise PreventUpdate
+        return build_database_page()
     sf = sensor_filter or "all"
     # keyed by sensor: each sensor's Summary is a different page
     return _cached_page(("summary", sf), lambda: build_summary_page(sf))
@@ -1189,7 +1276,7 @@ def build_summary_page(sensor_filter="all"):
         ))
         theme_layout(fig_t, height=200)
         fig_t.update_layout(xaxis_title="@timestamp per 30 minutes")
-        time_chart = dcc.Graph(figure=fig_t, config={"displayModeBar": False})
+        time_chart = dcc.Graph(figure=fig_t, config=GRAPH_CONFIG)
     else:
         time_chart = html.Div("No timestamp data.", className="caption")
 
@@ -1247,7 +1334,7 @@ def build_summary_page(sensor_filter="all"):
                       showcoastlines=True, showcountries=True),
             coloraxis_showscale=False, margin=dict(t=0, b=0, l=0, r=0), height=320,
         )
-        map_chart = dcc.Graph(figure=fig_map, config={"displayModeBar": False})
+        map_chart = dcc.Graph(figure=fig_map, config=GRAPH_CONFIG)
 
         ip_table = geo_df.sort_values("count", ascending=False).head(10)
         ip_table = ip_table[["ip", "country", "city", "count"]].rename(
@@ -1259,7 +1346,7 @@ def build_summary_page(sensor_filter="all"):
                                   **TABLE_STYLE),
         ])
     else:
-        map_chart = dcc.Graph(figure=empty_geo_fig(), config={"displayModeBar": False})
+        map_chart = dcc.Graph(figure=empty_geo_fig(), config=GRAPH_CONFIG)
         geo_msg = "⚠️ geoip.mmdb not found — map unavailable" if _load_geo_reader() is None else "All connections from localhost — no geo data to plot"
         ip_table_component = html.Div(geo_msg, className="caption")
 
@@ -1312,7 +1399,11 @@ def build_summary_page(sensor_filter="all"):
         + [_sensor_card(s["instance"], s["instance"], s) for s in all_sensors]
     )) if all_sensors else html.Div("No sensors detected.", className="caption")
 
-    children = [html.H3("🍯 HydraPoT Dashboard")]
+    children = [html.H3([
+        html.Img(src=app.get_asset_url("hydrapot_logo.png"),
+                 className="brand-mark brand-mark-lg", alt=""),
+        "HydraPoT Dashboard",
+    ], className="page-title")]
     children.append(html.Div(id="live-feed-wrap", children=feed))
     children.append(metrics)
     children.append(html.Hr(className="divider"))
@@ -1427,7 +1518,7 @@ def _stage_card(name, tactics, color, cur, prev):
                          className="stage-tactics"),
                 html.Div([
                     dcc.Graph(figure=_donut(counts, total, [c for *_, c in SEV]),
-                              config={"displayModeBar": False}),
+                              config=GRAPH_CONFIG),
                     # ring segments explained in place, so the donut reads on
                     # its own without scanning down to the badges
                     html.Div(className="donut-key", children=[
@@ -1445,7 +1536,7 @@ def _stage_card(name, tactics, color, cur, prev):
                           html.Div(lbl, className="sev-lbl")], className="sev-badge")
                 for lbl, key, _, _, col in SEV
             ]),
-            dcc.Graph(figure=_trend(sub), config={"displayModeBar": False}),
+            dcc.Graph(figure=_trend(sub), config=GRAPH_CONFIG),
         ]),
     ])
 
@@ -1531,11 +1622,193 @@ def build_mitre_body(days):
         html.Div(className="stage-card tech-card", children=[
             html.Div("TOP 10 ATTACK TECHNIQUES", className="stage-head",
                      style={"background": "#5B7FA6"}),
-            html.Div(dcc.Graph(figure=fig_tech, config={"displayModeBar": False},
+            html.Div(dcc.Graph(figure=fig_tech, config=GRAPH_CONFIG,
                                style={"width": "100%"}),
                      className="stage-body"),
         ]),
     ])
+
+
+# ── Database browser ─────────────────────────────────────────────────────────
+#
+# Every read here goes through storage.connect_readonly(): mode=ro blocks
+# writes at the engine level and an authorizer blocks ATTACH, so nothing
+# entered in the SQL box can modify the database or reach another file. That
+# matters because `hp dashboard --host 0.0.0.0` is a documented way to run this.
+
+DB_PAGE_SIZE = 50
+
+
+def _db_grid(columns, rows, empty_msg="No rows."):
+    """One results grid, styled like the rest of the dashboard's tables."""
+    if not rows:
+        return html.Div(empty_msg, className="caption", style={"padding": "14px 2px"})
+    # Values are rendered as text: a response blob or a NULL would otherwise
+    # break the table's layout or silently render as blank.
+    safe = [{c: ("" if r.get(c) is None else str(r.get(c))[:400]) for c in columns}
+            for r in rows]
+    return dash_table.DataTable(
+        data=safe,
+        columns=[{"name": c, "id": c} for c in columns],
+        page_action="none",
+        style_cell_conditional=[{"if": {"column_id": c}, "maxWidth": "420px"}
+                                for c in columns],
+        **{**TABLE_STYLE,
+           "style_table": {"overflowX": "auto", "maxHeight": "60vh",
+                           "overflowY": "auto"}},
+    )
+
+
+def build_database_page():
+    tables = storage.list_tables()
+    if not tables:
+        return [html.H3("🗄 Database"),
+                html.Div("No database yet — run the honeypot first (`hp run`).",
+                         className="caption")]
+
+    default_table = tables[0]["name"]
+    chips = [
+        html.Button(f"{t['name']}  ({t['rows']:,})",
+                    id={"type": "db-table-btn", "table": t["name"]},
+                    className="nav-pill" + (" active" if t["name"] == default_table else ""),
+                    n_clicks=0,
+                    style={"width": "auto", "marginRight": "8px"})
+        for t in tables
+    ]
+
+    return [
+        html.H3("🗄 Database"),
+        html.Div(f"Read-only view of {os.path.basename(storage.DB_PATH)} — "
+                 f"browse tables or run a SELECT. Writes are rejected by SQLite.",
+                 className="caption"),
+
+        html.Div(chips, style={"display": "flex", "flexWrap": "wrap",
+                               "gap": "6px", "margin": "16px 0 8px"}),
+        dcc.Store(id="db-table-store", data=default_table),
+        dcc.Store(id="db-page-store", data=0),
+
+        html.Div(id="db-schema", className="caption",
+                 style={"margin": "6px 0 14px", "fontFamily": "JetBrains Mono, monospace"}),
+
+        html.Div(style={"display": "flex", "gap": "10px", "alignItems": "center",
+                        "flexWrap": "wrap", "marginBottom": "10px"}, children=[
+            dcc.Input(id="db-search", type="text", debounce=True,
+                      placeholder="search all columns…",
+                      style={"flex": "1", "minWidth": "220px", "padding": "8px 10px",
+                             "fontFamily": "JetBrains Mono, monospace",
+                             "border": f"2px solid {INK}", "borderRadius": "8px"}),
+            html.Button("‹ prev", id="db-prev", className="nav-pill",
+                        n_clicks=0, style={"width": "auto"}),
+            html.Div(id="db-page-label", className="caption",
+                     style={"minWidth": "150px", "textAlign": "center"}),
+            html.Button("next ›", id="db-next", className="nav-pill",
+                        n_clicks=0, style={"width": "auto"}),
+        ]),
+
+        html.Div(id="db-grid"),
+
+        html.Div(className="sidebar-divider", style={"margin": "22px 0 14px"}),
+        html.Div("SQL (read-only)", className="section-header"),
+        dcc.Textarea(id="db-sql", value="SELECT agent, COUNT(*) AS n\nFROM sessions\nGROUP BY agent\nORDER BY n DESC",
+                     style={"width": "100%", "height": "92px", "padding": "10px",
+                            "fontFamily": "JetBrains Mono, monospace", "fontSize": "12.5px",
+                            "border": f"2px solid {INK}", "borderRadius": "8px"}),
+        html.Div(style={"display": "flex", "gap": "10px", "alignItems": "center",
+                        "margin": "10px 0"}, children=[
+            html.Button("▶ Run", id="db-run", className="nav-pill",
+                        n_clicks=0, style={"width": "auto"}),
+            html.Div(id="db-sql-status", className="caption"),
+        ]),
+        html.Div(id="db-sql-result"),
+    ]
+
+
+@app.callback(
+    Output("db-table-store", "data"),
+    Output("db-page-store", "data"),
+    Output({"type": "db-table-btn", "table": ALL}, "className"),
+    Input({"type": "db-table-btn", "table": ALL}, "n_clicks"),
+    State({"type": "db-table-btn", "table": ALL}, "id"),
+    prevent_initial_call=True,
+)
+def _db_pick_table(_clicks, ids):
+    picked = (ctx.triggered_id or {}).get("table")
+    if not picked:
+        raise PreventUpdate
+    # switching table resets to page 0 — otherwise you land on page 40 of a
+    # table that only has 3 rows and see an empty grid
+    return picked, 0, ["nav-pill active" if i["table"] == picked else "nav-pill"
+                       for i in ids]
+
+
+@app.callback(
+    Output("db-page-store", "data", allow_duplicate=True),
+    Input("db-prev", "n_clicks"),
+    Input("db-next", "n_clicks"),
+    Input("db-search", "value"),
+    State("db-page-store", "data"),
+    State("db-table-store", "data"),
+    prevent_initial_call=True,
+)
+def _db_paginate(_p, _n, _search, page, table):
+    trig = ctx.triggered_id
+    if trig == "db-search":
+        return 0                      # a new search starts at the first page
+    page = int(page or 0)
+    if trig == "db-prev":
+        return max(0, page - 1)
+    total = storage.browse_table(table, limit=1)["total"]
+    last = max(0, (total - 1) // DB_PAGE_SIZE)
+    return min(last, page + 1)
+
+
+@app.callback(
+    Output("db-grid", "children"),
+    Output("db-schema", "children"),
+    Output("db-page-label", "children"),
+    Input("db-table-store", "data"),
+    Input("db-page-store", "data"),
+    Input("db-search", "value"),
+)
+def _db_render(table, page, search):
+    if not table:
+        raise PreventUpdate
+    page = int(page or 0)
+    res = storage.browse_table(table, limit=DB_PAGE_SIZE,
+                              offset=page * DB_PAGE_SIZE, search=search or None)
+    if res["error"]:
+        return (html.Div(f"⚠ {res['error']}", className="caption"), "", "")
+
+    schema = storage.table_schema(table)
+    schema_txt = "  ".join(
+        f"{c['name']}:{c['type']}" + ("*" if c["pk"] else "") for c in schema)
+
+    total = res["total"]
+    pages = max(1, (total + DB_PAGE_SIZE - 1) // DB_PAGE_SIZE)
+    label = f"page {page + 1:,} / {pages:,}  ({total:,} rows)"
+
+    return (_db_grid(res["columns"], res["rows"],
+                     "No rows match that search." if search else "Table is empty."),
+            schema_txt, label)
+
+
+@app.callback(
+    Output("db-sql-result", "children"),
+    Output("db-sql-status", "children"),
+    Input("db-run", "n_clicks"),
+    State("db-sql", "value"),
+    prevent_initial_call=True,
+)
+def _db_run_sql(_n, sql):
+    res = storage.run_readonly_query(sql)
+    if res["error"]:
+        return html.Div(f"⚠ {res['error']}", className="caption",
+                        style={"color": "#C1443A"}), ""
+    n = len(res["rows"])
+    status = f"{n:,} row{'' if n == 1 else 's'}"
+    if res["truncated"]:
+        status += f" (capped at {storage.MAX_BROWSE_ROWS:,})"
+    return _db_grid(res["columns"], res["rows"], "Query returned no rows."), status
 
 
 def build_mitre_page():
@@ -1642,12 +1915,12 @@ def build_auth_intelligence(df, auth_entries):
 
     return html.Div(className="grid-4", children=[
         html.Div([html.Div("Top Passwords", style={"fontWeight": "700", "marginBottom": "8px"}),
-                  dcc.Graph(figure=fig_pw, config={"displayModeBar": False})]),
+                  dcc.Graph(figure=fig_pw, config=GRAPH_CONFIG)]),
         html.Div([html.Div("Top Usernames", style={"fontWeight": "700", "marginBottom": "8px"}),
-                  dcc.Graph(figure=fig_user, config={"displayModeBar": False})]),
+                  dcc.Graph(figure=fig_user, config=GRAPH_CONFIG)]),
         html.Div([html.Div("Auth Breakdown", style={"fontWeight": "700", "marginBottom": "8px"}), stat_box]),
         html.Div([html.Div("Agent Distribution", style={"fontWeight": "700", "marginBottom": "8px"}),
-                  dcc.Graph(figure=fig_donut, config={"displayModeBar": False})]),
+                  dcc.Graph(figure=fig_donut, config=GRAPH_CONFIG)]),
     ])
 
 
@@ -1776,7 +2049,7 @@ def _render_ioc_body(ioc_data):
         metrics,
         html.Hr(className="divider"),
         html.Div("Indicators by Type", className="section-header"),
-        dcc.Graph(figure=fig_type, config={"displayModeBar": False}),
+        dcc.Graph(figure=fig_type, config=GRAPH_CONFIG),
         html.Div("Top Indicators (by severity, then frequency)", className="section-header"),
         dcc.Store(id="ioc-cat-filter-store", data="all"),
         html.Div(cat_buttons, style={"display": "flex", "flexWrap": "wrap",
@@ -1956,7 +2229,7 @@ def build_session_detail(df, selected):
         ]))
 
     left = html.Div([html.Div("FI Distribution", className="section-header"),
-                      dcc.Graph(figure=fig_bar, config={"displayModeBar": False})])
+                      dcc.Graph(figure=fig_bar, config=GRAPH_CONFIG)])
     right = html.Div([html.Div("⚠️ Dangerous Commands", className="section-header"), *danger_cards])
 
     hist = sdf[["timestamp", "cmd", "agent", "fi_score", "latency_ms", "response"]].copy()
