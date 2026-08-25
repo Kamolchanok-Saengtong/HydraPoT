@@ -171,12 +171,10 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
     SESSION_ID = datetime.now().strftime("%Y%m%d_%H%M%S")
     print(f"[HydraPot] New session {SESSION_ID} from {src_ip}")
 
-    os.makedirs(config.logging.session_dir,   exist_ok=True)
-    os.makedirs(config.logging.impactful_dir, exist_ok=True)
-    impactful_file = f"{config.logging.impactful_dir}/{SESSION_ID}.json"
-
+    # No impactful_dir/session_dir setup any more: both logs go to SQLite, so
+    # creating those directories only recreated empty folders after every
+    # cleanup. NSC still writes its own JSON, but to its own paths.
     fi_manager = FILogManager(
-        impactful_path=impactful_file,   # unused under store="sqlite"
         max_events=sri_max_events,
         min_fi=config.logging.fi_threshold,
         # Production records impactful events in the shared DB. NSC builds its
