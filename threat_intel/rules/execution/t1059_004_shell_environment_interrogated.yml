@@ -1,0 +1,51 @@
+id: 4a7c9e35-b862-41d0-97f3-6e05d8b1fa27
+title: Shell environment interrogated or reconfigured
+status: stable
+description: >-
+  The session asks which shell it is in, what shells exist, or changes a
+  login shell. This is the orientation step that precedes shell abuse, and
+  MITRE files it under T1059.004 rather than a discovery technique because
+  the subject is the shell itself.
+
+  Derived from three Atomic Red Team T1059.004 atomics: "What shell is
+  running" (`echo $0`, `printenv SHELL`, `env | grep SHELL`), "What shells
+  are available" (`cat /etc/shells`), and "Change login shell" (`chsh -s`).
+
+  Confidence is deliberately low and priority deliberately late. Each of
+  these is a single benign-looking command that a legitimate user also runs,
+  and none of them executes anything. The value is as a co-tag: a session
+  that interrogates its shell and then spawns one reads very differently from
+  one that only does the latter. Do not treat a lone hit here as an alert.
+
+  Expected to co-fire with T1083 on `cat /etc/shells`, which is also a file
+  read — both tags are correct.
+references:
+  - https://attack.mitre.org/techniques/T1059/004
+  - https://github.com/redcanaryco/atomic-red-team/blob/master/atomics/T1059.004/T1059.004.md
+author: HydraPoT
+date: 2026-08-25
+technique: T1059.004
+technique_name: 'Unix Shell'
+tactic: 'Execution'
+priority: 85
+confidence: low
+logsource:
+  product: cowrie
+  category: command
+detection:
+  selection_which_shell:
+    command|re:
+      - '\becho\s+["'']?\$(?:0|SHELL)\b'
+      - '\bprintenv\s+SHELL\b'
+      - '\benv\b[^|;]*\|\s*grep\b[^|;]*SHELL'
+  selection_available_shells:
+    command|re:
+      - '\bcat\s+/etc/shells\b'
+  selection_change_shell:
+    command|re:
+      - '\bchsh\b[^|;]*\s-s\b'
+      - '\busermod\b[^|;]*\s-s\s+\S*sh\b'
+  condition: 1 of selection*
+tags:
+  - attack.execution
+  - attack.t1059.004

@@ -1,0 +1,72 @@
+id: 01864e7f-b043-4515-a293-1bc49b51b53b
+title: Service stopped or process killed
+status: stable
+description: >-
+  A running service is stopped, or a signal is delivered to a named process to
+  bring it down.
+
+  Rewritten to cover the mechanism family rather than one spelling. The
+  previous selection required a literal `-9`, so it caught only SIGKILL — it
+  missed `killall -SIGTERM cron`, `kill -SIGTERM $(pgrep cron)` and
+  `pkill -SIGTERM ^cron$`, which are three of the five Atomic Red Team T1489
+  Linux atomics and the ordinary way an intruder stops a daemon. The signal is
+  now irrelevant to matching: what identifies the technique is a
+  signal-delivery utility aimed at a process, by name, by PID, or by a
+  command substitution that resolves to one.
+
+  `killall` and `pkill` take process *names*, so any invocation is targeting a
+  service and matches on its own. Bare `kill` is different — it also appears in
+  routine job control — so it matches only when the target is a PID or a
+  command substitution such as `$(pgrep …)`.
+
+  SysRq: the 'e' and 'i' triggers broadcast SIGTERM/SIGKILL to every process
+  and belong here. The 'b', 'c', 'o' and 's' triggers reboot, crash, power off
+  or sync the host and are handled by t1685 instead — same file, different
+  letter, different technique.
+
+  Security and logging daemons are filtered out: stopping those is
+  T1685 Disable or Modify Tools, and tagging both would double-count one act.
+  The filter list mirrors the product list in
+  t1685_security_tooling_disabled.yml.
+
+  Confidence stays low — killing a process is routine administration at least
+  as often as it is impact.
+references:
+  - https://attack.mitre.org/techniques/T1489
+  - https://github.com/redcanaryco/atomic-red-team/blob/master/atomics/T1489/T1489.md
+author: HydraPoT
+date: 2026-08-25
+technique: T1489
+technique_name: 'Service Stop'
+tactic: 'Impact'
+priority: 70
+confidence: low
+logsource:
+  product: cowrie
+  category: command
+detection:
+  # Name-targeted signal utilities: any invocation is aimed at a process.
+  selection_by_name:
+    segment|re:
+      - '^\s*(?:sudo\s+)?(?:killall|pkill)\b\s+\S'
+  # Bare kill, only when aimed at a PID or a substitution resolving to one.
+  selection_by_pid:
+    segment|re:
+      - '^\s*(?:sudo\s+)?kill\b\s+(?:-\S+\s+)*(?:\$\(|`|\d)'
+  # Service manager stop/kill.
+  selection_service:
+    segment|re:
+      - '^\s*(?:sudo\s+)?systemctl\s+(?:--\S+\s+)*(?:stop|kill)\s+\S'
+      - '^\s*(?:sudo\s+)?service\s+\S+\s+(?:stop|onestop|forcestop)\b'
+      - '^\s*/etc/init\.d/\S+\s+stop\b'
+  # Magic SysRq broadcast signals: 'e' = SIGTERM all, 'i' = SIGKILL all.
+  selection_sysrq_signal:
+    command|re:
+      - '\becho\s+["'']?[ei]["'']?\s*>\s*/proc/sysrq-trigger'
+  filter_security_tooling:
+    command|re:
+      - '\b(?:apparmor|auditd|audispd|selinux|falcon-sensor|falcon|cbdaemon|cbagent|carbonblack|falco|systemd-journald|journald|rsyslog|syslog-ng|syslogd|syslog|fail2ban|ossec|wazuh-agent|wazuh|clamav-daemon|clamd|clamav|snort|suricata|osqueryd|osquery|amazon-ssm-agent|mdatp|sentinelone|auditbeat|filebeat)\b'
+  condition: 1 of selection* and not filter_security_tooling
+tags:
+  - attack.impact
+  - attack.t1489

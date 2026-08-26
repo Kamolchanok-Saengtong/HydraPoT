@@ -1,0 +1,23 @@
+id: a9a34abf-7d54-4969-9245-0639819d62dc
+title: Outbound SSH/SCP/SFTP
+status: stable
+references:
+  - https://attack.mitre.org/techniques/T1021/004
+author: HydraPoT
+date: 2026-08-25
+technique: T1021.004
+technique_name: 'SSH'
+tactic: 'Lateral Movement'
+priority: 30
+confidence: medium
+logsource:
+  product: cowrie
+  category: command
+detection:
+  selection:
+    segment|re:
+      - '^\s*(?:ssh|scp|sftp)\s+\S'
+  condition: selection
+tags:
+  - attack.lateral_movement
+  - attack.t1021.004

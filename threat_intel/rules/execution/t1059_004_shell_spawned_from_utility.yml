@@ -1,0 +1,70 @@
+id: b3f81c47-52a9-4e6d-8f10-9c7ab2e54d6f
+title: Interactive shell spawned from another utility
+status: stable
+description: >-
+  A shell is obtained by making some other program launch it — the GTFOBins
+  escape pattern. This is how an attacker breaks out of a restricted binary,
+  a sudo-allowed command, or a limited shell, and it is the single most
+  demo-relevant shape in T1059.004 because none of it looks like running a
+  script.
+
+  Derived from four Atomic Red Team T1059.004 atomics that had no coverage at
+  all: "Shell Creation using awk command" (`awk 'BEGIN {system("/bin/sh &")}'`),
+  "Creating shell using cpan command", "Shell Creation using busybox command",
+  and "emacs spawning an interactive system shell". The remaining escape
+  vectors here (find -exec, vi/vim :!, python pty.spawn, perl exec, nmap
+  --interactive) are the same mechanism and are included because a honeypot
+  sees them from the same tooling, not because ART tests them.
+
+  No SigmaHQ rule informed this one. SigmaHQ ships several per-binary shell
+  spawn rules (awk, find, git, rsync, capsh and others as separate files);
+  they are matched on process_creation parent/child Image fields, which a
+  Cowrie command string does not carry, so the parent-child relationship they
+  key on is not observable here. This rule instead matches the escape syntax
+  itself in the command text.
+references:
+  - https://attack.mitre.org/techniques/T1059/004
+  - https://github.com/redcanaryco/atomic-red-team/blob/master/atomics/T1059.004/T1059.004.md
+  - https://gtfobins.github.io/
+author: HydraPoT
+date: 2026-08-25
+technique: T1059.004
+technique_name: 'Unix Shell'
+tactic: 'Execution'
+priority: 15
+confidence: high
+logsource:
+  product: cowrie
+  category: command
+detection:
+  selection_awk:
+    command|re:
+      - '\b(?:g|m)?awk\b[^|;]*\bsystem\s*\('
+      - '\b(?:g|m)?awk\b[^|;]*BEGIN\s*\{[^}]*\b(?:system|print\s*\|)'
+  selection_interpreter_exec:
+    command|re:
+      - '\bperl\b[^|;]*\bexec\s*[\("''][^"'']*/(?:bin|usr)\S*sh'
+      - '\bpython3?\b[^|;]*\bpty\s*\.\s*spawn\b'
+      - '\bpython3?\b[^|;]*\bos\s*\.\s*system\s*\([^)]*sh'
+      - '\bruby\b[^|;]*\bexec\s*[\("''][^"'']*sh'
+  selection_pager_editor:
+    command|re:
+      - '\bemacs\b[^|;]*--eval[^|;]*\b(?:term|shell|call-process)\b'
+      - '\bvim?\b[^|;]*[:!]\s*!\s*(?:\S*/)?(?:ba)?sh\b'
+      - '\b(?:less|more|man)\b[^|;]*!\s*(?:\S*/)?(?:ba)?sh\b'
+  selection_cpan_pipe:
+    command|re:
+      - '\|\s*(?:\S+=\S+\s+)*cpan\b'
+      - '\|\s*(?:\S+=\S+\s+)*(?:gdb|ftp|nmap)\b'
+  selection_busybox_shell:
+    command|re:
+      - '\bbusybox\s+(?:ba|a)?sh\b'
+  selection_exec_flag:
+    command|re:
+      - '\bfind\b[^|;]*-exec\s+(?:\S*/)?(?:ba)?sh\b'
+      - '\bnmap\b[^|;]*--interactive\b'
+      - '\b(?:nice|timeout|flock|env|xargs)\b[^|;]*\s(?:\S*/)?(?:ba)?sh\s+-\w*[ci]\b'
+  condition: 1 of selection*
+tags:
+  - attack.execution
+  - attack.t1059.004

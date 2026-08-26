@@ -1,0 +1,23 @@
+id: 516a6519-2513-4b7f-a272-c9dd5b775c7c
+title: Network connections enumerated
+status: stable
+references:
+  - https://attack.mitre.org/techniques/T1049
+author: HydraPoT
+date: 2026-08-25
+technique: T1049
+technique_name: 'System Network Connections Discovery'
+tactic: 'Discovery'
+priority: 50
+confidence: high
+logsource:
+  product: cowrie
+  category: command
+detection:
+  selection:
+    segment|re:
+      - '^\s*(?:netstat|ss|lsof)\b'
+  condition: selection
+tags:
+  - attack.discovery
+  - attack.t1049

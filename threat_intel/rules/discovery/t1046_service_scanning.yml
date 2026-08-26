@@ -1,0 +1,25 @@
+id: 9030c740-f597-4f40-a8ad-1bf74a945532
+title: Network service scanning
+status: stable
+references:
+  - https://attack.mitre.org/techniques/T1046
+author: HydraPoT
+date: 2026-08-25
+technique: T1046
+technique_name: 'Network Service Discovery'
+tactic: 'Discovery'
+priority: 20
+confidence: high
+logsource:
+  product: cowrie
+  category: command
+detection:
+  selection:
+    segment|re:
+      - '^\s*(?:nmap|masscan|zmap|unicornscan)\b'
+      - '\bfor\s+port\s+in\b[^;]*(?:\.\.|\bseq\b)'
+      - '\bfor\b[^;]*\bin\b[^;]*\{\d+\.\.\d+\}[^;]*/dev/tcp/'
+  condition: selection
+tags:
+  - attack.discovery
+  - attack.t1046

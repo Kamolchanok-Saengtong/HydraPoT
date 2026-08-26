@@ -1,0 +1,26 @@
+id: 4057edb7-6fbe-46a6-8eff-9a12d4cef947
+title: Cron persistence established
+status: stable
+references:
+  - https://attack.mitre.org/techniques/T1053/003
+author: HydraPoT
+date: 2026-08-25
+technique: T1053.003
+technique_name: 'Cron'
+tactic: 'Execution'
+priority: 20
+confidence: high
+logsource:
+  product: cowrie
+  category: command
+detection:
+  selection:
+    command|re:
+      - '\bcrontab\b'
+      - '/etc/cron'
+      - '/var/spool/cron'
+      - '\bat\s+\d'
+  condition: selection
+tags:
+  - attack.execution
+  - attack.t1053.003

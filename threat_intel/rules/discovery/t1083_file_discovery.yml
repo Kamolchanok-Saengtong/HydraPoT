@@ -1,0 +1,23 @@
+id: 22ee1b13-7297-4a60-ae03-426bed55e10d
+title: File and directory discovery
+status: stable
+references:
+  - https://attack.mitre.org/techniques/T1083
+author: HydraPoT
+date: 2026-08-25
+technique: T1083
+technique_name: 'File and Directory Discovery'
+tactic: 'Discovery'
+priority: 65
+confidence: high
+logsource:
+  product: cowrie
+  category: command
+detection:
+  selection:
+    segment|re:
+      - '^\s*(?:ls|dir|vdir|find|locate|tree|du|stat)\b'
+  condition: selection
+tags:
+  - attack.discovery
+  - attack.t1083

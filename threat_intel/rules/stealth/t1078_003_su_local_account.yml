@@ -1,0 +1,23 @@
+id: 86de4c61-d288-433a-a664-6e3514df59a7
+title: Switch to another local account
+status: stable
+references:
+  - https://attack.mitre.org/techniques/T1078/003
+author: HydraPoT
+date: 2026-08-25
+technique: T1078.003
+technique_name: 'Local Accounts'
+tactic: 'Stealth'
+priority: 40
+confidence: medium
+logsource:
+  product: cowrie
+  category: command
+detection:
+  selection:
+    segment|re:
+      - '^\s*su\s+'
+  condition: selection
+tags:
+  - attack.stealth
+  - attack.t1078.003

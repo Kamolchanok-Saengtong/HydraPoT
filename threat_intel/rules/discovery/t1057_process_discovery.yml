@@ -1,0 +1,23 @@
+id: 240bb559-6548-4499-a509-181b6a9c8fd1
+title: Process discovery
+status: stable
+references:
+  - https://attack.mitre.org/techniques/T1057
+author: HydraPoT
+date: 2026-08-25
+technique: T1057
+technique_name: 'Process Discovery'
+tactic: 'Discovery'
+priority: 50
+confidence: high
+logsource:
+  product: cowrie
+  category: command
+detection:
+  selection:
+    segment|re:
+      - '^\s*(?:ps|top|htop|pgrep|pidof)\b'
+  condition: selection
+tags:
+  - attack.discovery
+  - attack.t1057

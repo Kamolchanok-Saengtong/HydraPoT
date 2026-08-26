@@ -69,95 +69,152 @@ except Exception:
     _POWER_TARIFF = None
 
 
-def estimate_costs(df):
-    """Live cost/energy estimates scoped to the CURRENT CALENDAR MONTH — so a
-    SOC team reads "what is this honeypot costing this month" at a glance.
-    Month-to-date is the actual accrued figure; on_device_thb_projected
-    extrapolates to a full month at the current rate. Monthly scoping also
-    matches how MEA's progressive tariff is actually billed (per month of kWh).
-    Safe on empty/missing columns."""
-    import calendar
-    out = {"cloud_cost_usd": 0.0, "on_device_kwh": 0.0, "on_device_thb": 0.0,
-           "on_device_thb_projected": 0.0, "projection_ready": False,
-           "n_cloud": 0, "n_on_device": 0,
-           "month_label": datetime.now().strftime("%b %Y")}
+def estimate_savings(df):
+    """What HydraPoT's routing saved, over the WHOLE visible dataset.
+
+    Scoped to the WHOLE visible dataset on purpose. (An earlier month-scoped
+    cost helper lived here; it was removed once the KPI strip stopped using it,
+    because month-to-date reads as zero on historical data.) This is the
+    research claim: every command answered by a cheaper agent is one an
+    all-cloud honeypot would have paid for.
+
+      cloud saved  — commands NOT sent to cloud x the same per-command rate
+                     CLOUD_COST_PER_CLOUD_CMD, i.e. vs an all-cloud baseline.
+      energy saved — commands answered by Cowrie (deterministic, no GPU) x the
+                     measured average energy of an on-device command, i.e. vs
+                     an all-LLM baseline.
+
+    Both are estimates against an explicit baseline, not measured counterfactuals.
+    """
+    out = {"cloud_saved_usd": 0.0, "cloud_avoided_pct": 0.0,
+           "energy_saved_thb": 0.0, "energy_avoided_pct": 0.0,
+           "n_total": 0, "n_cloud": 0, "n_switches": 0}
     if df is None or df.empty or "agent" not in df.columns:
         return out
 
-    # scope to the current calendar month via timestamp (fall back to all rows
-    # if there's no usable timestamp column, so the cards never go blank)
-    mdf = df
-    if "timestamp" in df.columns and df["timestamp"].notna().any():
-        now = datetime.now()
-        ts = df["timestamp"]
-        mdf = df[(ts.dt.year == now.year) & (ts.dt.month == now.month)]
+    n_total = len(df)
+    n_cloud = int((df["agent"] == "cloud").sum())
+    n_od    = int((df["agent"] == "on_device").sum())
+    n_cow   = int((df["agent"] == "cowrie").sum())
+    out.update(n_total=n_total, n_cloud=n_cloud)
 
-    cloud_mask = mdf["agent"] == "cloud"
-    od_mask    = mdf["agent"] == "on_device"
-    out["n_cloud"]     = int(cloud_mask.sum())
-    out["n_on_device"] = int(od_mask.sum())
-    out["cloud_cost_usd"] = out["n_cloud"] * CLOUD_COST_PER_CLOUD_CMD
+    out["cloud_saved_usd"]   = (n_total - n_cloud) * CLOUD_COST_PER_CLOUD_CMD
+    out["cloud_avoided_pct"] = (n_total - n_cloud) / n_total * 100.0
 
-    if "latency_ms" in mdf.columns:
-        # clamp per-command latency to exclude corrupt outlier records
-        od_latency_ms = float(
-            mdf.loc[od_mask, "latency_ms"].fillna(0).clip(upper=LATENCY_CAP_MS).sum()
-        )
-        hours = od_latency_ms / 1000.0 / 3600.0
-        out["on_device_kwh"] = GPU_AVG_WATT * hours / 1000.0
+    # average energy of one on-device command, measured from real latency
+    if n_od and "latency_ms" in df.columns:
+        od_ms = float(df.loc[df["agent"] == "on_device", "latency_ms"]
+                      .fillna(0).clip(upper=LATENCY_CAP_MS).sum())
+        kwh_per_cmd = (GPU_AVG_WATT * (od_ms / 1000.0 / 3600.0) / 1000.0) / n_od
         if _kwh_to_thb and _POWER_TARIFF:
-            out["on_device_thb"] = _kwh_to_thb(out["on_device_kwh"], _POWER_TARIFF)["total_thb"]
+            out["energy_saved_thb"] = _kwh_to_thb(kwh_per_cmd * n_cow, _POWER_TARIFF)["total_thb"]
+    if n_cow + n_od:
+        out["energy_avoided_pct"] = n_cow / (n_cow + n_od) * 100.0
 
-        # project month-to-date -> full month at the current daily rate.
-        # Require at least ~1 full day of the month elapsed before projecting:
-        # very early in a month the elapsed fraction is near-zero and dividing
-        # by it produces a wildly inflated (meaningless) projection. Until then
-        # we simply don't project (the card shows the projection as n/a).
-        now = datetime.now()
-        days_in_month = calendar.monthrange(now.year, now.month)[1]
-        elapsed_days = (now.day - 1) + now.hour / 24.0
-        if elapsed_days >= 1.0 and _kwh_to_thb and _POWER_TARIFF:
-            proj_kwh = out["on_device_kwh"] * (days_in_month / elapsed_days)
-            out["on_device_thb_projected"] = _kwh_to_thb(proj_kwh, _POWER_TARIFF)["total_thb"]
-            out["projection_ready"] = True
-        else:
-            out["projection_ready"] = False
+    # how often routing actually changed agent mid-session — the multi-agent
+    # behaviour in one number
+    if {"session_id", "seq"} <= set(df.columns):
+        # one pass over the sorted arrays: a switch is "agent changed AND we are
+        # still inside the same session". groupby().apply() ran a Python lambda
+        # per session for the same answer.
+        srt = df.sort_values(["session_id", "seq"])
+        ag, sid = srt["agent"].to_numpy(), srt["session_id"].to_numpy()
+        out["n_switches"] = int(((ag[1:] != ag[:-1]) & (sid[1:] == sid[:-1])).sum())
     return out
 
-FI_LABEL = {0:"Read/Display", 1:"Create/Install", 2:"Modify/Navigate",
-            3:"Service/Elevate", 4:"High Impact"}
-FI_COLOR = {0:"#6c757d", 1:"#0d6efd", 2:"#ffc107", 3:"#fd7e14", 4:"#dc3545"}
-AGENT_COLOR = {"cowrie":"#28a745","on_device":"#ffc107","cloud":"#dc3545","unknown":"#6c757d"}
-THREAT_LEVEL = {
-    0:("LOW","#28a745","🟢"), 1:("LOW","#28a745","🟢"),
-    2:("MEDIUM","#ffc107","🟡"), 3:("HIGH","#fd7e14","🟠"),
-    4:("CRITICAL","#dc3545","🔴"),
-}
 
-# ── HydraPoT design tokens (matches landing page) ──────────────────────────────
+_health_cache = {"v": None, "ts": 0}
 
-INK         = "#1A1410"
-INK_2       = "#3A2E20"
-INK_3       = "#6B5A45"
-PAPER       = "#FFFCF2"
-Y_50        = "#FFFBEB"
-Y_100       = "#FEF3C7"
-Y_200       = "#FDE68A"
-Y_300       = "#FCD34D"
-Y_400       = "#FBBF24"
-Y_500       = "#F59E0B"
-Y_700       = "#B45309"
-LINE        = "rgba(180, 83, 9, 0.18)"
-LINE_STRONG = "rgba(180, 83, 9, 0.35)"
 
-AMBER_SCALE = [Y_300, Y_500, Y_700]
-AGENT_COLOR_AMBER = {"cowrie": Y_500, "on_device": Y_300, "cloud": INK, "unknown": INK_3}
+def agent_health():
+    """Real component checks for the sidebar status panel.
 
-# ── GeoIP ─────────────────────────────────────────────────────────────────────
+    Every row is an actual probe, never a hardcoded "Online" — a status light
+    that is always green tells an operator nothing. Cheap enough to run behind
+    a short TTL: the only network call is one non-blocking TCP connect.
 
-_geo_reader = None
-_geo_reader_loaded = False
-_geo_cache: dict = {}
+    Returns [(name, ok, detail)]."""
+    now = time.time()
+    if _health_cache["v"] is not None and now - _health_cache["ts"] < 15:
+        return _health_cache["v"]
+
+    import socket
+    rows = []
+
+    try:
+        cfg = _load_config()
+    except Exception:
+        cfg = None
+
+    # Honeypot — is the SSH front door actually accepting connections? This is
+    # the row that answers "is HydraPoT running at all", so it comes first.
+    # Without it the panel could read all-green while nothing was listening.
+    try:
+        hp_host = cfg.honeypot.host
+        hp_port = int(cfg.honeypot.port)
+        with socket.socket() as s:
+            s.settimeout(0.35)
+            up = s.connect_ex((hp_host, hp_port)) == 0
+        rows.append(("Honeypot", up, f"{hp_host}:{hp_port}"))
+    except Exception:
+        rows.append(("Honeypot", False, "not listening"))
+
+    # Router — config parses and a routing table exists
+    try:
+        n = len(getattr(cfg.routing, "fi_routing", {}) or {})
+        rows.append(("Router", n > 0, f"{n} FI bands"))
+    except Exception:
+        rows.append(("Router", False, "config error"))
+
+    # Cowrie — is the backend actually accepting connections?
+    try:
+        host = cfg.agents.cowrie.host, cfg.agents.cowrie.port
+        with socket.socket() as s:
+            s.settimeout(0.35)
+            ok = s.connect_ex((host[0], int(host[1]))) == 0
+        rows.append(("Cowrie Agent", ok, f"{host[0]}:{host[1]}"))
+    except Exception:
+        rows.append(("Cowrie Agent", False, "unreachable"))
+
+    # Local LLM — enabled AND the weights are actually on disk
+    try:
+        od = cfg.agents.on_device
+        gguf = getattr(od, "gguf_file", "") or ""
+        found = bool(gguf) and any(
+            os.path.basename(p) == os.path.basename(gguf)
+            for p in glob.glob(os.path.expanduser("~/.cache/huggingface/**/*.gguf"), recursive=True)
+        )
+        rows.append(("Local LLM", bool(getattr(od, "enabled", False)) and found,
+                     os.path.basename(gguf) or "no model"))
+    except Exception:
+        rows.append(("Local LLM", False, "unavailable"))
+
+    # Cloud LLM — enabled AND the API key is present in the environment
+    try:
+        cl = cfg.agents.cloud
+        keyed = bool(os.environ.get(getattr(cl, "api_key_env", "") or "", ""))
+        rows.append(("Cloud LLM", bool(getattr(cl, "enabled", False)) and keyed,
+                     getattr(cl, "model", "") if keyed else "no API key"))
+    except Exception:
+        rows.append(("Cloud LLM", False, "unavailable"))
+
+    # SIEM — an export plugin is configured and switched on
+    try:
+        import yaml
+        ok, detail = False, "not configured"
+        for fp in glob.glob(os.path.join(_HERE, "plugins", "export", "*.yml")):
+            y = yaml.safe_load(open(fp)) or {}
+            if y.get("enabled"):
+                ok, detail = True, os.path.basename(fp).replace(".yml", "")
+                break
+            detail = "disabled"
+        rows.append(("SIEM Export", ok, detail))
+    except Exception:
+        rows.append(("SIEM Export", False, "unavailable"))
+
+    _health_cache.update(v=rows, ts=now)
+    return rows
+
 
 def _load_geo_reader():
     global _geo_reader, _geo_reader_loaded
@@ -265,20 +322,6 @@ def load_feed_rows(instance=None):
     _feed_cache[key] = (rows, now)
     return rows
 
-def _discover_session_dirs() -> list:
-    """Any directory matching data/logs/sessions* — one HydraPoT sensor
-    writes to each (config.yaml's logging.session_dir per sensor entry).
-    New sensors need zero dashboard changes, just a matching directory."""
-    base_dir  = os.path.dirname(SESSION_DIR) or "."
-    base_name = os.path.basename(SESSION_DIR)
-    return sorted(d for d in glob.glob(os.path.join(base_dir, base_name + "*"))
-                  if os.path.isdir(d))
-
-def _discover_auth_logs() -> list:
-    base_dir = os.path.dirname(AUTH_LOG) or "."
-    stem, ext = os.path.splitext(os.path.basename(AUTH_LOG))
-    return sorted(glob.glob(os.path.join(base_dir, stem + "*" + ext)))
-
 def load_raw_session_rows() -> list:
     """Raw dict rows (not the parsed load_all() DataFrame) — the shape
     threat_intel.ioc_extractor.build_iocs() expects: cmd/response/src_ip/
@@ -297,6 +340,29 @@ def load_raw_session_rows() -> list:
     _cache["raw_rows_ts"] = now
     return rows
 
+# The DB holds both real honeypot traffic and the NSC experiment runs, which
+# share the same tables. Experiment harnesses put a run label in src_ip
+# ("eval_sync_on", "partc_cloud_12580") where real traffic has an IP, so the
+# label prefix is what separates them. Presentation-only: the data is untouched
+# on disk, and NSC's own scripts read it exactly as before.
+EXPERIMENT_SRC_PREFIXES = (
+    "eval_", "parta_", "partb_", "partc_", "hrreplay_", "bench_",
+    "ml4net", "cyberlab",
+)
+
+
+def drop_experiment_rows(df: pd.DataFrame) -> pd.DataFrame:
+    """Hide NSC experiment traffic from the dashboard.
+
+    Without this the headline numbers are dominated by benchmark runs — 130,643
+    of 132,282 rows — so "Unique Attackers" counts experiment runs rather than
+    attackers."""
+    if df.empty or "src_ip" not in df.columns:
+        return df
+    # str.startswith takes a tuple — one pass instead of one per prefix
+    return df[~df["src_ip"].astype(str).str.startswith(EXPERIMENT_SRC_PREFIXES, na=False)]
+
+
 def load_all() -> pd.DataFrame:
     now = time.time()
     if _cache["all_df"] is not None and (now - _cache["all_ts"]) < TTL:
@@ -306,6 +372,7 @@ def load_all() -> pd.DataFrame:
     # and it never reads `response`. Skipping that column alone is ~460ms ->
     # ~145ms. Anything here that does need it should use storage.query_session().
     df = storage.query_all_df()
+    df = drop_experiment_rows(df)
     if df.empty:
         df = pd.DataFrame()
     else:
@@ -470,6 +537,49 @@ def empty_geo_fig():
 
 app = Dash(__name__, suppress_callback_exceptions=True)
 app.title = "HydraPoT"
+
+INK         = "#171512"   # primary text / borders
+INK_2       = "#3A342C"
+INK_3       = "#6F685C"   # muted text
+PAPER       = "#FFFCF2"   # page background — the original HydraPoT cream
+CARD        = "#FFFFFF"   # cards sit lighter than the page so panels lift off it
+Y_50        = "#FDF6E3"
+Y_100       = "#FBEFC9"
+Y_200       = "#F7E3A1"
+Y_300       = "#F6CF5C"
+Y_400       = "#F5B21B"   # primary HydraPoT accent
+Y_500       = "#E09B10"
+Y_700       = "#9A6B08"
+LINE        = "rgba(38, 35, 31, 0.14)"
+LINE_STRONG = "rgba(38, 35, 31, 0.28)"
+
+# Semantic colours — used ONLY for what they mean, never decoratively.
+ORANGE      = "#C45A0A"   # attack / activity volume
+CRITICAL    = "#D92D20"   # critical + high severity only
+SUCCESS     = "#159447"   # healthy / online / savings
+SIDEBAR_BG  = "#171512"   # dark charcoal rail
+SIDEBAR_FG  = "#CFC7B8"
+SIDEBAR_MUT = "#8A8175"
+TERMINAL_BG = "#171512"
+
+AMBER_SCALE = [Y_300, Y_500, Y_700]
+AGENT_COLOR_AMBER = {"cowrie": Y_500, "on_device": Y_300, "cloud": INK, "unknown": INK_3}
+
+# ── GeoIP ─────────────────────────────────────────────────────────────────────
+
+_geo_reader = None
+_geo_reader_loaded = False
+_geo_cache: dict = {}
+
+# Agent identity — one label and one colour per agent, shared by every panel.
+# These were previously inlined in both _hydrapot_intel() and _agent_donut(),
+# where the colour maps had silently diverged (cowrie grey in one, amber in
+# the other, side by side on the same screen).
+AGENT_LABEL = {"cowrie": "Cowrie (Traditional)",
+               "on_device": "On-device LLM",
+               "cloud": "Cloud LLM"}
+AGENT_COLOR = {"cowrie": Y_300, "on_device": Y_400, "cloud": ORANGE}
+
 
 app.index_string = """
 <!DOCTYPE html>
@@ -782,6 +892,240 @@ app.index_string = """
       border:2px solid var(--ink) !important; border-radius:10px !important;
       background: var(--paper) !important; font-family:'Inter',sans-serif !important;
     }
+    /* ════════════════════════════════════════════════════════════════════
+       SOC REDESIGN — appended so these rules win over the originals above.
+       Layout/appearance only; no data, callback or id is affected.
+       ════════════════════════════════════════════════════════════════════ */
+
+    /* ── dark sidebar rail ────────────────────────────────────────────── */
+    .sidebar {
+    width: 232px;
+    background: """ + SIDEBAR_BG + """;
+    border-right: 1px solid """ + SIDEBAR_BG + """;
+    padding: 22px 16px 18px 16px;
+    overflow-x: hidden;          /* keep — needed for the collapse animation */
+    transition: width 0.2s ease, padding 0.2s ease, opacity 0.15s ease;
+    }
+    .sidebar-logo { color: #fff; font-size: 1.18rem; }
+    .sidebar-caption { color: """ + SIDEBAR_MUT + """; font-size: 0.72rem; line-height: 1.55;
+                        font-family: 'Inter', sans-serif; }
+    .sidebar-divider { border-top: 1px solid rgba(255,255,255,0.10); margin: 4px 0; }
+
+    .nav-pill {
+      background: transparent; color: """ + SIDEBAR_FG + """;
+      border: none; border-radius: 8px;
+      padding: 9px 12px; font-size: 0.87rem; font-weight: 600;
+      text-align: left; width: 100%; cursor: pointer;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .nav-pill:hover { background: rgba(255,255,255,0.06); color: #fff; }
+    /* active = warm dark-brown wash + gold text + gold edge, per spec */
+    .nav-pill.active {
+      background: rgba(245,178,27,0.13); color: """ + Y_400 + """;
+      box-shadow: inset 2px 0 0 """ + Y_400 + """;
+    }
+
+    .sidebar .toggle-row { color: """ + SIDEBAR_MUT + """; font-size: 0.7rem;
+                            letter-spacing: 0.08em; text-transform: uppercase; }
+    .sidebar .source-cap { color: """ + SIDEBAR_MUT + """; font-size: 0.66rem; }
+    .refresh-btn { background: rgba(255,255,255,0.07); color: """ + SIDEBAR_FG + """;
+                    border: 1px solid rgba(255,255,255,0.12); border-radius: 8px;
+                    padding: 8px 10px; font-size: 0.78rem; cursor: pointer; }
+    .refresh-btn:hover { background: """ + Y_400 + """; color: """ + INK + """; }
+
+    /* agent health box */
+    .hp-status { border: 1px solid rgba(255,255,255,0.13); border-radius: 10px;
+                  padding: 11px 12px; margin-top: 4px; }
+    .hp-status-h { color: """ + Y_400 + """; font-size: 0.64rem; font-weight: 800;
+                    letter-spacing: 0.1em; margin-bottom: 8px; }
+    .hp-status-row { display:flex; align-items:center; justify-content:space-between;
+                      font-size: 0.75rem; color: """ + SIDEBAR_FG + """; padding: 3px 0; }
+    .hp-dot { width:7px; height:7px; border-radius:50%; display:inline-block; margin-right:7px; }
+    .hp-tally { text-align:center; border:1px solid rgba(255,255,255,0.13);
+                 border-radius:10px; padding:10px; margin-top:10px; }
+    .hp-tally-n { font-size:1.5rem; font-weight:800; color:""" + SUCCESS + """; }
+    .hp-tally-l { font-size:0.6rem; letter-spacing:0.1em; color:""" + SIDEBAR_MUT + """; }
+
+    /* ── page chrome ──────────────────────────────────────────────────── */
+    .content { padding: 20px 24px; max-width: none; }
+
+    /* The toggle is position:fixed, so it floats over whatever is beneath it.
+       It therefore has to move as the sidebar does, or it covers something:
+         sidebar open      -> park it at the sidebar's right edge, clear of the
+                              logo (the old 70px sidebar top-padding that used
+                              to clear it is gone in this layout)
+         sidebar collapsed -> back to the far left, and the content gains
+                              matching left padding so it can't sit on top of
+                              the page header.
+       Both states use the transition already on .sidebar-toggle. */
+    /* Horizontal filter chips (IOC categories, DB tables).
+       These used .nav-pill, which this redesign turned into a full-width flex
+       row for the vertical sidebar — so they stacked into a column. They need
+       their own class: a filter row is horizontal, and reusing the nav's class
+       means any future nav restyle silently breaks it again. */
+    .chip-row { display:flex; flex-wrap:wrap; gap:8px; margin: 4px 0 14px; }
+    .chip {
+      background: """ + CARD + """; color: """ + INK_2 + """;
+      border: 1.5px solid """ + LINE_STRONG + """; border-radius: 9px;
+      padding: 8px 15px; font-size: 0.84rem; font-weight: 700;
+      font-family: 'Inter', sans-serif; letter-spacing: 0.01em;
+      cursor: pointer; white-space: nowrap; width: auto;
+      display: inline-flex; align-items: center; gap: 7px; line-height: 1.1;
+    }
+    .chip:hover { background: """ + Y_100 + """; border-color: """ + INK + """; }
+    .chip.active {
+      background: """ + Y_400 + """; color: """ + INK + """;
+      border-color: """ + INK + """;
+    }
+    .chip .chip-n { font-family:'JetBrains Mono',monospace; font-size:0.75rem;
+                     font-weight:700; opacity:0.72; }
+
+    /* Action buttons on light pages (Generate Intelligence, Export STIX).
+       They previously borrowed .refresh-btn, which this redesign restyled for
+       the DARK sidebar — a 7%-white fill with light-grey text, i.e. all but
+       invisible on cream. Same class-sharing trap as .nav-pill.
+       Light fill at rest so they read as pressable, stronger on hover. */
+    .btn {
+      border-radius: 9px; padding: 9px 16px; cursor: pointer;
+      font-family: 'Inter', sans-serif; font-size: 0.84rem; font-weight: 700;
+      display: inline-flex; align-items: center; gap: 8px; width: auto;
+      border: 1.5px solid """ + INK + """; color: """ + INK + """;
+      transition: background 0.15s ease, box-shadow 0.15s ease, transform 0.05s ease;
+    }
+    .btn:active { transform: translateY(1px); }
+
+    /* primary — the main action on the page */
+    .btn-primary { background: """ + Y_200 + """; }
+    .btn-primary:hover { background: """ + Y_400 + """; box-shadow: 0 2px 0 """ + INK + """; }
+
+    /* secondary — available, but visibly not the headline action */
+    .btn-secondary { background: """ + CARD + """; border-color: """ + LINE_STRONG + """; }
+    .btn-secondary:hover { background: """ + Y_100 + """; border-color: """ + INK + """;
+                            box-shadow: 0 2px 0 """ + INK + """; }
+
+    /* schema crib sheet under the SQL box */
+    .sql-ref { background: """ + Y_50 + """; border: 1px solid """ + LINE + """;
+                border-radius: 9px; padding: 11px 13px; margin: 4px 0 14px; }
+    .sql-ref-row { display: grid; grid-template-columns: 92px 1fr; gap: 10px;
+                    align-items: baseline; padding: 3px 0; }
+    .sql-ref-tbl { font-family: 'JetBrains Mono', monospace; font-size: 0.74rem;
+                    font-weight: 800; color: """ + INK + """; }
+    .sql-ref-cols { font-family: 'JetBrains Mono', monospace; font-size: 0.7rem;
+                     color: """ + INK_3 + """; line-height: 1.6; word-break: break-word; }
+
+    .sidebar-toggle { left: 186px; }
+    .sidebar.collapsed ~ .sidebar-toggle { left: 16px; }
+    .sidebar.collapsed ~ .content { padding-left: 66px; }
+    /* Deliberately NOT re-declaring body's background here. The original rule
+       sets `background: var(--paper)` and then a pair of radial-gradients; a
+       later `background:` shorthand resets background-image, which silently
+       removed the warm amber glow. --paper already carries the colour. */
+
+    .hp-head { display:flex; align-items:center; justify-content:space-between;
+                gap:16px; margin-bottom:14px; }
+    .hp-range { display:flex; gap:4px; background:""" + CARD + """;
+                 border:1px solid """ + LINE_STRONG + """; border-radius:9px; padding:3px; }
+    .hp-range button { border:none; background:transparent; cursor:pointer;
+                        font-family:'JetBrains Mono',monospace; font-size:0.72rem;
+                        font-weight:700; color:""" + INK_3 + """; padding:5px 11px; border-radius:6px; }
+    .hp-range button.active { background:""" + Y_400 + """; color:""" + INK + """; }
+
+    /* ── panels ───────────────────────────────────────────────────────── */
+    .pcard { background:""" + CARD + """; border:1px solid """ + LINE_STRONG + """;
+              border-radius:12px; padding:14px 16px; min-width:0; }
+    .pcard-h { display:flex; align-items:center; justify-content:space-between;
+                gap:10px; margin-bottom:12px; }
+    .pcard-t { font-size:0.72rem; font-weight:800; letter-spacing:0.09em;
+                text-transform:uppercase; color:""" + INK + """;
+                display:flex; align-items:center; gap:7px; }
+    .pcard-t:before { content:""; width:8px; height:8px; border-radius:2px;
+                       background:""" + Y_400 + """; display:inline-block; }
+
+    /* rows — explicit minmax(0,…) so wide children can never push the page
+       sideways (a plain 1fr floors at min-content and overflows) */
+    .hp-row { display:grid; gap:14px; margin-bottom:14px; }
+    .hp-row-feed  { grid-template-columns: minmax(0,2.45fr) minmax(0,1fr); }
+    .hp-row-kpi   { grid-template-columns: repeat(4, minmax(0,1fr)) minmax(0,1.35fr); }
+    .hp-row-chart { grid-template-columns: minmax(0,1.55fr) minmax(0,1fr); }
+    .hp-row-bot   { grid-template-columns: minmax(0,1.25fr) minmax(0,1.1fr) minmax(0,0.9fr); }
+    @media (max-width: 1400px) {
+      .hp-row-kpi   { grid-template-columns: repeat(2, minmax(0,1fr)); }
+      .hp-row-feed, .hp-row-chart, .hp-row-bot { grid-template-columns: minmax(0,1fr); }
+    }
+
+    /* ── KPI cards ────────────────────────────────────────────────────── */
+    .kpi { background:""" + CARD + """; border:1px solid """ + LINE_STRONG + """;
+            border-radius:12px; padding:13px 15px; min-width:0; }
+    .kpi-top { display:flex; align-items:center; gap:9px; margin-bottom:9px; }
+    .kpi-ico { width:26px; height:26px; border-radius:7px; display:flex;
+                align-items:center; justify-content:center; font-size:0.82rem; flex-shrink:0; }
+    .kpi-l { font-size:0.63rem; font-weight:800; letter-spacing:0.08em;
+              text-transform:uppercase; color:""" + INK_3 + """; line-height:1.3; }
+    .kpi-v { font-size:1.85rem; font-weight:800; letter-spacing:-0.02em; color:""" + INK + """; }
+    .kpi-s { font-size:0.68rem; color:""" + INK_3 + """; margin-top:3px;
+              font-family:'JetBrains Mono',monospace; }
+    /* only the high-impact card carries the critical colour — everything else
+       stays neutral so severity actually reads as severity */
+    .kpi.kpi-crit { border-color: rgba(217,45,32,0.38); }
+    .kpi.kpi-crit .kpi-v { color:""" + CRITICAL + """; }
+    .kpi.kpi-crit .kpi-s { color:""" + CRITICAL + """; }
+
+    .kpi-split { display:grid; grid-template-columns:1fr 1fr; gap:9px; }
+    .kpi-mini { border:1px solid """ + LINE + """; border-radius:9px; padding:9px 10px; }
+    .kpi-mini.save { background:rgba(21,148,71,0.07); border-color:rgba(21,148,71,0.3); }
+    .kpi-mini.energy { background:rgba(245,178,27,0.10); border-color:rgba(245,178,27,0.38); }
+    .kpi-mini-l { font-size:0.56rem; font-weight:800; letter-spacing:0.07em;
+                   text-transform:uppercase; color:""" + INK_3 + """; line-height:1.35; }
+    .kpi-mini-v { font-size:1.18rem; font-weight:800; margin-top:3px; }
+
+    /* ── critical alert ───────────────────────────────────────────────── */
+    .alert-card { background:#FDF3F2; border:1px solid rgba(217,45,32,0.42);
+                   border-radius:12px; padding:14px 16px; min-width:0; }
+    .alert-h { display:flex; align-items:center; gap:8px; color:""" + CRITICAL + """;
+                font-weight:800; font-size:0.8rem; letter-spacing:0.06em;
+                border-bottom:1px solid rgba(217,45,32,0.22); padding-bottom:9px; margin-bottom:11px; }
+    .alert-sub { font-size:0.68rem; font-weight:800; letter-spacing:0.09em;
+                  color:""" + INK_2 + """; margin-bottom:9px; }
+    .alert-grid { display:grid; grid-template-columns:1fr auto; gap:7px 12px; align-items:baseline; }
+    .alert-k { font-size:0.66rem; color:""" + INK_3 + """; }
+    .alert-v { font-size:1.02rem; font-weight:800; color:""" + INK + """;
+                font-family:'JetBrains Mono',monospace; word-break:break-all; }
+    .alert-badge { width:26px; height:26px; border-radius:50%; background:""" + CRITICAL + """;
+                    color:#fff; font-weight:800; font-size:0.82rem;
+                    display:flex; align-items:center; justify-content:center; }
+
+    /* ── terminal ─────────────────────────────────────────────────────── */
+    .terminal-feed { background:""" + TERMINAL_BG + """; border:1px solid """ + INK + """;
+                      border-radius:12px; overflow:hidden; }
+    .term-chrome { background:""" + TERMINAL_BG + """; border-bottom:1px solid rgba(255,255,255,0.09);
+                    padding:11px 15px; }
+
+    /* ── small tables inside panels ───────────────────────────────────── */
+    .hp-tbl { width:100%; border-collapse:collapse; font-size:0.75rem; }
+    .hp-tbl th { text-align:left; font-size:0.6rem; letter-spacing:0.07em;
+                  text-transform:uppercase; color:""" + INK_3 + """; font-weight:800;
+                  padding:0 8px 7px 0; border-bottom:1px solid """ + LINE + """; }
+    .hp-tbl td { padding:7px 8px 7px 0; border-bottom:1px solid """ + LINE + """;
+                  font-family:'JetBrains Mono',monospace; color:""" + INK_2 + """; }
+    .hp-tbl tr:last-child td { border-bottom:none; }
+
+    .hp-stat { border:1px solid """ + LINE + """; border-radius:9px; padding:9px 11px; }
+    .hp-stat-l { font-size:0.57rem; font-weight:800; letter-spacing:0.07em;
+                  text-transform:uppercase; color:""" + INK_3 + """; }
+    .hp-stat-v { font-size:1.2rem; font-weight:800; color:""" + INK + """; margin-top:2px; }
+
+    /* horizontal bar rows (usernames / passwords) */
+    .bar-row { display:grid; grid-template-columns:74px 1fr auto; gap:8px;
+                align-items:center; font-size:0.72rem; padding:3px 0; }
+    .bar-row .bl { font-family:'JetBrains Mono',monospace; color:""" + INK_2 + """;
+                    overflow:hidden; text-overflow:ellipsis; }
+    .bar-track { height:9px; background:""" + Y_100 + """; border-radius:3px; overflow:hidden; }
+    .bar-fill { height:100%; background:""" + Y_400 + """; border-radius:3px; }
+    .bar-row .bn { font-family:'JetBrains Mono',monospace; color:""" + INK_3 + """; font-size:0.68rem; }
+
+    .hp-foot { border-top:1px solid """ + LINE + """; margin-top:4px; padding:13px 2px 4px;
+                display:flex; justify-content:space-between; gap:12px;
+                font-size:0.68rem; color:""" + INK_3 + """; font-family:'JetBrains Mono',monospace; }
   </style>
 </head>
 <body>
@@ -815,9 +1159,6 @@ TABLE_STYLE = dict(
 toggle_btn = html.Button("☰", id="sidebar-toggle-btn", className="sidebar-toggle", n_clicks=0)
 sidebar = html.Div(className="sidebar", id="sidebar", children=[
     html.Div(className="sidebar-logo", children=[
-        # served from assets/ by Dash. The source PNG is 56% transparent
-        # margin, so assets/hydrapot_logo.png is the cropped+squared version —
-        # using the raw file would render the mark tiny and off-centre here.
         html.Img(src=app.get_asset_url("hydrapot_logo.png"),
                  className="brand-mark", alt="HydraPoT"),
         html.Span("HydraPoT"),
@@ -832,22 +1173,71 @@ sidebar = html.Div(className="sidebar", id="sidebar", children=[
     html.Div(className="sidebar-divider"),
     html.Div(className="toggle-row", children=[
         "Auto-refresh",
-        dcc.Checklist(
-            id="auto-refresh-toggle",
-            options=[{"label": "", "value": "on"}],
-            value=["on"],
-            inline=True,
-        ),
+        dcc.Checklist(id="auto-refresh-toggle",
+                      options=[{"label": "", "value": "on"}],
+                      value=["on"], inline=True),
     ]),
-    html.Div(className="source-cap", children=f"Source: {SESSION_DIR}"),
+    html.Div(className="source-cap", children=f"Source: {storage.DB_PATH.split('/')[-1]}"),
+    html.Div(id="sidebar-updated", className="source-cap"),
+    # stays .refresh-btn: this one lives on the DARK sidebar, where .btn's
+    # light fill would be wrong
     html.Button("🔄 Refresh", id="manual-refresh", className="refresh-btn", n_clicks=0),
     html.Div(id="geo-status"),
+    # Live component health. Filled by a callback rather than at import time so
+    # a probe result can never be baked into the served page.
+    html.Div(id="hp-status-panel"),
     dcc.Store(id="page-store", data="Summary"),
+    # Default ALL, not 24H: the window must show the data that exists, and a
+    # dashboard that opens empty reads as broken rather than quiet.
+    dcc.Store(id="range-store", data="ALL"),
     dcc.Interval(id="interval", interval=REFRESH_MS, n_intervals=0),
 ])
+
+
+@app.callback(
+    Output("range-store", "data"),
+    Input({"type": "range-btn", "r": ALL}, "n_clicks"),
+    prevent_initial_call=True,
+)
+def _pick_range(_clicks):
+    r = (ctx.triggered_id or {}).get("r")
+    if not r:
+        raise PreventUpdate
+    return r
+
+
+@app.callback(
+    Output("hp-status-panel", "children"),
+    Output("sidebar-updated", "children"),
+    Input("interval", "n_intervals"),
+)
+def _render_status(_n):
+    rows = agent_health()
+    online = sum(1 for _, ok, _ in rows if ok)
+    panel = html.Div(className="hp-status", children=[
+        html.Div("HYDRAPOT STATUS", className="hp-status-h"),
+        *[html.Div(className="hp-status-row", title=detail, children=[
+            html.Span([html.Span(className="hp-dot",
+                                 style={"background": SUCCESS if ok else CRITICAL}), name]),
+            html.Span("Online" if ok else "Offline",
+                      style={"color": SUCCESS if ok else CRITICAL, "fontWeight": 700}),
+        ]) for name, ok, detail in rows],
+        html.Div(className="hp-tally", children=[
+            # colour follows reality: all-green only when everything really is up
+            html.Div(f"{online} / {len(rows)}", className="hp-tally-n",
+                     style={"color": SUCCESS if online == len(rows) else Y_400}),
+            html.Div("COMPONENTS ONLINE", className="hp-tally-l"),
+        ]),
+    ])
+    return panel, f"Last updated: {datetime.now().strftime('%H:%M:%S')}"
 app.layout = html.Div(className="app-shell", children=[
-    toggle_btn,
+    # NOTE: order matters. The toggle sits AFTER the sidebar so CSS can react to
+    # the collapse with a sibling selector (`.sidebar.collapsed ~ .sidebar-toggle`)
+    # — `~` only matches later siblings, so with the button first there was no
+    # way to reposition it without another callback. It is position:fixed, so
+    # DOM order has no visual effect of its own.
     sidebar,
+    toggle_btn,
     html.Div(className="content", id="content-area"),
     dcc.Store(id="sidebar-collapsed-store", data=False),
     # Threat Intel snapshot — lives at the app level (not inside content-area)
@@ -969,9 +1359,10 @@ def manual_refresh(_n):
     Output("content-area", "children"),
     Input("page-store", "data"),
     Input("sensor-filter-store", "data"),
+    Input("range-store", "data"),
     prevent_initial_call=False,
 )
-def render_router(page, sensor_filter):
+def render_router(page, sensor_filter, rng):
     if page == "Threat Intel":
         # Threat Intel never auto-refreshes on the interval tick — it's a
         # generated snapshot (SIEM-style), not a live feed. Only navigating
@@ -999,8 +1390,10 @@ def render_router(page, sensor_filter):
             raise PreventUpdate
         return build_database_page()
     sf = sensor_filter or "all"
-    # keyed by sensor: each sensor's Summary is a different page
-    return _cached_page(("summary", sf), lambda: build_summary_page(sf))
+    rg = rng or "ALL"
+    # keyed by sensor AND range — each combination is a different page, and a
+    # key that ignored either would serve the wrong one from cache
+    return _cached_page(("summary", sf, rg), lambda: build_summary_page(sf, rg))
 
 
 # ── Threat Intel: generate-on-demand (heavy compute, button-triggered only) ────
@@ -1022,7 +1415,7 @@ def render_router(page, sensor_filter):
 def generate_intelligence(_n, scope):
     snapshot = build_ioc_snapshot(scope=scope or "all")
     restored_button = [html.Button("🔄 Generate Intelligence", id="generate-ioc-btn",
-                                   className="refresh-btn", n_clicks=0)]
+                                   className="btn btn-primary", n_clicks=0)]
     return snapshot, restored_button, _ioc_status_text(snapshot)
 
 
@@ -1099,7 +1492,7 @@ def apply_ioc_category_filter(selected_cat, ioc_data, btn_ids):
     recs = (ioc_data or {}).get("recs") or []
     selected_cat = selected_cat or "all"
     filtered = recs if selected_cat == "all" else [r for r in recs if r["type"] == selected_cat]
-    classnames = ["nav-pill active" if bid["cat"] == selected_cat else "nav-pill" for bid in btn_ids]
+    classnames = ["chip active" if bid["cat"] == selected_cat else "chip" for bid in btn_ids]
     caption = f"{len(recs)} unique indicators — showing {len(filtered[:200])}" + (
         "" if selected_cat == "all" else f" of type '{selected_cat}'")
     return _ioc_table_rows(filtered), classnames, caption
@@ -1202,221 +1595,394 @@ def build_live_feed(sensor_filter="all"):
     ])
 
 
-def build_summary_page(sensor_filter="all"):
-    df = load_all()
-    auth_entries = load_auth_log()
-    all_sensors = get_sensor_summary()   # computed pre-filter, so the sensor
-                                          # panel itself always shows every sensor
+# ── Summary page (SOC layout) ────────────────────────────────────────────────
+#
+# Composition follows the agreed reference: feed + alert, KPI strip, chart +
+# map, then the three analysis panels. The ordering encodes a reading order —
+# what is happening, how bad, where from, what HydraPoT did about it.
+#
+# Every number below comes from load_all()/load_auth_log(). Where the reference
+# showed a metric this system cannot source, the panel keeps its place and
+# states what is unavailable rather than inventing a value.
 
+RANGES = [("24H", 1), ("7D", 7), ("30D", 30), ("ALL", 0)]
+
+
+def _apply_range(df, rng):
+    """Filter to the selected window. Returns (df, note) where note explains an
+    empty result — a silently blank dashboard reads as 'broken', not 'quiet'."""
+    if rng in (None, "ALL") or df.empty or "timestamp" not in df.columns:
+        return df, None
+    days = dict(RANGES).get(rng, 0)
+    if not days:
+        return df, None
+    cutoff = datetime.now() - timedelta(days=days)
+    out = df[df["timestamp"] >= cutoff]
+    if out.empty:
+        newest = df["timestamp"].max()
+        return out, (f"No activity in the last {rng}. Most recent event: "
+                     f"{newest:%Y-%m-%d %H:%M}" if pd.notna(newest) else f"No activity in the last {rng}.")
+    return out, None
+
+
+def _panel(title, body, right=None, cls=""):
+    return html.Div(className=f"pcard {cls}", children=[
+        html.Div(className="pcard-h", children=[
+            html.Div(title, className="pcard-t"),
+            right if right is not None else html.Span(),
+        ]),
+        body,
+    ])
+
+
+def _kpi(label, value, sub=None, icon="", icon_bg=Y_200, critical=False):
+    return html.Div(className="kpi" + (" kpi-crit" if critical else ""), children=[
+        html.Div(className="kpi-top", children=[
+            html.Div(icon, className="kpi-ico",
+                     style={"background": icon_bg, "color": INK}),
+            html.Div(label, className="kpi-l"),
+        ]),
+        html.Div(value, className="kpi-v"),
+        html.Div(sub, className="kpi-s") if sub else html.Span(),
+    ])
+
+
+def _bars(series, colour=Y_400, n=5):
+    """Horizontal bar rows for a value_counts() series."""
+    if series is None or len(series) == 0:
+        return html.Div("No data.", className="caption")
+    top = series.head(n)
+    mx = int(top.iloc[0]) or 1
+    return html.Div([
+        html.Div(className="bar-row", children=[
+            html.Div(str(k), className="bl", title=str(k)),
+            html.Div(className="bar-track", children=html.Div(
+                className="bar-fill",
+                style={"width": f"{int(v)/mx*100:.0f}%", "background": colour})),
+            html.Div(f"{int(v):,}", className="bn"),
+        ]) for k, v in top.items()
+    ])
+
+
+def _critical_alert(df):
+    """Peak-threat detail. Answers *why* it is critical, not just that it is."""
+    if df.empty or not (df["fi_score"] >= 3).any():
+        return html.Div(className="pcard", children=[
+            html.Div("PEAK THREAT", className="pcard-t"),
+            html.Div("No FI≥3 activity in this window.", className="caption",
+                     style={"marginTop": "10px"}),
+        ])
+
+    hi = df[df["fi_score"] >= 3]
+    src = hi["src_ip"].value_counts().index[0]
+    sub = df[df["src_ip"] == src]
+    peak = int(sub["fi_score"].max())
+    last = sub["timestamp"].max()
+
+    return html.Div(className="alert-card", children=[
+        html.Div(className="alert-h", children=["⚠", html.Span("CRITICAL ALERT")]),
+        html.Div("PEAK THREAT DETECTED", className="alert-sub"),
+        html.Div(className="alert-grid", children=[
+            html.Div([html.Div("Source", className="alert-k"),
+                      html.Div(str(src), className="alert-v")]),
+            html.Div(style={"textAlign": "right"}, children=[
+                html.Div("FI Severity", className="alert-k"),
+                html.Div(str(peak), className="alert-badge",
+                         style={"marginLeft": "auto", "marginTop": "4px"})]),
+            html.Div([html.Div("Commands", className="alert-k"),
+                      html.Div(f"{len(sub):,}", className="alert-v")]),
+            html.Div(style={"textAlign": "right"}, children=[
+                html.Div("Last Seen", className="alert-k"),
+                html.Div(last.strftime("%Y-%m-%d %H:%M") if pd.notna(last) else "—",
+                         className="alert-v", style={"fontSize": "0.8rem"})]),
+        ]),
+        html.Div(f"{int((sub['fi_score'] >= 3).sum()):,} high-impact of {len(sub):,} commands",
+                 className="caption", style={"marginTop": "11px", "fontSize": "0.68rem"}),
+    ])
+
+
+def _events_chart(df):
+    tdf = df[df["timestamp"].notna()].copy()
+    if tdf.empty:
+        return html.Div("No timestamp data.", className="caption")
+    span_h = (tdf["timestamp"].max() - tdf["timestamp"].min()).total_seconds() / 3600.0
+    freq = "1h" if span_h <= 72 else ("6h" if span_h <= 24 * 30 else "1D")
+    tdf["bucket"] = tdf["timestamp"].dt.floor(freq)
+
+    allc = tdf.groupby("bucket").size()
+    high = tdf[tdf["fi_score"] >= 3].groupby("bucket").size().reindex(allc.index, fill_value=0)
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=allc.index, y=allc.values, name="All Commands",
+                             mode="lines", line=dict(color=ORANGE, width=2),
+                             hovertemplate="%{x}<br>%{y} commands<extra></extra>"))
+    fig.add_trace(go.Scatter(x=high.index, y=high.values, name="High Impact (FI≥3)",
+                             mode="lines", line=dict(color=CRITICAL, width=2),
+                             hovertemplate="%{x}<br>%{y} high impact<extra></extra>"))
+    theme_layout(fig, height=248, legend=True)
+    fig.update_layout(margin=dict(t=6, b=4, l=4, r=8),
+                      legend=dict(orientation="h", yanchor="bottom", y=1.0,
+                                  x=0, font=dict(size=10), bgcolor="rgba(0,0,0,0)"))
+    fig.update_yaxes(gridcolor=LINE)
+    return dcc.Graph(figure=fig, config=GRAPH_CONFIG)
+
+
+def _hydrapot_intel(df, sav):
+    """FI band -> which agent actually handled it. Measured, not the config
+    table: `_is_cloud()` obfuscation detection overrides the FI band, so the
+    real mapping is not one-to-one and showing the config would misrepresent it."""
+    if df.empty:
+        return html.Div("No data.", className="caption")
+
+    bands = [("0 – 1", (df["fi_score"] <= 1)),
+             ("2",     (df["fi_score"] == 2)),
+             ("3 – 4", (df["fi_score"] >= 3))]
+    label, dot = AGENT_LABEL, AGENT_COLOR
+
+    rows = []
+    for name, mask in bands:
+        sub = df[mask]
+        if sub.empty:
+            continue
+        counts = sub["agent"].value_counts()
+        top = counts.index[0]
+        rows.append(html.Tr([
+            html.Td(name, style={"fontWeight": 700}),
+            html.Td(html.Span([html.Span(className="hp-dot", style={"background": dot.get(top, INK_3)}),
+                               label.get(top, top)])),
+            html.Td(f"{len(sub):,}"),
+            html.Td(f"{len(sub)/len(df)*100:.1f}%", style={"textAlign": "right"}),
+        ]))
+
+    table = html.Table(className="hp-tbl", children=[
+        html.Thead(html.Tr([html.Th("FI SCORE"), html.Th("HANDLED MOSTLY BY"),
+                            html.Th("COMMANDS"), html.Th("%", style={"textAlign": "right"})])),
+        html.Tbody(rows),
+    ])
+
+    stats = html.Div(style={"display": "grid", "gridTemplateColumns": "repeat(3,1fr)",
+                            "gap": "9px", "marginTop": "12px"}, children=[
+        html.Div(className="hp-stat", children=[
+            html.Div("CLOUD CALLS AVOIDED", className="hp-stat-l"),
+            html.Div(f"{sav['cloud_avoided_pct']:.1f}%", className="hp-stat-v",
+                     style={"color": SUCCESS})]),
+        html.Div(className="hp-stat", children=[
+            html.Div("EST. CLOUD COST SAVED", className="hp-stat-l"),
+            html.Div(f"${sav['cloud_saved_usd']:.2f}", className="hp-stat-v")]),
+        html.Div(className="hp-stat", children=[
+            html.Div("AGENT SWITCHES", className="hp-stat-l"),
+            html.Div(f"{sav['n_switches']:,}", className="hp-stat-v")]),
+    ])
+    return html.Div([table, stats])
+
+
+def _agent_donut(df):
+    if df.empty:
+        return html.Div("No data.", className="caption")
+    label, col = AGENT_LABEL, AGENT_COLOR
+    vc = df["agent"].value_counts()
+
+    fig = go.Figure(go.Pie(
+        labels=[label.get(a, a) for a in vc.index], values=vc.values, hole=0.62,
+        marker=dict(colors=[col.get(a, INK_3) for a in vc.index],
+                    line=dict(color=CARD, width=2)),
+        textinfo="none",
+        hovertemplate="%{label}<br>%{value:,} commands (%{percent})<extra></extra>"))
+    theme_layout(fig, height=170)
+    fig.update_layout(margin=dict(t=4, b=4, l=4, r=4), showlegend=False)
+
+    legend = html.Div(style={"marginTop": "8px"}, children=[
+        html.Div(className="hp-status-row",
+                 style={"color": INK_2, "fontSize": "0.72rem", "padding": "3px 0"},
+                 children=[
+                     html.Span([html.Span(className="hp-dot", style={"background": col.get(a, INK_3)}),
+                                label.get(a, a)]),
+                     html.Span(f"{n/len(df)*100:.1f}%", style={"fontWeight": 700}),
+                 ]) for a, n in vc.items()
+    ])
+    total = html.Div(style={"display": "flex", "justifyContent": "space-between",
+                            "borderTop": f"1px solid {LINE}", "marginTop": "10px",
+                            "paddingTop": "9px", "fontSize": "0.7rem"}, children=[
+        html.Span("TOTAL SESSIONS", style={"letterSpacing": "0.07em", "color": INK_3, "fontWeight": 800}),
+        html.Span(f"{df['session_id'].nunique():,}", style={"fontWeight": 800}),
+    ])
+    return html.Div([dcc.Graph(figure=fig, config=GRAPH_CONFIG), legend, total])
+
+
+def _auth_panel(df, auth_entries):
+    if not auth_entries:
+        return html.Div("No authentication attempts recorded.", className="caption")
+    a = pd.DataFrame(auth_entries)
+    pw = a[a["auth_type"] == "password"] if "auth_type" in a.columns else a
+    probes = int((a["auth_type"] == "tcp_connect").sum()) if "auth_type" in a.columns else 0
+
+    users = pw["username"].value_counts() if "username" in pw.columns else None
+    pwds  = pw["password"].value_counts() if "password" in pw.columns else None
+    uniq  = pw.groupby(["username", "password"]).ngroups if {"username", "password"} <= set(pw.columns) else 0
+
+    return html.Div(style={"display": "grid", "gridTemplateColumns": "1fr 1fr",
+                           "gap": "14px"}, children=[
+        html.Div([html.Div("TOP USERNAMES", className="hp-stat-l",
+                           style={"marginBottom": "7px"}), _bars(users)]),
+        html.Div([html.Div("TOP PASSWORDS", className="hp-stat-l",
+                           style={"marginBottom": "7px"}), _bars(pwds, colour=ORANGE)]),
+        html.Div(style={"gridColumn": "1 / -1", "display": "grid",
+                        "gridTemplateColumns": "repeat(4,1fr)", "gap": "9px"}, children=[
+            html.Div(className="hp-stat", children=[
+                html.Div("LOGIN ATTEMPTS", className="hp-stat-l"),
+                html.Div(f"{len(pw):,}", className="hp-stat-v")]),
+            html.Div(className="hp-stat", children=[
+                html.Div("UNIQUE CREDENTIALS", className="hp-stat-l"),
+                html.Div(f"{uniq:,}", className="hp-stat-v")]),
+            html.Div(className="hp-stat", children=[
+                html.Div("SOURCE IPS", className="hp-stat-l"),
+                html.Div(f"{a['src_ip'].nunique():,}", className="hp-stat-v")]),
+            html.Div(className="hp-stat", children=[
+                html.Div("SCAN PROBES", className="hp-stat-l"),
+                html.Div(f"{probes:,}", className="hp-stat-v")]),
+        ]),
+    ])
+
+
+def _origin_map(df):
+    ip_col = "public_ip" if "public_ip" in df.columns else "src_ip"
+    # counted once up front: `(df[col] == ip).sum()` inside the loop rescans the
+    # whole frame per unique IP, which is quadratic as traffic grows
+    counts = df[ip_col].value_counts()
+    geo_rows = []
+    for ip in df[ip_col].dropna().unique():
+        geo = geolocate(ip)
+        if geo:
+            geo_rows.append({"ip": ip, "lat": geo["lat"], "lon": geo["lon"],
+                             "country": geo["country"], "city": geo["city"],
+                             "count": int(counts.get(ip, 0))})
+    if not geo_rows:
+        msg = ("geoip.mmdb not found — run `hp geoip`" if _load_geo_reader() is None
+               else "No geolocatable source addresses in this window "
+                    "(sessions are from local/synthetic sources).")
+        return html.Div([dcc.Graph(figure=empty_geo_fig(), config=GRAPH_CONFIG),
+                         html.Div(msg, className="caption", style={"marginTop": "6px"})])
+
+    g = pd.DataFrame(geo_rows)
+    fig = px.scatter_geo(g, lat="lat", lon="lon", size="count", color="count",
+                         hover_name="country",
+                         hover_data={"ip": True, "city": True, "count": True,
+                                     "lat": False, "lon": False},
+                         color_continuous_scale=AMBER_SCALE, size_max=34,
+                         projection="natural earth")
+    fig.update_layout(
+        paper_bgcolor="rgba(0,0,0,0)",
+        geo=dict(bgcolor="rgba(0,0,0,0)", landcolor=Y_100, oceancolor=CARD, showocean=True,
+                 showland=True, lakecolor=CARD, coastlinecolor=LINE_STRONG,
+                 countrycolor=LINE_STRONG, showcoastlines=True, showcountries=True),
+        coloraxis_showscale=False, margin=dict(t=0, b=0, l=0, r=0), height=272)
+    return html.Div([
+        dcc.Graph(figure=fig, config=GRAPH_CONFIG),
+        html.Div(className="caption", style={"fontSize": "0.66rem", "marginTop": "4px"},
+                 children=[f"{len(g)} geolocatable source(s) · IP geolocation by ",
+                           html.A("DB-IP", href="https://db-ip.com", target="_blank",
+                                  style={"color": "inherit"}), " — City Lite, CC BY 4.0"]),
+    ])
+
+
+def build_summary_page(sensor_filter="all", rng="ALL"):
+    df_all = load_all()
+    auth_entries = load_auth_log()
+    all_sensors = get_sensor_summary()   # pre-filter, so every sensor stays listed
+
+    df = df_all
     if sensor_filter and sensor_filter != "all" and not df.empty:
         df = df[df["instance"] == sensor_filter]
         auth_entries = [a for a in auth_entries if a.get("instance") == sensor_filter]
 
+    df, range_note = _apply_range(df, rng)
+
+    # ── header ────────────────────────────────────────────────────────────
+    header = html.Div(className="hp-head", children=[
+        html.H3([html.Img(src=app.get_asset_url("hydrapot_logo.png"),
+                          className="brand-mark brand-mark-lg", alt=""),
+                 "HydraPoT Dashboard"], className="page-title"),
+        html.Div(className="hp-range", children=[
+            html.Button(r, id={"type": "range-btn", "r": r}, n_clicks=0,
+                        className="active" if r == (rng or "ALL") else "")
+            for r, _ in RANGES
+        ]),
+    ])
+
+    sensor_chips = html.Div(className="hp-range", style={"marginBottom": "14px"}, children=[
+        html.Button(("All Sensors" if s == "all" else s),
+                    id={"type": "sensor-card-btn", "sensor": s}, n_clicks=0,
+                    className="active" if sensor_filter == s else "")
+        for s in ["all"] + [x["instance"] for x in all_sensors]
+    ]) if all_sensors else html.Span()
+
+    if df_all.empty:
+        return [header, html.Div("No data yet. Start the honeypot with `hp run`.",
+                                 className="empty-state")]
+
     if df.empty:
-        return [
-            html.H3("HydraPoT Dashboard"),
-            html.Div("No data yet. Start the honeypot with `hp run`.", className="empty-state"),
-        ]
+        return [header, sensor_chips,
+                html.Div(className="pcard", children=[
+                    html.Div(range_note or "No data in this window.", className="caption")])]
 
+    sav = estimate_savings(df)
+    n_hi = int((df["fi_score"] >= 3).sum())
 
-    feed = build_live_feed(sensor_filter)
+    # ── row 1: feed + critical alert ──────────────────────────────────────
+    row_feed = html.Div(className="hp-row hp-row-feed", children=[
+        html.Div(id="live-feed-wrap", children=build_live_feed(sensor_filter)),
+        _critical_alert(df),
+    ])
 
-    # Metric cards    # Metric cards
-    peak_fi = int(df["fi_score"].max())
-    tl, tc, ti = THREAT_LEVEL[peak_fi]
-    _costs = estimate_costs(df)
-    metrics = html.Div(className="metric-row", children=[
-        html.Div(className="metric-card", children=[
-            html.Div("Total Commands", className="metric-label"),
-            html.Div(f"{len(df)}", className="metric-value"),
-        ]),
-        html.Div(className="metric-card", children=[
-            html.Div("Unique Sessions", className="metric-label"),
-            html.Div(f"{df['session_id'].nunique()}", className="metric-value"),
-        ]),
-        html.Div(className="metric-card", children=[
-            html.Div("Unique Attackers", className="metric-label"),
-            html.Div(f"{df['src_ip'].nunique()}", className="metric-value"),
-        ]),
-        html.Div(className="metric-card", children=[
-            html.Div("High Impact (FI≥3)", className="metric-label"),
-            html.Div(f"{int((df['fi_score'] >= 3).sum())}", className="metric-value"),
-        ]),
-        html.Div(className="metric-card cost-card", children=[
-            html.Div(f"☁ Cloud Cost · {_costs['month_label']} (est.)", className="metric-label"),
-            html.Div(f"${_costs['cloud_cost_usd']:.4f}", className="metric-value"),
-            html.Div(f"{_costs['n_cloud']} cloud commands this month", className="metric-sub"),
-        ]),
-        html.Div(className="metric-card cost-card", children=[
-            html.Div(f"⚡ On-device Electricity · {_costs['month_label']} (est.)", className="metric-label"),
-            html.Div(f"{_costs['on_device_thb']:.2f} ฿", className="metric-value"),
-            html.Div(
-                (f"≈ {_costs['on_device_thb_projected']:.2f} ฿ projected full month · "
-                 if _costs['projection_ready'] else "projection pending (early in month) · ")
-                + f"{_costs['on_device_kwh']:.4f} kWh · {_costs['n_on_device']} cmds",
-                className="metric-sub"),
-        ]),
-        html.Div(className="threat-badge", style={"background": f"{tc}1A"}, children=[
-            html.Div(ti, style={"fontSize": "2rem"}),
-            html.Div(tl, style={"fontWeight": "700", "color": tc, "fontFamily": "JetBrains Mono, monospace"}),
-            html.Div("Peak Threat", style={"fontSize": "0.7rem", "opacity": "0.7", "fontFamily": "JetBrains Mono, monospace"}),
+    # ── row 2: KPI strip ──────────────────────────────────────────────────
+    row_kpi = html.Div(className="hp-row hp-row-kpi", children=[
+        _kpi("High Impact Commands (FI ≥ 3)", f"{n_hi:,}",
+             f"{n_hi/len(df)*100:.1f}% of total", "🛡", "rgba(217,45,32,0.13)", critical=True),
+        _kpi("Unique Attackers", f"{df['src_ip'].nunique():,}",
+             f"across {df['instance'].nunique()} sensor(s)", "👤", Y_200),
+        _kpi("Unique Sessions", f"{df['session_id'].nunique():,}",
+             f"{len(df)/max(df['session_id'].nunique(),1):.0f} cmds/session avg", "▤", Y_200),
+        _kpi("Total Commands", f"{len(df):,}",
+             f"{sav['n_switches']:,} agent switches", "⌘", Y_200),
+        html.Div(className="kpi", children=[
+            html.Div("Efficiency (Cost Savings)", className="kpi-l",
+                     style={"marginBottom": "9px"}),
+            html.Div(className="kpi-split", children=[
+                html.Div(className="kpi-mini save", children=[
+                    html.Div("Cloud Cost Saved (est.)", className="kpi-mini-l"),
+                    html.Div(f"${sav['cloud_saved_usd']:.2f}", className="kpi-mini-v",
+                             style={"color": SUCCESS}),
+                    html.Div(f"{sav['cloud_avoided_pct']:.1f}% avoided", className="kpi-s")]),
+                html.Div(className="kpi-mini energy", children=[
+                    html.Div("Energy Cost Saved (est.)", className="kpi-mini-l"),
+                    html.Div(f"{sav['energy_saved_thb']:.2f} ฿", className="kpi-mini-v",
+                             style={"color": Y_700}),
+                    html.Div(f"{sav['energy_avoided_pct']:.1f}% avoided", className="kpi-s")]),
+            ]),
         ]),
     ])
 
-    # Events over time
-    tdf = df[df["timestamp"].notna()].copy()
-    if not tdf.empty:
-        tdf["bucket"] = tdf["timestamp"].dt.floor("30min")
-        buckets = tdf.groupby("bucket").size().reset_index(name="count")
-        fig_t = go.Figure()
-        fig_t.add_trace(go.Scatter(
-            x=buckets["bucket"], y=buckets["count"], fill="tozeroy",
-            line=dict(color=Y_700, width=2.5), fillcolor="rgba(245,158,11,0.18)",
-            hovertemplate="<b>%{x}</b><br>Events: %{y}<extra></extra>",
-        ))
-        theme_layout(fig_t, height=200)
-        fig_t.update_layout(xaxis_title="@timestamp per 30 minutes")
-        time_chart = dcc.Graph(figure=fig_t, config=GRAPH_CONFIG)
-    else:
-        time_chart = html.Div("No timestamp data.", className="caption")
-
-    # Summary of events table
-    summary_rows = []
-    hi_fi = df[df["fi_score"] >= 2].copy()
-    for fi in [4, 3, 2]:
-        sub = hi_fi[hi_fi["fi_score"] == fi]
-        if sub.empty:
-            continue
-        top = sub["cmd"].apply(lambda c: c.split()[0] if c else "").value_counts().head(5)
-        for cmd_base, cnt in top.items():
-            tl2, _, _ = THREAT_LEVEL[fi]
-            summary_rows.append({"Rule": f"FI-{fi}: {FI_LABEL[fi]} via `{cmd_base}`", "Severity": tl2, "Events": int(cnt)})
-
-    if summary_rows:
-        sev_colors = {"CRITICAL": "#dc3545", "HIGH": "#fd7e14", "MEDIUM": "#ffc107", "LOW": "#28a745"}
-        summary_table = dash_table.DataTable(
-            data=summary_rows,
-            columns=[{"name": c, "id": c} for c in ["Rule", "Severity", "Events"]],
-            style_data_conditional=[
-                {"if": {"row_index": "odd"}, "backgroundColor": Y_50},
-                *[{"if": {"filter_query": f'{{Severity}} = "{sev}"', "column_id": "Severity"},
-                   "color": col, "fontWeight": "bold"} for sev, col in sev_colors.items()],
-            ],
-            style_header=TABLE_STYLE["style_header"],
-            style_cell=TABLE_STYLE["style_cell"],
-            style_table=TABLE_STYLE["style_table"],
-        )
-    else:
-        summary_table = html.Div("No high-impact events yet.", className="caption")
-
-    # Map
-    ip_col = "public_ip" if "public_ip" in df.columns else "src_ip"
-    unique_ips = df[ip_col].dropna().unique()
-    geo_rows = []
-    for ip in unique_ips:
-        geo = geolocate(ip)
-        if geo:
-            count = int((df[ip_col] == ip).sum())
-            geo_rows.append({"ip": ip, "lat": geo["lat"], "lon": geo["lon"],
-                              "country": geo["country"], "city": geo["city"], "count": count})
-
-    if geo_rows:
-        geo_df = pd.DataFrame(geo_rows)
-        fig_map = px.scatter_geo(
-            geo_df, lat="lat", lon="lon", size="count", color="count",
-            hover_name="country", hover_data={"ip": True, "city": True, "count": True, "lat": False, "lon": False},
-            color_continuous_scale=AMBER_SCALE, size_max=40, projection="natural earth",
-        )
-        fig_map.update_layout(
-            paper_bgcolor="rgba(0,0,0,0)",
-            geo=dict(bgcolor="rgba(0,0,0,0)", landcolor=Y_100, oceancolor=PAPER, showocean=True,
-                      showland=True, lakecolor=PAPER, coastlinecolor=LINE_STRONG, countrycolor=LINE_STRONG,
-                      showcoastlines=True, showcountries=True),
-            coloraxis_showscale=False, margin=dict(t=0, b=0, l=0, r=0), height=320,
-        )
-        map_chart = dcc.Graph(figure=fig_map, config=GRAPH_CONFIG)
-
-        ip_table = geo_df.sort_values("count", ascending=False).head(10)
-        ip_table = ip_table[["ip", "country", "city", "count"]].rename(
-            columns={"ip": "IP", "country": "Country", "city": "City", "count": "Events"})
-        ip_table_component = html.Div([
-            html.Div("Top Attacker IPs", style={"fontWeight": "700", "marginBottom": "8px"}),
-            dash_table.DataTable(data=ip_table.to_dict("records"),
-                                  columns=[{"name": c, "id": c} for c in ip_table.columns],
-                                  **TABLE_STYLE),
-        ])
-    else:
-        map_chart = dcc.Graph(figure=empty_geo_fig(), config=GRAPH_CONFIG)
-        geo_msg = "⚠️ geoip.mmdb not found — map unavailable" if _load_geo_reader() is None else "All connections from localhost — no geo data to plot"
-        ip_table_component = html.Div(geo_msg, className="caption")
-
-    left_col = html.Div([
-        html.Div("Events Over Time", className="section-header"),
-        time_chart,
-        html.Div("Summary of Events", className="section-header"),
-        summary_table,
-    ])
-    right_col = html.Div([
-        html.Div("Attacker Origin Map", className="section-header"),
-        map_chart,
-        ip_table_component,
-        # CC BY 4.0 attribution required for the DB-IP City Lite database
-        html.Div(
-            ["IP geolocation by ",
-             html.A("DB-IP", href="https://db-ip.com", target="_blank",
-                    style={"color": "inherit"}),
-             " — City Lite, CC BY 4.0"],
-            className="caption",
-            style={"fontSize": "0.68rem", "opacity": "0.6", "marginTop": "6px"},
-        ),
+    # ── row 3: events + map ───────────────────────────────────────────────
+    row_chart = html.Div(className="hp-row hp-row-chart", children=[
+        _panel("Events Over Time", _events_chart(df)),
+        _panel("Attacker Origin Map", _origin_map(df)),
     ])
 
-    # Auth intelligence
-    auth_block = build_auth_intelligence(df, auth_entries)
+    # ── row 4: analysis ───────────────────────────────────────────────────
+    row_bot = html.Div(className="hp-row hp-row-bot", children=[
+        _panel("Authentication Intelligence", _auth_panel(df, auth_entries)),
+        _panel("HydraPoT Intelligence", _hydrapot_intel(df, sav)),
+        _panel("Agent Distribution", _agent_donut(df)),
+    ])
 
-    def _sensor_card(sensor_id, label, s):
-        active = sensor_filter == sensor_id
-        return html.Button(
-            className="metric-card sensor-card" + (" active" if active else ""),
-            id={"type": "sensor-card-btn", "sensor": sensor_id},
-            n_clicks=0,
-            children=[
-                html.Div(label, className="metric-label"),
-                html.Div(f"{s['commands']}", className="metric-value"),
-                html.Div(f"{s['sessions']} sessions · {s['src_ips']} attacker IPs",
-                          className="metric-sub"),
-            ],
-        )
+    footer = html.Div(className="hp-foot", children=[
+        html.Span("HydraPoT · An Intelligent Multi-Agent Honeypot Framework"),
+        html.Span(f"{len(all_sensors)} sensor(s) · window: {rng or 'ALL'}"
+                  + (f" · {sensor_filter}" if sensor_filter != "all" else "")),
+    ])
 
-    _full_df = load_all()   # unfiltered — for the "All Sensors" card's real totals
-    all_card_stats = {
-        "commands": len(_full_df),
-        "sessions": _full_df["session_id"].nunique() if not _full_df.empty else 0,
-        "src_ips":  _full_df["src_ip"].nunique() if not _full_df.empty else 0,
-    }
-    sensors_block = html.Div(className="metric-row", children=(
-        [_sensor_card("all", "All Sensors", all_card_stats)]
-        + [_sensor_card(s["instance"], s["instance"], s) for s in all_sensors]
-    )) if all_sensors else html.Div("No sensors detected.", className="caption")
+    return [header, sensor_chips, row_feed, row_kpi, row_chart, row_bot, footer]
 
-    children = [html.H3([
-        html.Img(src=app.get_asset_url("hydrapot_logo.png"),
-                 className="brand-mark brand-mark-lg", alt=""),
-        "HydraPoT Dashboard",
-    ], className="page-title")]
-    children.append(html.Div(id="live-feed-wrap", children=feed))
-    children.append(metrics)
-    children.append(html.Hr(className="divider"))
-    children.append(html.Div(f"{len(all_sensors)} HydraPoT Sensor{'s' if len(all_sensors) != 1 else ''} Plugged In"
-                              + (f" — viewing: {sensor_filter}" if sensor_filter != "all" else ""),
-                              className="section-header"))
-    children.append(sensors_block)
-    children.append(html.Hr(className="divider"))
-    children.append(html.Div(className="grid-2", children=[left_col, right_col]))
-    children.append(html.Hr(className="divider"))
-    children.append(html.Div("Auth Intelligence", className="section-header"))
-    children.append(auth_block)
-    return children
 
 
 # ── MITRE ATT&CK page ─────────────────────────────────────────────────────────
@@ -1670,9 +2236,8 @@ def build_database_page():
     chips = [
         html.Button(f"{t['name']}  ({t['rows']:,})",
                     id={"type": "db-table-btn", "table": t["name"]},
-                    className="nav-pill" + (" active" if t["name"] == default_table else ""),
-                    n_clicks=0,
-                    style={"width": "auto", "marginRight": "8px"})
+                    className="chip" + (" active" if t["name"] == default_table else ""),
+                    n_clicks=0)
         for t in tables
     ]
 
@@ -1682,13 +2247,9 @@ def build_database_page():
                  f"browse tables or run a SELECT. Writes are rejected by SQLite.",
                  className="caption"),
 
-        html.Div(chips, style={"display": "flex", "flexWrap": "wrap",
-                               "gap": "6px", "margin": "16px 0 8px"}),
+        html.Div(chips, className="chip-row"),
         dcc.Store(id="db-table-store", data=default_table),
         dcc.Store(id="db-page-store", data=0),
-
-        html.Div(id="db-schema", className="caption",
-                 style={"margin": "6px 0 14px", "fontFamily": "JetBrains Mono, monospace"}),
 
         html.Div(style={"display": "flex", "gap": "10px", "alignItems": "center",
                         "flexWrap": "wrap", "marginBottom": "10px"}, children=[
@@ -1697,12 +2258,10 @@ def build_database_page():
                       style={"flex": "1", "minWidth": "220px", "padding": "8px 10px",
                              "fontFamily": "JetBrains Mono, monospace",
                              "border": f"2px solid {INK}", "borderRadius": "8px"}),
-            html.Button("‹ prev", id="db-prev", className="nav-pill",
-                        n_clicks=0, style={"width": "auto"}),
+            html.Button("‹ prev", id="db-prev", className="chip", n_clicks=0),
             html.Div(id="db-page-label", className="caption",
                      style={"minWidth": "150px", "textAlign": "center"}),
-            html.Button("next ›", id="db-next", className="nav-pill",
-                        n_clicks=0, style={"width": "auto"}),
+            html.Button("next ›", id="db-next", className="chip", n_clicks=0),
         ]),
 
         html.Div(id="db-grid"),
@@ -1715,10 +2274,27 @@ def build_database_page():
                             "border": f"2px solid {INK}", "borderRadius": "8px"}),
         html.Div(style={"display": "flex", "gap": "10px", "alignItems": "center",
                         "margin": "10px 0"}, children=[
-            html.Button("▶ Run", id="db-run", className="nav-pill",
-                        n_clicks=0, style={"width": "auto"}),
+            html.Button("▶ Run", id="db-run", className="chip active", n_clicks=0),
             html.Div(id="db-sql-status", className="caption"),
         ]),
+
+        # Schema reference for writing queries. Every table, not just the one
+        # being browsed above — the SQL box can hit any of them, and having to
+        # scroll up and click a chip to remember a column name is the whole
+        # reason this is repeated down here.
+        html.Div(className="sql-ref", children=[
+            html.Div("COLUMNS", className="hp-stat-l", style={"marginBottom": "7px"}),
+            *[html.Div(className="sql-ref-row", children=[
+                html.Span(t["name"], className="sql-ref-tbl"),
+                html.Span(" · ".join(
+                    f"{c['name']}" + (" *" if c["pk"] else "")
+                    for c in storage.table_schema(t["name"])), className="sql-ref-cols"),
+            ]) for t in tables],
+            html.Div("* primary key · WHERE filters rows, GROUP BY summarises them",
+                     className="caption",
+                     style={"marginTop": "8px", "fontSize": "0.65rem"}),
+        ]),
+
         html.Div(id="db-sql-result"),
     ]
 
@@ -1737,7 +2313,7 @@ def _db_pick_table(_clicks, ids):
         raise PreventUpdate
     # switching table resets to page 0 — otherwise you land on page 40 of a
     # table that only has 3 rows and see an empty grid
-    return picked, 0, ["nav-pill active" if i["table"] == picked else "nav-pill"
+    return picked, 0, ["chip active" if i["table"] == picked else "chip"
                        for i in ids]
 
 
@@ -1764,7 +2340,6 @@ def _db_paginate(_p, _n, _search, page, table):
 
 @app.callback(
     Output("db-grid", "children"),
-    Output("db-schema", "children"),
     Output("db-page-label", "children"),
     Input("db-table-store", "data"),
     Input("db-page-store", "data"),
@@ -1777,19 +2352,17 @@ def _db_render(table, page, search):
     res = storage.browse_table(table, limit=DB_PAGE_SIZE,
                               offset=page * DB_PAGE_SIZE, search=search or None)
     if res["error"]:
-        return (html.Div(f"⚠ {res['error']}", className="caption"), "", "")
-
-    schema = storage.table_schema(table)
-    schema_txt = "  ".join(
-        f"{c['name']}:{c['type']}" + ("*" if c["pk"] else "") for c in schema)
+        return html.Div(f"⚠ {res['error']}", className="caption"), ""
 
     total = res["total"]
     pages = max(1, (total + DB_PAGE_SIZE - 1) // DB_PAGE_SIZE)
     label = f"page {page + 1:,} / {pages:,}  ({total:,} rows)"
 
+    # schema lives under the SQL box now (see .sql-ref) — one copy, next to
+    # where you actually need the column names
     return (_db_grid(res["columns"], res["rows"],
                      "No rows match that search." if search else "Table is empty."),
-            schema_txt, label)
+            label)
 
 
 @app.callback(
@@ -1855,77 +2428,6 @@ def _refresh_mitre(days):
     # ~170ms and 7 Plotly figures per rebuild; the window dropdown gets toggled
     # back and forth, so cache each window rather than redrawing it every time
     return _cached_page(("mitre-body", days), lambda: build_mitre_body(days))
-
-
-def build_auth_intelligence(df, auth_entries):
-    if not auth_entries:
-        return html.Div("No auth log data yet.", className="caption")
-
-    auth_df = pd.DataFrame(auth_entries)
-    login_df = auth_df[auth_df.get("auth_type", pd.Series(dtype=object)) != "tcp_connect"].copy()
-
-    if login_df.empty:
-        return html.Div("No login attempts recorded yet.", className="caption")
-
-    pw_counts = login_df["password"].value_counts().head(10).reset_index()
-    pw_counts.columns = ["Password", "Attempts"]
-    fig_pw = px.bar(pw_counts, x="Attempts", y="Password", orientation="h",
-                     color="Attempts", color_continuous_scale=AMBER_SCALE)
-    theme_layout(fig_pw, height=300)
-    fig_pw.update_layout(coloraxis_showscale=False)
-    fig_pw.update_yaxes(title="", autorange="reversed")
-
-    user_counts = login_df["username"].value_counts().head(10).reset_index()
-    user_counts.columns = ["Username", "Attempts"]
-    fig_user = px.bar(user_counts, x="Attempts", y="Username", orientation="h",
-                       color="Attempts", color_continuous_scale=AMBER_SCALE)
-    theme_layout(fig_user, height=300)
-    fig_user.update_layout(coloraxis_showscale=False)
-    fig_user.update_yaxes(title="", autorange="reversed")
-
-    total_logins = len(login_df)
-    unique_pw = login_df["password"].nunique()
-    unique_users = login_df["username"].nunique()
-    tcp_scans = len(auth_df[auth_df.get("auth_type", pd.Series(dtype=object)) == "tcp_connect"])
-    unique_ips = login_df["src_ip"].nunique()
-    top_pw = login_df["password"].value_counts()
-
-    stat_box = html.Div(className="stat-box", children=[
-        html.Div([" Login attempts: ", html.B(f"{total_logins}")]),
-        html.Div([" Unique passwords: ", html.B(f"{unique_pw}")]),
-        html.Div([" Unique usernames: ", html.B(f"{unique_users}")]),
-        html.Div([" Unique source IPs: ", html.B(f"{unique_ips}")]),
-        html.Div([" TCP scan probes: ", html.B(f"{tcp_scans}")]),
-        html.Hr(),
-        html.Div(["Most tried: ", html.Span(f"{top_pw.index[0]}", style={"color": "#dc3545", "fontWeight": "700"}),
-                  f" ({top_pw.iloc[0]}×)"]),
-    ])
-
-    ac = df["agent"].value_counts().reset_index()
-    ac.columns = ["agent", "count"]
-    fig_donut = px.pie(ac, names="agent", values="count", color="agent",
-                        color_discrete_map=AGENT_COLOR_AMBER, hole=0.55)
-    fig_donut.update_layout(
-        paper_bgcolor="rgba(0,0,0,0)", font=dict(family="JetBrains Mono, monospace", color=INK_3),
-        margin=dict(t=10, b=10, l=10, r=10), height=280,
-        legend=dict(orientation="h", x=0.5, xanchor="center", y=-0.1),
-    )
-    fig_donut.update_traces(textposition="inside", textinfo="percent+label",
-                             marker=dict(line=dict(color=PAPER, width=2)))
-
-    return html.Div(className="grid-4", children=[
-        html.Div([html.Div("Top Passwords", style={"fontWeight": "700", "marginBottom": "8px"}),
-                  dcc.Graph(figure=fig_pw, config=GRAPH_CONFIG)]),
-        html.Div([html.Div("Top Usernames", style={"fontWeight": "700", "marginBottom": "8px"}),
-                  dcc.Graph(figure=fig_user, config=GRAPH_CONFIG)]),
-        html.Div([html.Div("Auth Breakdown", style={"fontWeight": "700", "marginBottom": "8px"}), stat_box]),
-        html.Div([html.Div("Agent Distribution", style={"fontWeight": "700", "marginBottom": "8px"}),
-                  dcc.Graph(figure=fig_donut, config=GRAPH_CONFIG)]),
-    ])
-
-
-_SCOPE_LABEL = {"all": "All Sessions", "current_session": "Current Session",
-                "selected_session": "Selected Session", "last_24h": "Last 24 Hours"}
 
 
 def _ioc_status_text(ioc_data):
@@ -2018,13 +2520,16 @@ def _render_ioc_body(ioc_data):
     # category filter pills — "All" + one per IOC type actually present,
     # ordered by frequency (same order as the chart above)
     cat_order = ["all"] + [t for t, _ in by_type.most_common()]
+    _cat_n = {"all": sum(by_type.values()), **dict(by_type)}
     cat_buttons = [
         html.Button(
-            "All" if cat == "all" else cat,
+            # label + count: "ipv4 128" tells you what filtering will do before
+            # you click, which the bare category name did not
+            [("All" if cat == "all" else str(cat)),
+             html.Span(f"{_cat_n.get(cat, 0):,}", className="chip-n")],
             id={"type": "ioc-cat-btn", "cat": cat},
-            className="nav-pill active" if cat == "all" else "nav-pill",
+            className="chip active" if cat == "all" else "chip",
             n_clicks=0,
-            style={"padding": "6px 12px", "fontSize": "0.8rem"},
         )
         for cat in cat_order
     ]
@@ -2052,8 +2557,7 @@ def _render_ioc_body(ioc_data):
         dcc.Graph(figure=fig_type, config=GRAPH_CONFIG),
         html.Div("Top Indicators (by severity, then frequency)", className="section-header"),
         dcc.Store(id="ioc-cat-filter-store", data="all"),
-        html.Div(cat_buttons, style={"display": "flex", "flexWrap": "wrap",
-                                       "gap": "8px", "marginBottom": "10px"}),
+        html.Div(cat_buttons, className="chip-row"),
         html.Div(f"{len(recs)} unique indicators — showing top {len(recs[:200])}",
                   id="ioc-table-caption", className="caption", style={"marginBottom": "6px"}),
         ioc_table,
@@ -2094,11 +2598,11 @@ def build_threat_intel_page(ioc_data=None):
                 id="ioc-loading", type="circle", color=Y_700,
                 children=html.Div(id="ioc-generate-status", children=[
                     html.Button("🔄 Generate Intelligence", id="generate-ioc-btn",
-                                className="refresh-btn", n_clicks=0),
+                                className="btn btn-primary", n_clicks=0),
                 ]),
             ),
             html.Button("⬇ Export STIX", id="export-stix-btn",
-                        className="refresh-btn", n_clicks=0),
+                        className="btn btn-secondary", n_clicks=0),
             dcc.Download(id="stix-download"),
         ],
     )

@@ -1,0 +1,31 @@
+id: a6b42cbf-05f6-4784-b680-02f44c2abb86
+title: System information discovery
+status: stable
+description: >-
+  `free` and `nproc` added: 2,269 commands in the honeypot corpus used them and went untagged.
+references:
+  - https://attack.mitre.org/techniques/T1082
+author: HydraPoT
+date: 2026-08-25
+technique: T1082
+technique_name: 'System Information Discovery'
+tactic: 'Discovery'
+priority: 55
+confidence: high
+logsource:
+  product: cowrie
+  category: command
+detection:
+  selection_tool:
+    segment|re:
+      - '^\s*(?:uname|hostname|lscpu|lsmem|lsblk|lshw|lspci|lsusb|lsmod|dmidecode|lsb_release|arch|nproc|free|df|dmesg|uptime|systemd-detect-virt|getconf)\b'
+  selection_sysfile:
+    command|re:
+      - '/proc/(?:cpuinfo|meminfo|version)'
+      - '/etc/(?:os-release|issue|lsb-release|debian_version|redhat-release)'
+      - '/sys/class/dmi/'
+      - '/sys/hypervisor/'
+  condition: 1 of selection*
+tags:
+  - attack.discovery
+  - attack.t1082

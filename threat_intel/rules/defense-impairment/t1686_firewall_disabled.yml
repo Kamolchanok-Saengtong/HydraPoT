@@ -1,0 +1,73 @@
+id: 8b690f78-4d85-46fc-b555-10c79dacb346
+title: Host firewall flushed, disabled or reconfigured
+status: stable
+description: >-
+  Any interference with the host packet filter: stopping the service, flushing
+  or deleting chains, opening the default policy, or editing the on-disk rule
+  files. Selections are derived from the 13 Atomic Red Team T1686 Linux atomics
+  rather than guessed, so each covers a mechanism ART actually exercises.
+
+  Deliberately NOT covered: `tail /var/log/ufw.log` (ART test "Tail the UFW
+  firewall log file"). Reading a log does not impair the firewall, and a rule
+  matching it would fire on ordinary log inspection. That atomic is expected to
+  stay undetected; the gap is intentional, not an oversight.
+
+  Pattern style for the ufw and iptables selections was informed by two SigmaHQ
+  community rules (84c9e83c UFW Disable Attempt, 3be619f4 Flush Iptables Ufw
+  Chain) — referenced for approach only. This rule is HydraPoT's own: SigmaHQ
+  matches auditd/process_creation fields (Image, CommandLine), which do not
+  exist in a Cowrie command string, and their iptables rule ANDs a ufw-logging
+  chain name that would never appear in shell input.
+references:
+  - https://attack.mitre.org/techniques/T1686
+  - https://github.com/redcanaryco/atomic-red-team/blob/master/atomics/T1562.004/T1562.004.md
+  - https://github.com/SigmaHQ/sigma/blob/master/rules/linux/process_creation/proc_creation_lnx_disable_ufw.yml
+  - https://github.com/SigmaHQ/sigma/blob/master/rules/linux/process_creation/proc_creation_lnx_iptables_flush_ufw.yml
+author: HydraPoT
+date: 2026-08-25
+technique: T1686
+technique_name: 'Disable or Modify System Firewall'
+tactic: 'Defense Impairment'
+priority: 20
+confidence: high
+logsource:
+  product: cowrie
+  category: command
+detection:
+  # `ufw <verb>` where the verb changes state. Read-only verbs (status, show,
+  # version) are excluded so `ufw status numbered` stays untagged.
+  selection_ufw:
+    segment|re:
+      - '\bufw\s+(?:--force\s+)?(?:disable|reset|allow|deny|reject|delete|insert|prepend|route)\b'
+      - '\bufw\s+logging\s+(?:off|on|low|medium|high|full)\b'
+      - '/ufw-init\s+(?:force-stop|stop|flush)\b'
+  # Service control. Both word orders exist in the wild and in ART:
+  # `systemctl stop ufw` (verb first) and `service pf stop` (unit first).
+  selection_service:
+    segment|re:
+      - '\b(?:systemctl|service|rc-service|invoke-rc\.d)\s+(?:--\S+\s+)*(?:stop|disable|mask)\s+\S*(?:ufw|firewalld|ip6?tables|nftables|netfilter-persistent|ipfw)\b'
+      - '\b(?:service|rc-service|invoke-rc\.d)\s+\S*(?:ufw|firewalld|ip6?tables|nftables|netfilter-persistent|ipfw)\S*\s+(?:stop|disable|onestop|forcestop)\b'
+      - '\bservice\s+pf\s+(?:stop|disable|onestop)\b'
+      - '/etc/init\.d/\S*(?:ufw|firewalld|ip6?tables|nftables)\S*\s+(?:stop|disable)\b'
+  # Chain manipulation. -F flush, -X delete-chain, -Z zero, -D delete-rule.
+  selection_tables:
+    segment|re:
+      - '\b(?:ip6?tables|ip6?tables-legacy|ip6?tables-nft|xtables-legacy-multi)\b[^|;]*\s-(?:F|X|Z|D)\b'
+      - '\bip6?tables\b[^|;]*\s-P\s+(?:INPUT|OUTPUT|FORWARD)\s+ACCEPT\b'
+      - '\bnft\s+(?:-\S+\s+)*(?:flush|delete)\s+(?:ruleset|table|chain)\b'
+  # BSD packet filter. -d disable, -F flush, -f load rules, -a anchor.
+  selection_pf:
+    segment|re:
+      - '\bpfctl\b(?:\s+-\w+(?:\s+\S+)?)*\s-(?:d|F|a|f)\b'
+  # Editing the persisted rule files. Requires a WRITE operator so that
+  # `grep "..." /etc/ufw/user.rules` (an ART line, but a read) does not match.
+  selection_config_write:
+    segment|re:
+      - '(?:>>?|\btee\b|\bsed\s+-i)[^|;&]*/etc/(?:ufw/|default/ufw|sysconfig/ip6?tables|firewalld/)'
+  selection_firewalld:
+    segment|re:
+      - '\bfirewall-cmd\b[^|;]*--(?:remove-(?:service|port|rich-rule)|panic-off|set-default-zone=trusted)'
+  condition: 1 of selection*
+tags:
+  - attack.defense_impairment
+  - attack.t1686

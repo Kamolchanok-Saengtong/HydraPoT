@@ -1,0 +1,23 @@
+id: 0b1e08e2-f07e-469e-8827-0ef138aab8f8
+title: Installed software discovery
+status: stable
+references:
+  - https://attack.mitre.org/techniques/T1518
+author: HydraPoT
+date: 2026-08-25
+technique: T1518
+technique_name: 'Software Discovery'
+tactic: 'Discovery'
+priority: 55
+confidence: medium
+logsource:
+  product: cowrie
+  category: command
+detection:
+  selection:
+    segment|re:
+      - '^\s*(?:dpkg|rpm|which|whereis|apt\s+list|yum\s+list|pip\s+list)\b'
+  condition: selection
+tags:
+  - attack.discovery
+  - attack.t1518

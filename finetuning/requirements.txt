@@ -1,0 +1,5 @@
+
+# Only what is missing from honeypot_new/ — torch, transformers, datasets,
+# accelerate and bitsandbytes are already installed.
+peft>=0.14.0
+trl>=0.13.0

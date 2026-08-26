@@ -1,0 +1,49 @@
+id: eccca717-f352-4db1-a1ff-1772b3db9933
+title: Encoded payload decoded
+status: stable
+description: >-
+  Content is decoded before use, hiding it from static reading.
+
+  Decoder coverage is derived from the 8 Atomic Red Team T1140 Linux atomics.
+  The previous pattern list was the literal pair `base64 -d|--decode`, which
+  could not see three whole mechanism families ART exercises: decoding inside
+  an interpreter (python `b64decode`, perl `MIME::Base64`/`decode_base64`),
+  the FreeBSD `b64decode` spelling, and bundled/multi-flag forms such as
+  `base64 -w0 -d`. Matching the mechanism (a decode is happening) rather than
+  one utility's exact flag string closes all three.
+
+  Expected to co-fire with T1027 on the same command — see
+  t1027_encoded_payload.yml for why that overlap is intended.
+references:
+  - https://attack.mitre.org/techniques/T1140
+  - https://github.com/redcanaryco/atomic-red-team/blob/master/atomics/T1140/T1140.md
+author: HydraPoT
+date: 2026-08-25
+technique: T1140
+technique_name: 'Deobfuscate/Decode Files or Information'
+tactic: 'Stealth'
+priority: 20
+confidence: high
+logsource:
+  product: cowrie
+  category: command
+detection:
+  selection_shell:
+    command|re:
+      - '\bbase64\s+(?:-{1,2}[\w=-]+\s+)*-{1,2}(?:d\b|decode\b)'
+      - '\bbase64\s+-\w*d\w*'
+      - '\bb64decode\b'
+      - '\buudecode\b'
+      - '\bxxd\s+-\w*r'
+      - '\bopenssl\s+(?:enc|base64)\b[^|;]*\s-d\b'
+  selection_interpreter:
+    command|re:
+      - '\bdecode_base64\b'
+      - '\bMIME::Base64\b'
+      - '\bbase64\s*\.\s*b64decode\b'
+      - '\bbase64\.decodestring\b'
+      - '\batob\s*\('
+  condition: 1 of selection*
+tags:
+  - attack.stealth
+  - attack.t1140

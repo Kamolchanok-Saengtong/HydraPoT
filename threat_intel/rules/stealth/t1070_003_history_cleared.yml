@@ -1,0 +1,29 @@
+id: 1035776b-c030-467c-9c57-808208643501
+title: Shell history cleared
+status: stable
+references:
+  - https://attack.mitre.org/techniques/T1070/003
+author: HydraPoT
+date: 2026-08-25
+technique: T1070.003
+technique_name: 'Clear Command History'
+tactic: 'Stealth'
+priority: 20
+confidence: high
+logsource:
+  product: cowrie
+  category: command
+detection:
+  selection:
+    command|re:
+      - '\bhistory\s+-c\b'
+      - '>\s*[^\s;|]*\.bash_history\b'
+      - '\bunset\s+HISTFILE\b'
+      - '\bexport\s+HISTFILE=/dev/null\b'
+      - '\b(?:rm|shred|truncate|unlink)\b[^|;]*(?:\.bash_history|\.zsh_history|\.sh_history|\.history)\b'
+      - '\bset\s+\+o\s+history\b'
+      - '\bHISTSIZE=0\b'
+  condition: selection
+tags:
+  - attack.stealth
+  - attack.t1070.003

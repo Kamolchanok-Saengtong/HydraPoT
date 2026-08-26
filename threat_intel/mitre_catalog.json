@@ -89,6 +89,14 @@
     ],
     "url": "https://attack.mitre.org/techniques/T1070/003"
   },
+  "T1070.004": {
+    "name": "File Deletion",
+    "tactic": "Stealth",
+    "tactics": [
+      "Stealth"
+    ],
+    "url": "https://attack.mitre.org/techniques/T1070/004"
+  },
   "T1070.006": {
     "name": "Timestomp",
     "tactic": "Stealth",
@@ -135,9 +143,9 @@
   },
   "T1105": {
     "name": "Ingress Tool Transfer",
-    "tactic": "Command And Control",
+    "tactic": "Command and Control",
     "tactics": [
-      "Command And Control"
+      "Command and Control"
     ],
     "url": "https://attack.mitre.org/techniques/T1105"
   },

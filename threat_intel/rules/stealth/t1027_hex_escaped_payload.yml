@@ -1,0 +1,25 @@
+id: 333ab727-8235-4065-831c-ae7efa27d121
+title: Hex-escaped payload written to disk
+status: stable
+description: >-
+  Chunked \xNN escape runs — the standard way a dropper rebuilds an ELF binary through echo.
+references:
+  - https://attack.mitre.org/techniques/T1027
+author: HydraPoT
+date: 2026-08-25
+technique: T1027
+technique_name: 'Obfuscated Files or Information'
+tactic: 'Stealth'
+priority: 20
+confidence: high
+logsource:
+  product: cowrie
+  category: command
+detection:
+  selection:
+    command|re:
+      - 'echo\s+-\w*e\w*\s+[''\"]?(?:\\x[0-9a-fA-F]{2}){4,}'
+  condition: selection
+tags:
+  - attack.stealth
+  - attack.t1027

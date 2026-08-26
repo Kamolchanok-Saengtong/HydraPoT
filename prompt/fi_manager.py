@@ -89,7 +89,11 @@ FI_LABELS = {
     4: "Impact/Delete/Passwd",
 }
 """
-fi_manager.py — Functional Impact (FI) scoring + memory pruning.
+fi_manager.py — Functional Impact (FI) scoring.
+
+Memory pruning was removed: SYSTEM_STATE in main.py holds all session memory,
+so there is no H_i buffer. What remains is FI scoring (used for routing, the
+fi_score column, and the impactful audit log).
 
 FI scale:
   0 = Read/Display
@@ -131,62 +135,6 @@ class FIScorer:
         return 0, "fallback"
 
 
-# ── Memory Pruner ─────────────────────────────────────────────────────────────
-class MemoryPruner:
-    def __init__(self, max_events=20, min_fi=1):
-        self.max_events = max_events
-        self.min_fi     = min_fi
-        self.buffer     = []   # per-instance buffer, isolated per session
-
-    def add(self, event: dict):
-        if event["fi"] < self.min_fi:
-            return
-        # Keep only the FIRST-seen output for a given exact command, not the
-        # most recent. Otherwise, if the model ever mis-generates on a repeat
-        # of a command it previously got right (sampling variance, however
-        # rare), that wrong output gets recorded into Hi as if confirmed —
-        # and the model then imitates its own wrong precedent on every later
-        # repeat of that command for the rest of the session. Locking to the
-        # first observation prevents one slip from permanently poisoning Hi.
-        for existing in self.buffer:
-            if existing["command"] == event["command"]:
-                existing["repeat_count"] = existing.get("repeat_count", 1) + 1
-                return
-        event["repeat_count"] = 1
-        self.buffer.append(event)
-        if len(self.buffer) > self.max_events:
-            self._prune()
-
-    def _prune(self):
-        now = time.time()
-        for e in self.buffer:
-            age_min        = (now - e["timestamp"]) / 60
-            fi_weight      = e["fi"] / 4
-            recency_weight = 1 / (1 + age_min)
-            e["retention"] = (0.7 * fi_weight) + (0.3 * recency_weight)
-
-        # drop the lowest-retention event(s) until we're back at max
-        self.buffer.sort(key=lambda e: e["retention"])
-        while len(self.buffer) > self.max_events:
-            self.buffer.pop(0)
-        # restore chronological order for downstream consumers
-        self.buffer.sort(key=lambda e: e["timestamp"])
-        print(f"[MemoryPruner] Pruned — buffer now {len(self.buffer)} events")
-
-    def get_buffer(self) -> list:
-        return self.buffer
-
-    def buffer_stats(self) -> dict:
-        return {
-            "event_count": len(self.buffer),
-            "max_events":  self.max_events,
-            "fi_breakdown": {
-                str(fi): sum(1 for e in self.buffer if e["fi"] == fi)
-                for fi in range(5)
-            },
-        }
-
-
 # ── FI Log Manager ────────────────────────────────────────────────────────────
 class FILogManager:
     def __init__(
@@ -207,14 +155,19 @@ class FILogManager:
                      apart.
           "sqlite" — the shared DB, used by the live honeypot (main.py).
 
-        Either way this is an audit log only. The H_i the model sees is built
-        from MemoryPruner's in-memory buffer, so the choice cannot change
-        model behaviour or experiment results."""
+        Either way this is an audit log only — nothing here reaches the model.
+        H_i has been removed: SYSTEM_STATE (the SRi dict in main.py) is now the
+        single source of session memory, so there is no history buffer to
+        prune and no interaction history in the prompt."""
         self.impactful_path = impactful_path
         self.store          = store
         self.instance       = instance
         self.scorer         = FIScorer(llm_fn=llm_fn)
-        self.pruner         = MemoryPruner(max_events, min_fi)
+        # H_i removed: SYSTEM_STATE is the only memory now, so there is no
+        # buffer to prune. min_fi is still the "is this impactful" threshold
+        # for the audit log.
+        self.min_fi         = min_fi
+        self.max_events     = max_events
 
         if store == "json":
             # main.py used to pass per-session paths like:
@@ -243,59 +196,14 @@ class FILogManager:
             "score_method": method,
         }
 
-        if fi >= self.pruner.min_fi:
+        if fi >= self.min_fi:
             self._append_log(self.impactful_path, event)
-            self.pruner.add(event)
 
         return event
 
-    def build_llm_prompt(self) -> str:
-        stats  = self.pruner.buffer_stats()
-        events = self.pruner.get_buffer()
-        lines  = [
-            f"[{e['datetime']}] FI={e['fi']} ({e['fi_label']}) [{e['agent']}] $ {e['command']}"
-            for e in events
-        ]
-        return (
-            f"Session impactful commands ({stats['event_count']}/{stats['max_events']} events):\n\n"
-            + "\n".join(lines)
-            + "\n\nWhat is the attacker's current intent and next likely action?"
-        )
-
-    def build_terminal_history(self) -> str:
-        events = self.pruner.get_buffer()
-        if not events:
-            return ""
-
-        # MemoryPruner.add() already guarantees at most one buffered entry
-        # per unique command (first-seen output wins), so no further
-        # collapsing is needed here — just render the repeat_count it kept.
-        history_text = "Previous impactful interactions:\n"
-        for e in events:
-            count  = e.get("repeat_count", 1)
-            suffix = f"  (x{count})" if count > 1 else ""
-            output = e.get("output", "")
-            if output.strip():
-                history_text += f"Command: {e['command']}{suffix}\nResponse: {output}\n\n"
-            else:
-                # No "Response:" field at all for silent commands — a
-                # "Response: (...)" placeholder here reads as a stylistic
-                # template the model can imitate onto its OWN next output
-                # (e.g. echoing "(chmod 777 file)" instead of staying truly
-                # silent). This note is metadata about a past turn, never
-                # something to reproduce.
-                history_text += (
-                    f"Command: {e['command']}{suffix}  "
-                    f"[historical note: produced no output — do not repeat "
-                    f"this annotation style in your own response]\n\n"
-                )
-        return history_text
-
     def status(self):
-        stats     = self.pruner.buffer_stats()
         imp_count = self._count_log(self.impactful_path)
         print("\n── FI Buffer Status ──────────────────────────────")
-        print(f"  Events in buffer       : {stats['event_count']} / {stats['max_events']}")
         print(f"  FI breakdown           :")
         for fi, count in stats["fi_breakdown"].items():
             print(f"    FI {fi} ({FI_LABELS[int(fi)]}): {count} events")

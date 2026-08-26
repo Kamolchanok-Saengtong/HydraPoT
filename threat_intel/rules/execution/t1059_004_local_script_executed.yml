@@ -1,0 +1,27 @@
+id: f48e76b6-8cfb-49b1-b11b-e3995fb2538a
+title: Shell script or local binary executed
+status: stable
+description: >-
+  Execution of a script already staged on the host.
+references:
+  - https://attack.mitre.org/techniques/T1059/004
+author: HydraPoT
+date: 2026-08-25
+technique: T1059.004
+technique_name: 'Unix Shell'
+tactic: 'Execution'
+priority: 40
+confidence: medium
+logsource:
+  product: cowrie
+  category: command
+detection:
+  selection:
+    segment|re:
+      - '^\s*(?:ba)?sh\s+\S+'
+      - '^\s*\./\S+'
+      - '^\s*(?:python3?|perl|ruby)\s+\S+\.\w+'
+  condition: selection
+tags:
+  - attack.execution
+  - attack.t1059.004

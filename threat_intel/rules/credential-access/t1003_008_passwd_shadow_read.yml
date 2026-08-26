@@ -1,0 +1,23 @@
+id: 1f2f4d6c-3bec-475e-b89a-c7e242364e0a
+title: /etc/passwd or /etc/shadow read
+status: stable
+references:
+  - https://attack.mitre.org/techniques/T1003/008
+author: HydraPoT
+date: 2026-08-25
+technique: T1003.008
+technique_name: '/etc/passwd and /etc/shadow'
+tactic: 'Credential Access'
+priority: 15
+confidence: high
+logsource:
+  product: cowrie
+  category: command
+detection:
+  selection:
+    command|re:
+      - '\b(?:cat|less|more|head|tail|strings|cp|grep|awk|sed)\b[^|;]*/etc/(?:shadow|passwd)\b'
+  condition: selection
+tags:
+  - attack.credential_access
+  - attack.t1003.008

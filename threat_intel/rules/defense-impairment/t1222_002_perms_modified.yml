@@ -1,0 +1,23 @@
+id: ca0151e5-7e75-424f-93e9-880bd7e88c46
+title: File permissions or ownership modified
+status: stable
+references:
+  - https://attack.mitre.org/techniques/T1222/002
+author: HydraPoT
+date: 2026-08-25
+technique: T1222.002
+technique_name: 'Linux and Mac Permissions'
+tactic: 'Defense Impairment'
+priority: 45
+confidence: high
+logsource:
+  product: cowrie
+  category: command
+detection:
+  selection:
+    segment|re:
+      - '^\s*(?:sudo\s+)?(?:chmod|chown|chgrp|chattr|setfacl)\b'
+  condition: selection
+tags:
+  - attack.defense_impairment
+  - attack.t1222.002

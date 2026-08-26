@@ -1,0 +1,29 @@
+id: d7112e9b-fb4f-4064-91fa-4d06a5fc655b
+title: Files deleted from a scoped path
+status: stable
+description: >-
+  Anti-forensic cleanup of specific files — e.g. a dropper removing its own staging files before re-downloading. This is NOT T1485: every one of the 2,019 commands previously tagged Data Destruction was a scoped delete like this.
+references:
+  - https://attack.mitre.org/techniques/T1070/004
+author: HydraPoT
+date: 2026-08-25
+technique: T1070.004
+technique_name: 'File Deletion'
+tactic: 'Stealth'
+priority: 60
+confidence: medium
+logsource:
+  product: cowrie
+  category: command
+detection:
+  selection:
+    segment|re:
+      - '^\s*(?:sudo\s+)?rm\s+-\w*[rf]'
+  filter_mass:
+    segment|re:
+      - '^\s*(?:sudo\s+)?rm\s+(?:-\w*[rf]\w*\s+)+/(?:\s|$|\*)'
+      - '^\s*(?:sudo\s+)?rm\s+(?:-\w*[rf]\w*\s+)+(?:/\*|~|\$HOME)\s*$'
+  condition: selection and not filter_mass
+tags:
+  - attack.stealth
+  - attack.t1070.004

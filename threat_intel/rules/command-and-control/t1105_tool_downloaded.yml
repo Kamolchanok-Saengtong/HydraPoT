@@ -1,0 +1,29 @@
+id: 78ea5d17-cf44-4de5-8319-e7192968af4a
+title: Tool or payload downloaded
+status: stable
+description: >-
+  Priority is below T1059.004 so `curl … | sh` reports as execution first, but tag_all() still returns both.
+references:
+  - https://attack.mitre.org/techniques/T1105
+author: HydraPoT
+date: 2026-08-25
+technique: T1105
+technique_name: 'Ingress Tool Transfer'
+tactic: 'Command and Control'
+priority: 35
+confidence: high
+logsource:
+  product: cowrie
+  category: command
+detection:
+  selection:
+    segment|re:
+      - '^\s*(?:sudo\s+)?(?:wget|curl|tftp|ftpget|lwp-download)\b'
+      - '^\s*(?:busybox\s+)?wget\b'
+      - '^\s*rsync\s+\S'
+      - '^\s*(?:sudo\s+)?scp\s+\S'
+      - '^\s*nc\b[^;|]*<\s*\S'
+  condition: selection
+tags:
+  - attack.command_and_control
+  - attack.t1105

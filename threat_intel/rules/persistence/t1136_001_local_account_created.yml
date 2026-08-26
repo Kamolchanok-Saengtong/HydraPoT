@@ -1,0 +1,23 @@
+id: c020226d-5be2-4557-a883-466b30c7a1ab
+title: Local account created
+status: stable
+references:
+  - https://attack.mitre.org/techniques/T1136/001
+author: HydraPoT
+date: 2026-08-25
+technique: T1136.001
+technique_name: 'Local Account'
+tactic: 'Persistence'
+priority: 20
+confidence: high
+logsource:
+  product: cowrie
+  category: command
+detection:
+  selection:
+    segment|re:
+      - '^\s*(?:sudo\s+)?(?:useradd|adduser)\b'
+  condition: selection
+tags:
+  - attack.persistence
+  - attack.t1136.001

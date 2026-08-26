@@ -1,0 +1,23 @@
+id: bc882970-db9d-4dfd-8f69-ed55d717bd33
+title: Shell history mined for credentials
+status: stable
+references:
+  - https://attack.mitre.org/techniques/T1552/003
+author: HydraPoT
+date: 2026-08-25
+technique: T1552.003
+technique_name: 'Shell History'
+tactic: 'Credential Access'
+priority: 30
+confidence: medium
+logsource:
+  product: cowrie
+  category: command
+detection:
+  selection:
+    command|re:
+      - '\b(?:cat|grep|less|more|tail|head|awk|sed|strings)\b[^|;]*(?:\.bash_history|\.zsh_history|\.sh_history|\.mysql_history|\.psql_history|\.history)\b'
+  condition: selection
+tags:
+  - attack.credential_access
+  - attack.t1552.003

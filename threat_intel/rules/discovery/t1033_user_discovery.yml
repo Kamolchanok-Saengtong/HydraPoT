@@ -1,0 +1,23 @@
+id: 30d961f2-995c-4e84-acec-3d46d637a3f4
+title: User discovery
+status: stable
+references:
+  - https://attack.mitre.org/techniques/T1033
+author: HydraPoT
+date: 2026-08-25
+technique: T1033
+technique_name: 'System Owner/User Discovery'
+tactic: 'Discovery'
+priority: 50
+confidence: high
+logsource:
+  product: cowrie
+  category: command
+detection:
+  selection:
+    segment|re:
+      - '^\s*(?:whoami|id|who|w|users|groups|logname|last|lastlog)\b'
+  condition: selection
+tags:
+  - attack.discovery
+  - attack.t1033

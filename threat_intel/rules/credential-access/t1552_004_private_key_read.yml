@@ -1,0 +1,25 @@
+id: ab1e0dde-c00e-4500-9a58-0a357fc3bb99
+title: Private key material read
+status: stable
+references:
+  - https://attack.mitre.org/techniques/T1552/004
+author: HydraPoT
+date: 2026-08-25
+technique: T1552.004
+technique_name: 'Private Keys'
+tactic: 'Credential Access'
+priority: 15
+confidence: high
+logsource:
+  product: cowrie
+  category: command
+detection:
+  selection:
+    command|re:
+      - '\b(?:cat|less|more|head|tail|cp|scp|strings)\b[^|;]*(?:id_rsa|id_dsa|id_ecdsa|id_ed25519|\.pem|\.ppk)\b'
+      - '\b(?:find|locate|grep|ls)\b[^|;]*(?:id_rsa|id_dsa|id_ecdsa|id_ed25519|\.pem|\.ppk)\b'
+      - '\bfind\b[^|;]*-name\s+[''"]?(?:id_[rde]s?[as]|\*\.pem)'
+  condition: selection
+tags:
+  - attack.credential_access
+  - attack.t1552.004

@@ -3,8 +3,5 @@ Current date: {current_date}
 === System State Register (SRi) ===
 {sri_text}
 
-=== Interaction History (Hi) ===
-{hi_text}
-
 === Current Attacker Command (Qi) ===
 {cmd}

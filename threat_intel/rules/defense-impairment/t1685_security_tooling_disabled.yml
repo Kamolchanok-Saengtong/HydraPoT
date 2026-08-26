@@ -1,0 +1,108 @@
+id: 77a28f5d-cca9-4668-b4e4-4a4f1be64a5d
+title: Security tooling, logging or kernel hardening disabled
+status: stable
+description: >-
+  Anything that reduces the host's ability to observe or constrain the
+  attacker: stopping a security/logging daemon, editing its config off,
+  turning off SELinux/AppArmor/audit, disabling history logging, relaxing
+  kernel hardening, or dropping caches and swap to defeat memory forensics.
+
+  The 18 Atomic Red Team T1685 Linux atomics group into eight mechanism
+  families and each selection below covers one, rather than matching the
+  atomics individually. The previous rule caught 3 of 18 because it had only
+  a service-stop selection, and that selection required the verb BEFORE the
+  unit name — so `service syslogd stop` (unit first, the BSD/SysV spelling)
+  fell through. Both word orders are now handled.
+
+  SigmaHQ rule e3a8a052 (Disabling Security Tools) informed two things: the
+  `chkconfig <unit> off` shape, and the Carbon Black / CrowdStrike unit names
+  (cbdaemon, falcon-sensor). SigmaHQ 3fcc9b35 (Syslog Clearing or Removal Via
+  System Utilities) informed the logging-config selection. Both are matched on
+  process_creation Image/CommandLine field pairs, which do not exist in a
+  Cowrie command string, so the logic here is HydraPoT's own translation to
+  raw shell text; SigmaHQ's `chkconfig` ordering is also the reverse of the
+  one ART actually uses, so both orders are accepted.
+
+  The product name list is an unavoidable value list — "a security tool was
+  stopped" cannot be recognised without knowing what security tools are
+  called, and SigmaHQ enumerates the same way. Everything else in this rule
+  is mechanism-matched.
+
+  Deliberately NOT covered: `history -c` (ART test "Clear History"). Clearing
+  history is T1070.003 Clear Command History and is already tagged as such;
+  T1685 here covers *disabling* history logging (`set +o history`,
+  `unset HISTFILE`). That atomic is expected to stay undetected under T1685.
+references:
+  - https://attack.mitre.org/techniques/T1685
+  - https://github.com/redcanaryco/atomic-red-team/blob/master/atomics/T1562.001/T1562.001.md
+  - https://github.com/SigmaHQ/sigma/blob/master/rules/linux/process_creation/proc_creation_lnx_security_tools_disabling.yml
+  - https://github.com/SigmaHQ/sigma/blob/master/rules/linux/process_creation/proc_creation_lnx_clear_syslog.yml
+author: HydraPoT
+date: 2026-08-25
+technique: T1685
+technique_name: 'Disable or Modify Tools'
+tactic: 'Defense Impairment'
+priority: 20
+confidence: high
+logsource:
+  product: cowrie
+  category: command
+detection:
+  # Service control of a security or logging daemon. Both word orders:
+  # `systemctl stop rsyslog` (verb first) and `service syslogd stop` (unit first).
+  selection_service:
+    segment|re:
+      - '\b(?:systemctl|service|rc-service|invoke-rc\.d|initctl)\s+(?:--\S+\s+)*(?:stop|disable|mask|kill)\s+\S*(?:apparmor|auditd|audispd|audit|selinux|falcon-sensor|falconctl|falcon|cbdaemon|cbagent|carbonblack|falco|systemd-journald|journald|rsyslog|syslog-ng|syslogd|syslog|fail2ban|ossec|wazuh-agent|wazuh|clamav-daemon|clamd|clamav|snort|suricata|osqueryd|osquery|amazon-ssm-agent|mdatp|sentinelone|auditbeat|filebeat)\S*'
+      - '\b(?:service|rc-service|invoke-rc\.d)\s+\S*(?:apparmor|auditd|audispd|audit|selinux|falcon-sensor|falcon|cbdaemon|cbagent|carbonblack|falco|systemd-journald|journald|rsyslog|syslog-ng|syslogd|syslog|fail2ban|ossec|wazuh-agent|wazuh|clamav-daemon|clamd|clamav|snort|suricata|osqueryd|osquery|amazon-ssm-agent|mdatp|sentinelone|auditbeat|filebeat)\S*\s+(?:stop|disable|onestop|forcestop)\b'
+      - '/etc/init\.d/\S*(?:auditd|rsyslog|syslog|apparmor|falcon|cbdaemon|clamav|fail2ban|ossec|wazuh)\S*\s+(?:stop|disable)\b'
+  # chkconfig, both orderings: ART uses `chkconfig off cbdaemon`,
+  # SigmaHQ's rule expects `chkconfig cbdaemon off`.
+  selection_chkconfig:
+    segment|re:
+      - '\bchkconfig\s+(?:off\s+\S*(?:auditd|rsyslog|syslog|apparmor|falcon|cbdaemon|clamav|fail2ban|ossec|wazuh|iptables)\S*|\S*(?:auditd|rsyslog|syslog|apparmor|falcon|cbdaemon|clamav|fail2ban|ossec|wazuh|iptables)\S*\s+off)\b'
+      - '\bsysrc\s+\S*(?:syslogd|auditd|rsyslog|clamav|ossec)\S*_enable\s*=\s*["'']?(?:NO|FALSE|no|false)'
+  # Mandatory access control and the audit subsystem switched off.
+  selection_mac_audit:
+    command|re:
+      - '\bsetenforce\s+0\b'
+      - '\baa-(?:disable|complain|teardown)\b'
+      - '\bauditctl\s+(?:-e\s*0\b|-D\b)'
+      - '\bsemanage\s+permissive\b'
+  # Writing to a security, audit or logging configuration file. Requires a
+  # write operator so that reads of the same paths do not match.
+  selection_config_tamper:
+    segment|re:
+      - '(?:>>?|\btee\b|\bsed\s+-i)[^|;&]*/etc/(?:audit|audisp|libaudit\.conf|systemd/journald\.conf|r?syslog\.conf|syslog-ng/|security/|selinux/|apparmor)'
+  # Kernel hardening relaxed.
+  selection_kernel:
+    command|re:
+      - '\bsysctl\s+-w\s+kernel\.(?:randomize_va_space|dmesg_restrict|kptr_restrict|perf_event_paranoid)\s*=\s*0\b'
+      - '>\s*/proc/sys/kernel/(?:randomize_va_space|dmesg_restrict|kptr_restrict)\b'
+  # Magic SysRq armed, or used for reboot/crash/poweroff/sync.
+  # The 'e' trigger (SIGTERM to all processes) is T1489, not this rule.
+  selection_sysrq:
+    command|re:
+      - '>\s*/proc/sys/kernel/sysrq\b'
+      - '\becho\s+["'']?[bcos]["'']?\s*>\s*/proc/sysrq-trigger'
+  # Memory forensics defeated by flushing caches or swap.
+  selection_memory:
+    command|re:
+      - '>\s*/proc/sys/vm/drop_caches\b'
+      - '\bswapoff\s+-a\b'
+  # Shell history logging turned off (as opposed to cleared, which is T1070.003).
+  selection_history_off:
+    command|re:
+      - '\bset\s+\+o\s+history\b'
+      - '\bunset\s+HIST(?:FILE|SIZE|FILESIZE)\b'
+      - '\bHISTFILE\s*=\s*(?:/dev/null|["'']{2})'
+      - '\bHISTSIZE\s*=\s*0\b'
+  # EDR agents driven through their own CLI.
+  selection_edr_cli:
+    command|re:
+      - '\bmdatp\b[^|;]*\bconfig\b[^|;]*(?:real-time-protection|--value\s+disabled)'
+      - '\bfalconctl\b[^|;]*(?:\s-d\b|\bunload\b)'
+      - '\bsentinelctl\b[^|;]*(?:unload|disable)'
+  condition: 1 of selection*
+tags:
+  - attack.defense_impairment
+  - attack.t1685

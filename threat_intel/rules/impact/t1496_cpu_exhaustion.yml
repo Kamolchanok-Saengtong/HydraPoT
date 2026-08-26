@@ -1,0 +1,55 @@
+id: 6c1de4a0-9f27-4c3e-8b55-2ad0e1f7c983
+title: CPU deliberately exhausted
+status: stable
+description: >-
+  Sustained CPU consumption where the output is discarded — the work has no
+  product, so the compute itself is the point. This is the resource-abuse
+  mechanism that is not mining: busy loops, /dev/zero and /dev/urandom pumped
+  into /dev/null, and the load-generator utilities.
+
+  Written as a mechanism rather than a literal. Atomic Red Team's only Linux
+  T1496 atomic is `yes > /dev/null`, and matching that exact string alone
+  would satisfy the validator while detecting nothing else; every pattern here
+  describes a way to burn CPU, and the ART command falls out as one instance.
+
+  `yes | <command>` is deliberately NOT matched — piping `yes` into another
+  program is the ordinary way to auto-confirm prompts (`yes | apt install`)
+  and carries no resource-abuse signal. Only the discard-to-null form counts.
+
+  Confidence is medium: on a honeypot this is real abuse, but load generators
+  also appear in legitimate benchmarking.
+references:
+  - https://attack.mitre.org/techniques/T1496
+  - https://github.com/redcanaryco/atomic-red-team/blob/master/atomics/T1496/T1496.md
+author: HydraPoT
+date: 2026-08-25
+technique: T1496
+technique_name: 'Resource Hijacking'
+tactic: 'Impact'
+priority: 55
+confidence: medium
+logsource:
+  product: cowrie
+  category: command
+detection:
+  # Output discarded: the process exists only to consume cycles.
+  selection_discard:
+    segment|re:
+      - '\byes\b[^|;]*>\s*/dev/null'
+      - '\bdd\b[^|;]*\bif=/dev/(?:zero|urandom)\b[^|;]*\bof=/dev/null'
+      - '\bcat\s+/dev/(?:zero|urandom)\s*>\s*/dev/null'
+  # Shell busy loop with an empty or no-op body.
+  selection_busyloop:
+    command|re:
+      - '\bwhile\s+(?::|true)\s*;?\s*do\s*(?::|true)?\s*;?\s*done'
+      - '\bfor\s*\(\(\s*;\s*;\s*\)\)\s*;?\s*do\b'
+  # Purpose-built load generators.
+  selection_loadgen:
+    command|re:
+      - '\bstress(?:-ng)?\b[^|;]*--(?:cpu|vm|matrix)\b'
+      - '\bsysbench\b[^|;]*\bcpu\b'
+      - '\bopenssl\s+speed\b'
+  condition: 1 of selection*
+tags:
+  - attack.impact
+  - attack.t1496

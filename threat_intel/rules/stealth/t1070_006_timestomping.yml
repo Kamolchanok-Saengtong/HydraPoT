@@ -1,0 +1,23 @@
+id: 667dd6f4-15e1-4574-b2c0-dcee377c4a5e
+title: File timestamps altered
+status: stable
+references:
+  - https://attack.mitre.org/techniques/T1070/006
+author: HydraPoT
+date: 2026-08-25
+technique: T1070.006
+technique_name: 'Timestomp'
+tactic: 'Stealth'
+priority: 20
+confidence: high
+logsource:
+  product: cowrie
+  category: command
+detection:
+  selection:
+    segment|re:
+      - '^\s*touch\s+-[amdt]\b'
+  condition: selection
+tags:
+  - attack.stealth
+  - attack.t1070.006

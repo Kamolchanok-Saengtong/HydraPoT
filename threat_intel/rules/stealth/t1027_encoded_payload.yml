@@ -1,0 +1,63 @@
+id: 1f4c8ae2-6d3b-4b7e-9c21-5a0f7e83d914
+title: Encoded payload present in command
+status: stable
+description: >-
+  An encoded blob is being handled — decoded, or reconstructed from a language
+  runtime's base64 helper. T1027 describes the artefact being obfuscated;
+  T1140 describes the act of decoding it.
+
+  These two tags are MEANT to co-occur on the same command, and that is not
+  duplication. MITRE separates them, and so do both external references:
+  Atomic Red Team labels its `base64 -d` atomic T1027, while SigmaHQ's
+  e2072cab (Decode Base64 Encoded Text) also tags T1027 for the same shape.
+  Before this rule existed HydraPoT emitted only T1140, which meant a command
+  rebuilding a hidden payload never carried the obfuscation tag at all.
+
+  Pattern approach was informed by SigmaHQ rule e2072cab, which matches
+  process_creation fields (Image|endswith '/base64' plus CommandLine '-d').
+  That field pair does not exist in a Cowrie command string, so this rule is
+  HydraPoT's own translation of the idea to raw shell text; it additionally
+  covers the interpreter-inline decoders SigmaHQ's process-level rule cannot
+  see, since there the decode happens inside python/perl rather than as a
+  separate process.
+
+  Confidence is low by design, matching SigmaHQ's own `level: low` for this
+  shape — encoding is common in benign automation. The value here is the
+  co-tag, not a standalone alert.
+references:
+  - https://attack.mitre.org/techniques/T1027
+  - https://github.com/redcanaryco/atomic-red-team/blob/master/atomics/T1027/T1027.md
+  - https://github.com/SigmaHQ/sigma/blob/master/rules/linux/process_creation/proc_creation_lnx_base64_decode.yml
+author: HydraPoT
+date: 2026-08-25
+technique: T1027
+technique_name: 'Obfuscated Files or Information'
+tactic: 'Stealth'
+priority: 45
+confidence: low
+logsource:
+  product: cowrie
+  category: command
+detection:
+  # Shell decoders, including the flag-bundled and FreeBSD spellings that the
+  # existing T1140 rule's literal '-d|--decode' list does not reach.
+  selection_shell:
+    command|re:
+      - '\bbase64\s+(?:-{1,2}[\w=-]+\s+)*-{1,2}(?:d\b|decode\b)'
+      - '\bbase64\s+-\w*d\w*'
+      - '\bb64decode\b'
+      - '\buudecode\b'
+      - '\bxxd\s+-\w*r'
+      - '\bopenssl\s+(?:enc|base64)\b[^|;]*\s-d\b'
+  # Decode performed inside an interpreter rather than as its own process.
+  selection_interpreter:
+    command|re:
+      - '\bbase64\s*\.\s*b64decode\b'
+      - '\bMIME::Base64\b'
+      - '\bdecode_base64\b'
+      - '\batob\s*\('
+      - '\bbase64\.decodestring\b'
+  condition: 1 of selection*
+tags:
+  - attack.stealth
+  - attack.t1027

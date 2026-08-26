@@ -1,0 +1,30 @@
+id: 0e55cd84-a78a-4f66-9b57-f0d22df7f4c3
+title: Mass or root-level data destruction
+status: stable
+description: >-
+  Reserved for destruction of the system or a whole tree. Scoped `rm -rf <files>` is T1070.004, not this.
+references:
+  - https://attack.mitre.org/techniques/T1485
+author: HydraPoT
+date: 2026-08-25
+technique: T1485
+technique_name: 'Data Destruction'
+tactic: 'Impact'
+priority: 5
+confidence: high
+logsource:
+  product: cowrie
+  category: command
+detection:
+  selection:
+    segment|re:
+      - '^\s*(?:sudo\s+)?rm\s+(?:-\w*[rf]\w*\s+)+/(?:\s|$|\*)'
+      - '^\s*(?:sudo\s+)?rm\s+(?:-\w*[rf]\w*\s+)+(?:/\*|~|\$HOME)\s*$'
+      - '\bdd\b[^;|]*\bif=/dev/(?:zero|urandom)\b[^;|]*\bof=\S'
+      - '\bdd\b[^;|]*\bof=\S[^;|]*\bif=/dev/(?:zero|urandom)\b'
+      - '\bmkfs(?:\.\w+)?\s+/dev/'
+      - '\bshred\b[^|;]*/dev/[sh]d'
+  condition: selection
+tags:
+  - attack.impact
+  - attack.t1485

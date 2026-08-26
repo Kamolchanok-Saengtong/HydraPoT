@@ -1,0 +1,59 @@
+id: 025483f8-f510-440f-9a65-e297fda81a21
+title: Cryptomining tooling
+status: stable
+description: >-
+  Miner binaries, pool protocol strings and miner-specific tuning flags.
+
+  Flag and pool patterns were extended using SigmaHQ community rule 9069ea3c
+  (Linux Crypto Mining Indicators) as a pattern reference — the indicator
+  shapes are adapted, the rule is HydraPoT's own and matches Cowrie command
+  text rather than process_creation CommandLine fields.
+
+  Note on ART: this rule scores 0% against Atomic Red Team's T1496 corpus and
+  that is expected. ART ships exactly one Linux T1496 atomic and its command is
+  `yes > /dev/null`, a CPU-load simulator with no mining component. Detecting
+  that shape is a different mechanism, handled by t1496_cpu_exhaustion.yml.
+  Neither SigmaHQ's T1496 rule nor this one treats CPU burn as mining, and the
+  literal was deliberately not added here to inflate the validation score.
+references:
+  - https://attack.mitre.org/techniques/T1496
+  - https://github.com/SigmaHQ/sigma/blob/master/rules/linux/process_creation/proc_creation_lnx_crypto_mining.yml
+author: HydraPoT
+date: 2026-08-25
+technique: T1496
+technique_name: 'Resource Hijacking'
+tactic: 'Impact'
+priority: 10
+confidence: high
+logsource:
+  product: cowrie
+  category: command
+detection:
+  selection_binary:
+    command|re:
+      - '\b(?:xmrig|minerd|cpuminer|ccminer|ethminer|nbminer|xmr-stak|phoenixminer|lolminer|teamredminer|srbminer)\b'
+  selection_pool:
+    command|re:
+      - '\bstratum\+(?:tcp|udp|ssl)://'
+      - '\s-o\s+(?:stratum|pool\.)'
+  selection_flags:
+    command|re:
+      - '--donate-level\b'
+      - '--cpu-priority='
+      - '--nicehash\b'
+      - '--algo=rx/'
+      - '\bmodprobe\s+msr\s+allow_writes=on'
+  # Base64 phase-shifts of 'stratum+tcp://', 'stratum+udp://' and
+  # '--donate-level='. Three fragments per string because the encoding differs
+  # depending on the byte offset the substring starts at. These are encodings
+  # of the mechanism strings above, not a list of known-bad samples, so they
+  # keep working against miner configs passed in as base64 blobs.
+  selection_encoded:
+    command|re:
+      - '(?:LS1kb25hdGUtbGV2ZWw9|0tZG9uYXRlLWxldmVsP|tLWRvbmF0ZS1sZXZlbD)'
+      - '(?:c3RyYXR1bSt0Y3A6Ly|N0cmF0dW0rdGNwOi8v|zdHJhdHVtK3RjcDovL)'
+      - '(?:c3RyYXR1bSt1ZHA6Ly|N0cmF0dW0rdWRwOi8v|zdHJhdHVtK3VkcDovL)'
+  condition: 1 of selection*
+tags:
+  - attack.impact
+  - attack.t1496

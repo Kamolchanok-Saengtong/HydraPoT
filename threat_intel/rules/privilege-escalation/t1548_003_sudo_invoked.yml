@@ -1,0 +1,25 @@
+id: 6e61b3f2-a3b5-45d7-8bba-78a5357bebfb
+title: Sudo invoked
+status: stable
+description: >-
+  Low priority so the inner command's own technique wins; this only surfaces when nothing more specific matches.
+references:
+  - https://attack.mitre.org/techniques/T1548/003
+author: HydraPoT
+date: 2026-08-25
+technique: T1548.003
+technique_name: 'Sudo and Sudo Caching'
+tactic: 'Privilege Escalation'
+priority: 90
+confidence: low
+logsource:
+  product: cowrie
+  category: command
+detection:
+  selection:
+    segment|re:
+      - '^\s*sudo\s+\S'
+  condition: selection
+tags:
+  - attack.privilege_escalation
+  - attack.t1548.003

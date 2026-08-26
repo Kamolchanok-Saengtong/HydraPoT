@@ -1,0 +1,51 @@
+id: 5dfa193f-e6ec-48c2-9bfb-303eb4df2d9b
+title: Network configuration discovered
+status: stable
+description: >-
+  Interface addresses, routing table, ARP cache and DNS configuration are
+  read — the attacker working out where the host sits on the network.
+
+  The previous version scored 0% against Atomic Red Team and the cause was an
+  anchoring bug, not missing coverage. Every command in ART's T1016 atomic is
+  guarded, in the form
+  `if [ -x "$(command -v ifconfig)" ]; then ifconfig; else echo …; fi`.
+  The segment splitter divides on `;`, so the segment carrying the command is
+  `then ifconfig`, and a `^\s*ifconfig` anchor cannot match it. The tool name
+  is now allowed to sit at any command position: start of segment, after a
+  pipe, or after a `then`/`else`/`do`/`elif` keyword.
+
+  That prefix set is what keeps `command -v ifconfig` and
+  `echo "ifconfig is missing from the machine"` — both present in the same
+  atomic — from matching. A bare substring search for the tool name would
+  tag all three lines and look like it worked while actually being wrong.
+
+  No SigmaHQ rule informed this one; the fix is structural rather than a
+  question of which indicators to match.
+references:
+  - https://attack.mitre.org/techniques/T1016
+  - https://github.com/redcanaryco/atomic-red-team/blob/master/atomics/T1016/T1016.md
+author: HydraPoT
+date: 2026-08-25
+technique: T1016
+technique_name: 'System Network Configuration Discovery'
+tactic: 'Discovery'
+priority: 50
+confidence: high
+logsource:
+  product: cowrie
+  category: command
+detection:
+  # (?:^|\||then |else |do |elif ) = "at a command position".
+  selection_tool:
+    segment|re:
+      - '(?:^|\||\b(?:then|else|elif|do)\s+)\s*(?:sudo\s+)?(?:ifconfig|iwconfig|arp|route|nmcli|resolvectl|systemd-resolve)\b'
+      - '(?:^|\||\b(?:then|else|elif|do)\s+)\s*(?:sudo\s+)?ip\s+(?:-\w+\s+)*(?:a|addr|address|link|route|neigh|rule)\b'
+      - '(?:^|\||\b(?:then|else|elif|do)\s+)\s*(?:sudo\s+)?hostname\s+-[iI]\b'
+  # Reading the configuration off disk rather than through a tool.
+  selection_configfile:
+    segment|re:
+      - '(?:^|\||\b(?:then|else|elif|do)\s+)\s*(?:sudo\s+)?(?:cat|less|more|head|tail)\s+\S*/etc/(?:resolv\.conf|hosts|network/interfaces|netplan|sysconfig/network)'
+  condition: 1 of selection*
+tags:
+  - attack.discovery
+  - attack.t1016

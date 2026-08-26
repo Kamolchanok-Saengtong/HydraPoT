@@ -1,0 +1,46 @@
+id: 9d2e6b18-7a34-4f5c-b0e9-1c8d47af3e52
+title: Shell control flow written on the command line
+status: stable
+description: >-
+  A loop or control structure typed directly at the prompt rather than run
+  from a file. The shell is being used as a programming language, which is
+  what T1059.004 describes — running a staged script is only one expression
+  of it.
+
+  Derived from the Atomic Red Team T1059.004 atomic "Command line scripts"
+  (`for i in $(seq 1 5); do echo …; sleep 1; done`). On a honeypot this shape
+  matters more than the ART test suggests: loops are how a session sweeps a
+  subnet, brute-forces a path list, or fans a payload across hosts, all
+  without ever writing a file to disk.
+
+  Matches on the whole command rather than per segment, because the segment
+  splitter divides on `;` and a loop's header, body and terminator are three
+  different segments by that rule.
+
+  Expected to co-fire with T1496 on `while true; do :; done` — that command is
+  both shell scripting and a CPU burn, and the two rules describe different
+  aspects of it.
+references:
+  - https://attack.mitre.org/techniques/T1059/004
+  - https://github.com/redcanaryco/atomic-red-team/blob/master/atomics/T1059.004/T1059.004.md
+author: HydraPoT
+date: 2026-08-25
+technique: T1059.004
+technique_name: 'Unix Shell'
+tactic: 'Execution'
+priority: 50
+confidence: medium
+logsource:
+  product: cowrie
+  category: command
+detection:
+  selection_loop:
+    command|re:
+      - '\bfor\s+\w+\s+in\b[^;]*;\s*do\b'
+      - '\bfor\s*\(\([^)]*\)\)\s*;?\s*do\b'
+      - '\b(?:while|until)\b[^;]*;\s*do\b'
+      - ';\s*done\b'
+  condition: selection_loop
+tags:
+  - attack.execution
+  - attack.t1059.004

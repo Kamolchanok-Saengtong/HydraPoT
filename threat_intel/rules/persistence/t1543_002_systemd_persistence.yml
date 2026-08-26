@@ -1,0 +1,25 @@
+id: 835205e5-769a-4ec9-9afa-052ebc2db808
+title: Systemd service persistence
+status: stable
+references:
+  - https://attack.mitre.org/techniques/T1543/002
+author: HydraPoT
+date: 2026-08-25
+technique: T1543.002
+technique_name: 'Systemd Service'
+tactic: 'Persistence'
+priority: 20
+confidence: high
+logsource:
+  product: cowrie
+  category: command
+detection:
+  selection:
+    command|re:
+      - '\bsystemctl\s+enable\b'
+      - '/etc/systemd/system'
+      - '\bsystemd-run\b'
+  condition: selection
+tags:
+  - attack.persistence
+  - attack.t1543.002
