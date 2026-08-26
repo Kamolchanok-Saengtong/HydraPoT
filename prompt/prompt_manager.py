@@ -1,14 +1,3 @@
-"""
-Prompt Manager — builds prompts for LLM agents based on HoneyGPT paper.
-
-Core formula: (Ai, Ci, Fi) = LLM(P, S, Qi, SRi, Hi)
-  P   = base prompt/rules       ← templates/base_prompt.txt
-  S   = honeypot system setting  ← templates/system_setting.txt
-  Qi  = current attacker command
-  Hi  = interaction history      ← fi_manager buffer
-  SRi = system state register    ← SYSTEM_STATE dict
-"""
-
 import os
 import re
 from datetime import datetime
