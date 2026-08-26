@@ -149,9 +149,6 @@ class PromptManager:
     def _build_user_prompt(self, cmd: str) -> str:
         current_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        # ── Hi — interaction history from fi_manager buffer ───────────
-        hi_text = self.fi_manager.build_terminal_history() if self.sync_state else ""
-
         sri_lines = []
 
         # ── SRi — system state register (gated by sync_state) ─────────
@@ -315,6 +312,5 @@ class PromptManager:
         return self._user_prompt_tpl.format(
             current_date = current_date,
             sri_text     = sri_text,
-            hi_text      = hi_text if hi_text else "No prior impactful interactions.",
             cmd          = cmd,
         )
