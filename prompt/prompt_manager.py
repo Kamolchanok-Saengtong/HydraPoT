@@ -3,17 +3,6 @@ import re
 from datetime import datetime
 
 TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), "templates")
-
-# Malware-fingerprint sessions (e.g. `echo -ne '\x7f\x45\x4c\x46...' > file`)
-# get tracked with "content" literally holding the raw, undecoded capture of
-# the echo argument (main.py never decodes it). Bash's `echo` only decodes
-# \xHH sequences when invoked with a flag containing 'e' (-e/-ne/-en) — a
-# bare `echo` leaves them as literal backslash-x text. So whether \xHH means
-# "hex byte" or "literal text" depends on that flag, and only decoding tells
-# us whether the actual bytes are printable text (e.g. `\x47\x72\x6f\x70` ->
-# "Grop") or genuine binary (e.g. a fake ELF header). Detected structurally
-# (decode, then check printability of the result) — not tied to any one
-# payload/signature, so it generalizes to any tracked file content.
 _HEX_BYTE_RE     = re.compile(r"\\x([0-9a-fA-F]{2})")
 _ECHO_E_FLAG_RE  = re.compile(r"^-[a-zA-Z]*e[a-zA-Z]*\s+")
 
