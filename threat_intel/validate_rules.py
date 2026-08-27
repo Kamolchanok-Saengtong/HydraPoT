@@ -104,7 +104,7 @@ def _fill_placeholders(cmd: str, inputs: dict) -> str:
 
 
 def load_art_linux(path: str) -> list:
-    """[{technique, tactic, test, command}] for Linux sh/bash atomics.
+    """[{technique, tactic, test, executor, command}] for Linux sh/bash atomics.
 
     Multi-line commands are split into individual lines: each line is a command
     the test actually runs, and our mapper works per command, not per script.
@@ -132,7 +132,8 @@ def load_art_linux(path: str) -> list:
                     if not line or line.startswith("#"):
                         continue
                     out.append({"technique": tid, "tactic": tactic,
-                                "test": test.get("name", ""), "command": line})
+                                "test": test.get("name", ""),
+                                "executor": ex.get("name", ""), "command": line})
     return out
 
 
@@ -161,7 +162,13 @@ def evaluate(art_rows: list) -> dict:
     # regroup lines into the tests they came from
     tests = {}
     for row, tags in tagged:
-        key = (row["technique"], row["test"])
+        # Deliberately NOT keyed on tactic. ART's index nests tests under
+        # doc[tactic][technique], so a technique belonging to two tactics has
+        # its tests listed twice (T1497.001 appears under both discovery and
+        # stealth). 63 such pairs exist and all use the same executor, so those
+        # 87 listings are 87 duplicates, not distinct tests. Keying on
+        # (technique, name, executor) collapses them correctly: 482 -> 395.
+        key = (row["technique"], row["test"], row.get("executor", ""))
         t = tests.setdefault(key, {"technique": row["technique"],
                                    "test": row["test"], "tags": set(),
                                    "lines": []})
