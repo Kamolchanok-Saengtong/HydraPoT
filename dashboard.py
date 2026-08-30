@@ -5,7 +5,9 @@ Layout: live terminal | metric cards | world map | events over time | summary ta
 pip install dash plotly pandas geoip2
 """
 
+import collections
 import glob
+import ipaddress
 import json
 import os
 import time
@@ -17,18 +19,30 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 
-from dash import Dash, html, dcc, Input, Output, State, ctx, ALL, dash_table
+from dash import (Dash, html, dcc, Input, Output, State, ctx, ALL,
+                  dash_table, no_update)
 from dash.exceptions import PreventUpdate
 
 from threat_intel.ioc_extractor import build_iocs, to_stix
-from threat_intel.mitre_mapper import tag as _mitre_tag
+from threat_intel.mitre_mapper import tag as _mitre_tag, tag_all as _mitre_tag_all
+from threat_intel.mitre_mapper import _load_catalog as _mitre_catalog
+
+
+def _technique_name(tid):
+    """Technique ID -> display name, from the MITRE STIX-built catalog.
+
+    Needed because the exploded chart groups on the bare ID; the scalar
+    `technique` column belongs to the primary tag and would mislabel the rest
+    of the chain.
+    """
+    return (_mitre_catalog().get(tid) or {}).get("name") or tid
 import storage
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
 SESSION_DIR  = "data/logs/sessions"
 AUTH_LOG     = "data/logs/auth_log.json"
-REFRESH_MS   = 5000    # safe again: the tick now refreshes ONLY the live feed
+REFRESH_MS   = 1000    # safe again: the tick now refreshes ONLY the live feed
                        # (build_live_feed), not the whole page's figures
 LOGO_PATH    = os.path.join(_HERE, "production", "logo.png")
 MMDB_PATH    = os.path.join(_HERE, "geoip.mmdb")
@@ -346,9 +360,23 @@ def load_raw_session_rows() -> list:
 # label prefix is what separates them. Presentation-only: the data is untouched
 # on disk, and NSC's own scripts read it exactly as before.
 EXPERIMENT_SRC_PREFIXES = (
-    "eval_", "parta_", "partb_", "partc_", "hrreplay_", "bench_",
-    "ml4net", "cyberlab",
+    "eval", "parta_", "partb_", "partc_", "hrreplay_", "bench",
+    "ml4net", "quickcheck", "cloudcheck", "sanity", "smoke", "replay",
 )
+# Harness rows whose src_ip is a bare token rather than a prefixed label
+# ("t", "x", "v", "t1", "test"...). Matched by SHAPE, not by a growing list of
+# literals: a real source is either a dotted IP or CyberLab's 16-char hashed
+# identifier, so anything non-numeric and shorter than 6 characters is a label
+# somebody typed. Well-known public resolvers are listed because they appear as
+# test *targets*; none of them ever initiates an SSH connection to a honeypot.
+_HARNESS_TOKEN_MAXLEN = 5
+EXPERIMENT_SRC_EXACT = {"localhost", "-", "", "8.8.8.8", "8.8.4.4",
+                        "1.1.1.1", "9.9.9.9"}
+
+# NOTE: "cyberlab" is deliberately NOT a prefix any more. The CyberLab Cowrie
+# capture is now imported as real sensor traffic (instance="CyberLab", src_ip =
+# the dataset's hashed attacker identifier), so filtering on that string would
+# hide the only genuine attacker data the dashboard has.
 
 
 def drop_experiment_rows(df: pd.DataFrame) -> pd.DataFrame:
@@ -359,8 +387,24 @@ def drop_experiment_rows(df: pd.DataFrame) -> pd.DataFrame:
     attackers."""
     if df.empty or "src_ip" not in df.columns:
         return df
+    ip = df["src_ip"].astype(str)
     # str.startswith takes a tuple — one pass instead of one per prefix
-    return df[~df["src_ip"].astype(str).str.startswith(EXPERIMENT_SRC_PREFIXES, na=False)]
+    drop = ip.str.startswith(EXPERIMENT_SRC_PREFIXES, na=False)
+    drop |= ip.str.lower().isin(EXPERIMENT_SRC_EXACT)
+    drop |= (ip.str.len() <= _HARNESS_TOKEN_MAXLEN) & ~ip.str.contains(r"\.", na=False)
+    # Loopback, private and RFC5737 documentation addresses are test targets,
+    # never a real attacker. Matched by range rather than a list of literals so
+    # a new test address does not need a code change to be excluded.
+    drop |= ip.map(_is_non_routable)
+    return df[~drop]
+
+
+def _is_non_routable(value) -> bool:
+    try:
+        addr = ipaddress.ip_address(str(value))
+    except ValueError:
+        return False        # a hashed identifier is not an IP; keep it
+    return not addr.is_global
 
 
 def load_all() -> pd.DataFrame:
@@ -386,14 +430,29 @@ def load_all() -> pd.DataFrame:
         else:
             df["instance"] = df["instance"].fillna("default")
         # ATT&CK tags applied here rather than stored in the logs: the mapper is
-        # pure regex over the command text, so historical rows get exactly the
-        # answer they'd have got live, and editing MITRE_RULES re-tags
-        # everything on the next refresh with no migration. Cached per UNIQUE
-        # command (4.3k uniques for 132k rows) so it costs ~0.06s.
-        _lut = {c: _mitre_tag(c) for c in df["cmd"].astype(str).unique()}
-        df["technique_id"] = df["cmd"].astype(str).map(lambda c: (_lut.get(c) or {}).get("technique_id"))
-        df["technique"]    = df["cmd"].astype(str).map(lambda c: (_lut.get(c) or {}).get("technique"))
-        df["tactic"]       = df["cmd"].astype(str).map(lambda c: (_lut.get(c) or {}).get("tactic"))
+        # pure pattern matching over the command text, so historical rows get
+        # exactly the answer they'd have got live, and editing a rule file in
+        # threat_intel/rules/ re-tags everything on the next refresh with no
+        # migration. Cached per UNIQUE command (4.3k uniques for 132k rows).
+        #
+        # Two shapes are stored deliberately:
+        #   technique_id/technique/tactic  SCALAR, the primary tag from tag().
+        #       Every count on this page divides by rows, so these must stay
+        #       one-per-row or coverage %, per-IP totals and tactic counts all
+        #       inflate.
+        #   technique_ids                  LIST, the full chain from tag_all().
+        #       Used only by the technique bar chart, which explodes it. A
+        #       dropper line like `wget …; chmod +x …; sh …; rm …` carries five
+        #       techniques; the primary tag alone would show one.
+        _cmds  = df["cmd"].astype(str)
+        _uniq  = _cmds.unique()
+        _lut     = {c: _mitre_tag(c)     for c in _uniq}
+        _lut_all = {c: _mitre_tag_all(c) for c in _uniq}
+        df["technique_id"] = _cmds.map(lambda c: (_lut.get(c) or {}).get("technique_id"))
+        df["technique"]    = _cmds.map(lambda c: (_lut.get(c) or {}).get("technique"))
+        df["tactic"]       = _cmds.map(lambda c: (_lut.get(c) or {}).get("tactic"))
+        df["technique_ids"] = _cmds.map(
+            lambda c: [x["technique_id"] for x in (_lut_all.get(c) or [])])
         df["timestamp"]  = pd.to_datetime(df.get("timestamp", ""), errors="coerce")
 
     _cache["all_df"] = df
@@ -783,6 +842,90 @@ app.index_string = """
     .mitre-side { display:flex; flex-direction:column; min-width:0; }
     .tech-card { width:100%; margin-top:14px; }
     .tech-card .stage-body { padding:6px 10px 2px; }
+    /* Sankey + playbooks sit side by side on desktop and stack under 1100px,
+       matching how .mitre-grid already behaves. */
+    .chain-grid { display:grid; grid-template-columns: 1.45fr 1fr;
+                  gap:14px; margin-top:14px; align-items:start; }
+    @media (max-width: 1100px) { .chain-grid { grid-template-columns: 1fr; } }
+    /* -- Kill Chain Flow -------------------------------------------------
+       A horizontal rail of tactic columns in MITRE order. Same sticker
+       language as .stage-card (2px ink border, 14px radius, hard offset
+       shadow) so it belongs to this page rather than looking imported.
+       Severity is the only saturated colour used here; amber stays reserved
+       for the page accent. Colours come from CSS vars, so the palette has a
+       single source of truth. */
+    .kc-rail { display:flex; align-items:stretch; gap:0;
+               overflow-x:auto; padding:4px 2px 14px; scroll-snap-type:x proximity; }
+    .kc-col { flex:0 0 208px; scroll-snap-align:start; background:#FFFFFF;
+              border:2px solid var(--ink); border-radius:14px;
+              box-shadow:3px 3px 0 var(--ink);
+              display:flex; flex-direction:column; overflow:hidden; }
+    .kc-head { padding:9px 11px 8px; background:var(--paper);
+               border-bottom:3px solid var(--ink); }
+    .kc-head-top { display:flex; align-items:center; justify-content:space-between; }
+    .kc-ord { font-family:'JetBrains Mono',monospace; font-size:0.72rem;
+              font-weight:700; color:var(--ink-3); letter-spacing:0.06em; }
+    .kc-badge { font-family:'JetBrains Mono',monospace; font-size:0.68rem;
+                font-weight:700; color:#fff; padding:2px 7px; border-radius:9px;
+                border:1.5px solid var(--ink); font-variant-numeric:tabular-nums; }
+    .kc-tactic { font-size:0.82rem; font-weight:700; color:var(--ink);
+                 margin-top:5px; line-height:1.25; text-wrap:balance; }
+    .kc-stack { display:flex; flex-direction:column; gap:7px; padding:9px; }
+    .kc-card { text-align:left; width:100%; cursor:pointer; font:inherit;
+               background:var(--paper); border:1.5px solid var(--line-strong);
+               border-left:5px solid var(--ink); border-radius:9px; padding:8px 9px;
+               transition:transform .12s ease, box-shadow .12s ease; }
+    .kc-card:hover { transform:translate(-1px,-1px); box-shadow:2px 2px 0 var(--ink); }
+    .kc-card:focus-visible { outline:2.5px solid var(--y-400); outline-offset:2px; }
+    .kc-card-top { display:flex; align-items:center; justify-content:space-between; gap:6px; }
+    .kc-tid { font-family:'JetBrains Mono',monospace; font-size:0.73rem;
+              font-weight:700; color:var(--ink); }
+    .kc-count { font-family:'JetBrains Mono',monospace; font-size:0.63rem;
+                font-weight:700; color:#fff; padding:1px 6px; border-radius:8px;
+                font-variant-numeric:tabular-nums; }
+    .kc-tname { font-size:0.72rem; color:var(--ink-2); line-height:1.35; margin-top:3px; }
+    .kc-card-foot { display:flex; justify-content:space-between; align-items:center;
+                    margin-top:6px; }
+    .kc-sev { font-family:'JetBrains Mono',monospace; font-size:0.6rem;
+              font-weight:700; letter-spacing:0.07em; }
+    .kc-sess { font-family:'JetBrains Mono',monospace; font-size:0.6rem; color:var(--ink-3); }
+    .kc-chevron { flex:0 0 26px; display:flex; align-items:center;
+                  justify-content:center; font-size:1.5rem; line-height:1;
+                  color:var(--ink-3); user-select:none; }
+    /* Drill-down side sheet. Off-canvas by default; .kc-open slides it in. */
+    .kc-sheet { position:fixed; top:0; right:0; height:100vh; width:min(620px,94vw);
+                background:#FFFFFF; border-left:3px solid var(--ink);
+                box-shadow:-6px 0 0 rgba(38,35,31,0.10);
+                transform:translateX(102%); transition:transform .22s ease;
+                z-index:1200; overflow-y:auto; padding:18px 20px 28px; }
+    .kc-sheet.kc-open { transform:translateX(0); }
+    @media (prefers-reduced-motion: reduce) {
+      .kc-sheet { transition:none; } .kc-card { transition:none; }
+    }
+    .kc-close { position:absolute; top:12px; right:14px; cursor:pointer;
+                background:var(--paper); border:2px solid var(--ink);
+                border-radius:9px; width:30px; height:30px; font-size:0.9rem;
+                line-height:1; color:var(--ink); }
+    .kc-close:hover { background:var(--y-200); }
+    .kc-detail-head { padding-right:40px; }
+    .kc-detail-id { font-family:'JetBrains Mono',monospace; font-size:1.15rem;
+                    font-weight:700; color:var(--ink); }
+    .kc-detail-sev { font-family:'JetBrains Mono',monospace; font-size:0.62rem;
+                     font-weight:700; color:#fff; padding:2px 8px; border-radius:9px;
+                     margin-left:9px; vertical-align:middle; border:1.5px solid var(--ink); }
+    .kc-detail-name { font-size:0.95rem; color:var(--ink-2); margin-top:3px; }
+    .kc-facts { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+                gap:8px; margin-top:14px; }
+    .kc-fact { background:var(--paper); border:1.5px solid var(--line-strong);
+               border-radius:9px; padding:7px 9px; }
+    .kc-fact-l { font-family:'JetBrains Mono',monospace; font-size:0.58rem;
+                 letter-spacing:0.08em; color:var(--ink-3); }
+    .kc-fact-v { font-size:0.82rem; font-weight:600; color:var(--ink);
+                 margin-top:2px; word-break:break-word; }
+    .chain-pick { display:flex; align-items:center; gap:10px;
+                  margin:2px 0 10px; flex-wrap:wrap; }
+    .chain-pick .Select-control, .chain-pick .is-searchable {
+                  border:2px solid var(--ink) !important; border-radius:10px !important; }
     .side-head { font-weight:700; font-size:0.86rem; margin-bottom:6px; display:flex;
                  align-items:center; gap:7px; }
     .side-head:before { content:""; width:7px; height:7px; background:var(--y-400);
@@ -1493,9 +1636,14 @@ def apply_ioc_category_filter(selected_cat, ioc_data, btn_ids):
     selected_cat = selected_cat or "all"
     filtered = recs if selected_cat == "all" else [r for r in recs if r["type"] == selected_cat]
     classnames = ["chip active" if bid["cat"] == selected_cat else "chip" for bid in btn_ids]
-    caption = f"{len(recs)} unique indicators — showing {len(filtered[:200])}" + (
+    rows = _ioc_table_rows(filtered)
+    nb = _benign_count(filtered)
+    caption = f"{len(recs)} unique indicators — showing {len(rows)}" + (
         "" if selected_cat == "all" else f" of type '{selected_cat}'")
-    return _ioc_table_rows(filtered), classnames, caption
+    if nb:
+        caption += (f" · {nb} known-benign suppressed "
+                    f"(public DNS / Cisco Umbrella top 10k, via MISP warninglists)")
+    return rows, classnames, caption
 
 
 @app.callback(
@@ -2144,9 +2292,15 @@ def build_mitre_body(days):
 
     top_ip = (tagged.groupby("src_ip").size().sort_values(ascending=False).head(10)
               .reset_index(name="Events").rename(columns={"src_ip": "Source IP"}))
-    top_tech = (tagged.groupby(["technique_id", "technique"]).size()
+    # Explode ONLY here. `tagged` keeps one row per command everywhere else, so
+    # the coverage headline and the per-IP table below stay divided by commands;
+    # this chart alone counts every technique in each command's chain.
+    _exp = tagged.explode("technique_ids")
+    _exp = _exp[_exp["technique_ids"].notna()]
+    top_tech = (_exp.groupby("technique_ids").size()
                 .sort_values(ascending=False).head(10).reset_index(name="Events")
-                .rename(columns={"technique_id": "ID", "technique": "Technique"}))
+                .rename(columns={"technique_ids": "ID"}))
+    top_tech["Technique"] = top_tech["ID"].map(_technique_name)
 
     cov = f"{len(tagged):,} of {len(cur):,} commands mapped ({len(tagged)/max(len(cur),1)*100:.0f}%) · " \
           f"{tagged['technique_id'].nunique()} techniques · {tagged['tactic'].nunique()} tactics"
@@ -2192,7 +2346,616 @@ def build_mitre_body(days):
                                style={"width": "100%"}),
                      className="stage-body"),
         ]),
+        # Sequence views: how the attack unfolded, not just how much of it.
+        *_attack_chain_section(days),
     ])
+
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ATTACK CHAIN ANALYTICS
+# ══════════════════════════════════════════════════════════════════════════════
+# The panels above answer "how much". These answer "in what order". All three
+# read the SAME per-session ordered sequence, so it is computed once per
+# (window, cache generation) and memoised alongside the existing _cache TTL
+# pattern used by load_all().
+#
+# Ordering key is `seq`, not `timestamp`: seq is the per-session monotonic
+# counter storage.py assigns on insert (UNIQUE on instance+session_id+seq), so
+# it is exact even when two commands share a timestamp to the second.
+
+# Standard MITRE tactic order. Used for the timeline lanes so a session reads
+# top-to-bottom the way the kill chain actually progresses.
+TACTIC_ORDER = [
+    "Reconnaissance", "Resource Development", "Initial Access", "Execution",
+    "Persistence", "Privilege Escalation", "Defense Evasion", "Stealth",
+    "Defense Impairment", "Credential Access", "Discovery", "Lateral Movement",
+    "Collection", "Command and Control", "Exfiltration", "Impact",
+]
+
+# Tactic -> colour, derived from MITRE_STAGES so the Sankey and timeline match
+# the stage cards and donuts exactly. Keyed case-insensitively because
+# MITRE_STAGES spells it "Command And Control" while the STIX-built catalog
+# yields "Command and Control"; tactics in neither list fall back to ink.
+TACTIC_COLOR = {t.lower(): c for _n, ts, c in MITRE_STAGES for t in ts}
+
+
+def _tactic_color(tactic):
+    return TACTIC_COLOR.get(str(tactic).lower(), INK_3)
+
+
+def _tactic_rank(tactic):
+    low = [t.lower() for t in TACTIC_ORDER]
+    try:
+        return low.index(str(tactic).lower())
+    except ValueError:
+        return len(low)
+
+
+_chain_cache: dict = {}
+
+
+def _session_chains(tagged):
+    """-> {session_id: [ {seq,timestamp,tactic,technique_id,technique,fi,cmd}, ... ]}
+
+    One time-ordered list per session, tagged rows only.
+    """
+    cols = ["session_id", "seq", "timestamp", "tactic", "technique_id",
+            "technique", "fi_score", "src_ip", "cmd"]
+    have = [c for c in cols if c in tagged.columns]
+    d = tagged[have].sort_values(["session_id", "seq"])
+    chains = {}
+    for sid, grp in d.groupby("session_id", sort=False):
+        chains[sid] = grp.to_dict("records")
+    return chains
+
+
+def _chain_analytics(days):
+    """Transitions + n-grams + session index for the window. Memoised.
+
+    Invalidated by the same generation counter as load_all()'s cache, so a
+    refresh that reloads the dataframe also drops these.
+    """
+    key = (days, _cache.get("all_ts"))
+    hit = _chain_cache.get(key)
+    if hit is not None:
+        return hit
+
+    df = load_all()
+    empty = {"transitions": {}, "ngrams": {3: [], 4: []}, "chains": {},
+             "sessions": [], "n_sessions": 0}
+    if df.empty or "tactic" not in df.columns:
+        _chain_cache[key] = empty
+        return empty
+    cur, _prev = _mitre_window(df, days)
+    tagged = cur[cur["tactic"].notna()]
+    if tagged.empty:
+        _chain_cache[key] = empty
+        return empty
+
+    chains = _session_chains(tagged)
+
+    # 1. tactic transitions, consecutive duplicates collapsed
+    transitions = collections.Counter()
+    for evs in chains.values():
+        seq = []
+        for e in evs:
+            t = e.get("tactic")
+            if t and (not seq or seq[-1] != t):
+                seq.append(t)
+        for a, b in zip(seq, seq[1:]):
+            transitions[(a, b)] += 1
+
+    # 2. technique n-grams. Consecutive duplicates collapsed here too, so a
+    #    session that runs `ls` forty times does not manufacture a "playbook"
+    #    of (T1083 -> T1083 -> T1083).
+    ngrams = {}
+    for n in (3, 4):
+        counter = collections.Counter()
+        sess_with = collections.defaultdict(set)
+        for sid, evs in chains.items():
+            tids = []
+            for e in evs:
+                t = e.get("technique_id")
+                if t and (not tids or tids[-1] != t):
+                    tids.append(t)
+            for i in range(len(tids) - n + 1):
+                g = tuple(tids[i:i + n])
+                counter[g] += 1
+                sess_with[g].add(sid)
+        ngrams[n] = [(g, c, len(sess_with[g])) for g, c in counter.most_common(40)]
+
+    sessions = sorted(chains.items(), key=lambda kv: -len(kv[1]))
+    out = {"transitions": dict(transitions), "ngrams": ngrams, "chains": chains,
+           "sessions": [(sid, len(evs)) for sid, evs in sessions],
+           "n_sessions": len(chains)}
+    _chain_cache[key] = out
+    if len(_chain_cache) > 12:            # bounded; windows are few
+        for k in list(_chain_cache)[:-12]:
+            _chain_cache.pop(k, None)
+    return out
+
+
+def _sankey_fig(transitions, n_sessions=0):
+    """Tactic A -> tactic B flow, laid out left-to-right in kill-chain order.
+
+    Two things this has to work around:
+
+    * CYCLES. Real sessions loop — Defense Impairment <-> Stealth runs 47 one
+      way and 40 back. Plotly's Sankey has no cycle layout, so with automatic
+      arrangement those ribbons overlap into a single opaque mass. Pinning
+      node.x by MITRE tactic rank separates the columns so each ribbon is
+      traceable, and back-edges read as visible right-to-left returns rather
+      than disappearing into the pile.
+    * ALPHA. Links inherit their SOURCE tactic colour at low alpha. Many
+      ribbons stack in the same band, so alpha has to stay low or the overlap
+      saturates back to opaque.
+    """
+    labels = sorted({t for pair in transitions for t in pair}, key=_tactic_rank)
+    idx = {t: i for i, t in enumerate(labels)}
+
+    # Pin x by kill-chain rank, normalised across the tactics actually present.
+    # Plotly needs 0 < x < 1 strictly; exact 0/1 collapses a column onto the edge.
+    ranks = [_tactic_rank(t) for t in labels]
+    lo, hi = min(ranks), max(ranks)
+    span = (hi - lo) or 1
+    node_x = [0.03 + 0.94 * ((r - lo) / span) for r in ranks]
+    # Spread nodes that share a column so their labels cannot collide.
+    col = collections.defaultdict(list)
+    for i, r in enumerate(ranks):
+        col[r].append(i)
+    node_y = [0.5] * len(labels)
+    for _r, members in col.items():
+        for k, i in enumerate(members):
+            node_y[i] = (k + 1) / (len(members) + 1)
+
+    src = [idx[a] for (a, _b) in transitions]
+    dst = [idx[b] for (_a, b) in transitions]
+    val = list(transitions.values())
+    node_col = [_tactic_color(t) for t in labels]
+    link_col = [_hex_alpha(_tactic_color(a), 0.30) for (a, _b) in transitions]
+    denom = max(1, n_sessions)
+    pct = [v / denom * 100 for v in val]
+
+    fig = go.Figure(go.Sankey(
+        arrangement="fixed",          # honour node.x / node.y exactly
+        node=dict(label=labels, pad=26, thickness=22, x=node_x, y=node_y,
+                  color=node_col, line=dict(color=INK, width=1.3),
+                  hovertemplate="<b>%{label}</b><br>%{value} transitions"
+                                "<extra></extra>"),
+        link=dict(source=src, target=dst, value=val, color=link_col,
+                  customdata=pct,
+                  hovertemplate="<b>%{source.label} → %{target.label}</b>"
+                                "<br>%{value} transitions"
+                                "<br>%{customdata:.1f}% of sessions<extra></extra>"),
+    ))
+    theme_layout(fig, height=max(380, 34 * len(labels)))
+    fig.update_layout(margin=dict(t=14, b=14, l=10, r=10),
+                      font=dict(size=11, family="JetBrains Mono, monospace"))
+    return fig
+
+
+def _hex_alpha(hex_color, alpha):
+    h = str(hex_color).lstrip("#")
+    if len(h) != 6:
+        return f"rgba(38,35,31,{alpha})"
+    r, g, b = (int(h[i:i + 2], 16) for i in (0, 2, 4))
+    return f"rgba({r},{g},{b},{alpha})"
+
+
+def _playbook_rows(ngrams, n_sessions):
+    """Top recurring technique sequences, n=3 then n=4, as table rows."""
+    rows = []
+    for n in (3, 4):
+        for g, count, nsess in ngrams.get(n, [])[:6]:
+            rows.append({
+                "Sequence": " → ".join(g),
+                "Count": count,
+                "% sessions": f"{nsess / max(1, n_sessions) * 100:.0f}%",
+            })
+    rows.sort(key=lambda r: -r["Count"])
+    return rows[:10]
+
+
+def _session_timeline_fig(events):
+    """Swimlane: x = time, y = tactic lane, one marker per event.
+
+    Per-event technique labels are drawn only on sparse lanes. A busy session
+    puts 321 of its 339 events on the Discovery lane; labelling every one turns
+    that lane into an unreadable smear and, on the topmost lane, pushes text
+    past the top of the plot where it clips. Dense lanes keep their markers and
+    hover text and drop the printed label.
+    """
+    LABEL_MAX = 25                      # per-lane label budget
+    lanes = sorted({e["tactic"] for e in events if e.get("tactic")}, key=_tactic_rank)
+    lane_y = {t: i for i, t in enumerate(lanes)}
+    fig = go.Figure()
+    for tactic in lanes:
+        pts = [e for e in events if e.get("tactic") == tactic]
+        dense = len(pts) > LABEL_MAX
+        fig.add_trace(go.Scatter(
+            x=[e["timestamp"] for e in pts],
+            y=[lane_y[tactic]] * len(pts),
+            mode="markers" if dense else "markers+text",
+            text=[str(e.get("technique_id") or "") for e in pts],
+            textposition="top center",
+            textfont=dict(size=9, family="JetBrains Mono, monospace", color=INK_3),
+            marker=dict(size=11 if dense else 13, color=_tactic_color(tactic),
+                        opacity=0.75 if dense else 1.0,
+                        line=dict(color=INK, width=1.2 if dense else 1.4),
+                        symbol=["diamond" if int(e.get("fi_score") or 0) >= 3 else "circle"
+                                for e in pts]),
+            name=tactic, showlegend=False,
+            customdata=[[str(e.get("technique") or ""), str(e.get("cmd") or "")[:90],
+                         int(e.get("fi_score") or 0), str(e.get("technique_id") or "")]
+                        for e in pts],
+            hovertemplate="<b>%{customdata[3]}</b> %{customdata[0]}"
+                          "<br>%{x|%Y-%m-%d %H:%M:%S}"
+                          "<br>FI %{customdata[2]}"
+                          "<br><span style='font-family:monospace'>%{customdata[1]}</span>"
+                          "<extra></extra>",
+        ))
+    theme_layout(fig, height=max(260, 58 * len(lanes) + 110))
+    # Top margin and the extra half-lane of headroom exist so "top center"
+    # labels on the highest lane are not clipped by the plot edge.
+    fig.update_layout(margin=dict(t=46, b=34, l=8, r=18))
+    fig.update_yaxes(tickmode="array", tickvals=list(lane_y.values()),
+                     ticktext=lanes, title="",
+                     tickfont=dict(size=11, family="JetBrains Mono, monospace"),
+                     range=[-0.75, len(lanes) - 1 + 0.75])
+    # Pin the axis type: with a single-event lane Plotly can infer `linear`
+    # from one timestamp and silently place the marker at x=0.
+    fig.update_xaxes(title="", type="date")
+    return fig
+
+
+def _session_meta(events):
+    """Source IP / duration / event count / high-impact count strip."""
+    ts = [e["timestamp"] for e in events if pd.notna(e.get("timestamp"))]
+    dur = "—"
+    if len(ts) >= 2:
+        secs = (max(ts) - min(ts)).total_seconds()
+        dur = f"{secs/60:.0f}m {secs%60:.0f}s" if secs >= 60 else f"{secs:.0f}s"
+    high = sum(1 for e in events if int(e.get("fi_score") or 0) >= 3)
+    ip = next((e.get("src_ip") for e in events if e.get("src_ip")), "—")
+    items = [("SOURCE IP", str(ip)), ("DURATION", dur),
+             ("MAPPED EVENTS", f"{len(events):,}"), ("HIGH IMPACT", f"{high:,}")]
+    return html.Div(className="hp-tally", style={"marginBottom": "8px"}, children=[
+        html.Div(className="hp-stat", children=[
+            html.Div(lbl, className="hp-stat-l"),
+            html.Div(val, className="hp-stat-v",
+                     style={"color": "#C1443A"} if lbl == "HIGH IMPACT" and high else {}),
+        ]) for lbl, val in items
+    ])
+
+
+def _attack_chain_section(days):
+    """The three chain cards. Returns [] when the window has nothing to show."""
+    a = _chain_analytics(days)
+    if not a["chains"]:
+        return []
+
+    # ── Playbooks ────────────────────────────────────────────────────────────
+    rows = _playbook_rows(a["ngrams"], a["n_sessions"])
+    if rows:
+        play_body = _top_table(rows, ["Sequence", "Count", "% sessions"],
+                               widths=[{"if": {"column_id": "Sequence"}, "width": "62%"},
+                                       {"if": {"column_id": "Count"}, "width": "18%",
+                                        "textAlign": "right"},
+                                       {"if": {"column_id": "% sessions"}, "width": "20%",
+                                        "textAlign": "right"}],
+                               row_padding="9px 6px")
+    else:
+        play_body = html.Div(
+            "No repeated 3-technique sequence yet — sessions in this window are "
+            "too short or too varied to form a playbook.", className="empty-state")
+
+    # ── Session picker ───────────────────────────────────────────────────────
+    opts = [{"label": f"{sid[:18]}  ·  {n} events", "value": sid}
+            for sid, n in a["sessions"][:300]]
+    default_sid = a["sessions"][0][0] if a["sessions"] else None
+
+    return [
+        # Kill-chain flow replaces the Sankey: same progression, read as
+        # columns left-to-right instead of crossing ribbons.
+        html.Div(className="stage-card tech-card", children=[
+            html.Div("KILL CHAIN FLOW", className="stage-head",
+                     style={"background": "#5B7FA6"}),
+            html.Div(_killchain_flow(days), className="stage-body"),
+        ]),
+        html.Div(className="stage-card tech-card", children=[
+            html.Div("TOP ATTACK PLAYBOOKS", className="stage-head",
+                     style={"background": "#2F4A6B"}),
+            html.Div(className="stage-body", children=[
+                html.Div("Recurring 3- and 4-step technique sequences",
+                         className="caption", style={"marginBottom": "6px"}),
+                play_body,
+            ]),
+        ]),
+        html.Div(className="stage-card tech-card", children=[
+            html.Div("SESSION KILL CHAIN", className="stage-head",
+                     style={"background": "#7EB3C8"}),
+            html.Div(className="stage-body", children=[
+                html.Div(className="chain-pick", children=[
+                    html.Span("Session", className="caption"),
+                    dcc.Dropdown(id="chain-session-dd", options=opts,
+                                 value=default_sid, clearable=False,
+                                 searchable=True, style={"minWidth": "320px"}),
+                ]),
+                dcc.Store(id="chain-days-store", data=days),
+                html.Div(id="chain-timeline-body"),
+            ]),
+        ]),
+        dcc.Store(id="kc-detail-store"),
+        html.Div(id="kc-sheet", className="kc-sheet", children=[
+            html.Button("✕", id="kc-close", n_clicks=0, className="kc-close",
+                        **{"aria-label": "Close detail"}),
+            html.Div(id="kc-sheet-body", className="kc-sheet-body"),
+        ]),
+    ]
+
+
+@app.callback(
+    Output("chain-timeline-body", "children"),
+    Input("chain-session-dd", "value"),
+    State("chain-days-store", "data"),
+    prevent_initial_call=False,
+)
+def render_session_chain(session_id, days):
+    """Timeline for one session. Reads the memoised chain index, so switching
+    sessions never touches the database."""
+    if not session_id:
+        return html.Div("Select a session.", className="empty-state")
+    a = _chain_analytics(days)
+    events = a["chains"].get(session_id)
+    if not events:
+        return html.Div("That session has no ATT&CK-mapped events in this "
+                        "period.", className="empty-state")
+    return html.Div([
+        _session_meta(events),
+        dcc.Graph(figure=_session_timeline_fig(events), config=GRAPH_CONFIG,
+                  style={"width": "100%"}),
+        html.Div("◆ = high impact (FI ≥ 3)   ● = other mapped events",
+                 className="caption", style={"marginTop": "2px"}),
+    ])
+
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# KILL CHAIN FLOW
+# ══════════════════════════════════════════════════════════════════════════════
+# A linear left-to-right read of the attack, replacing the Sankey. The Sankey
+# was accurate but unreadable: 14 of its 38 links were bidirectional, and
+# Plotly has no cycle layout, so the ribbons piled into one mass. A column per
+# tactic in kill-chain order says the same thing without any crossing lines.
+#
+# Everything here is real: tactics and techniques come from the mapper, counts
+# from the DB, severity from the FI band main.py already computed. Nothing is
+# simulated.
+
+# FI band -> incident severity. FI_RULES in prompt/fi_manager.py is the source
+# of the band, so this is a relabelling for the SOC vocabulary, not a new score.
+KC_SEVERITY = [
+    (4, "CRITICAL", "#C1443A"),
+    (3, "HIGH",     "#D4622C"),
+    (2, "MEDIUM",   "#E07B39"),
+    (1, "LOW",      "#B99A4A"),
+    (0, "MONITORED", "#7E96A6"),
+]
+
+
+def _kc_severity(fi):
+    fi = int(fi or 0)
+    for band, label, colour in KC_SEVERITY:
+        if fi >= band:
+            return label, colour
+    return "MONITORED", "#7E96A6"
+
+
+def _killchain_columns(tagged):
+    """-> [ {tactic, order, alerts, techniques:[...]} ] in kill-chain order.
+
+    A technique's severity is the HIGHEST FI seen for it: a tactic column has
+    to surface its worst event, not its average, or a single destructive
+    command hides behind fifty recon ones.
+    """
+    if tagged.empty:
+        return []
+    d = tagged[tagged["technique_id"].notna()]
+    if d.empty:
+        return []
+    cols = {}
+    for (tactic, tid), grp in d.groupby(["tactic", "technique_id"], sort=False):
+        col = cols.setdefault(tactic, {"tactic": tactic, "alerts": 0, "techniques": []})
+        top_fi = int(grp["fi_score"].max()) if "fi_score" in grp else 0
+        col["alerts"] += len(grp)
+        col["techniques"].append({
+            "id": tid,
+            "name": _technique_name(tid),
+            "count": len(grp),
+            "fi": top_fi,
+            "sessions": grp["session_id"].nunique(),
+        })
+    out = []
+    for tactic in sorted(cols, key=_tactic_rank):
+        c = cols[tactic]
+        c["techniques"].sort(key=lambda t: (-t["fi"], -t["count"]))
+        out.append(c)
+    for i, c in enumerate(out, 1):
+        c["order"] = i
+    return out
+
+
+def _kc_card(tactic, t):
+    """One technique card. Severity drives the left stripe and the count chip."""
+    label, colour = _kc_severity(t["fi"])
+    return html.Button(
+        id={"type": "kc-card", "tid": t["id"], "tactic": tactic},
+        n_clicks=0, className="kc-card", style={"borderLeftColor": colour},
+        children=[
+            html.Div(className="kc-card-top", children=[
+                html.Span(t["id"], className="kc-tid"),
+                html.Span(f"{t['count']:,}", className="kc-count",
+                          style={"background": colour}),
+            ]),
+            html.Div(t["name"], className="kc-tname"),
+            html.Div(className="kc-card-foot", children=[
+                html.Span(label, className="kc-sev", style={"color": colour}),
+                html.Span(f"{t['sessions']} sess", className="kc-sess"),
+            ]),
+        ])
+
+
+def _kc_column(col):
+    worst = max((t["fi"] for t in col["techniques"]), default=0)
+    _lbl, colour = _kc_severity(worst)
+    return html.Div(className="kc-col", children=[
+        html.Div(className="kc-head", style={"borderBottomColor": colour}, children=[
+            html.Div(className="kc-head-top", children=[
+                html.Span(f"{col['order']:02d}", className="kc-ord"),
+                html.Span(f"{col['alerts']:,}", className="kc-badge",
+                          style={"background": colour}),
+            ]),
+            html.Div(col["tactic"], className="kc-tactic"),
+        ]),
+        html.Div(className="kc-stack", children=[
+            _kc_card(col["tactic"], t) for t in col["techniques"]
+        ]),
+    ])
+
+
+def _killchain_flow(days):
+    """The full rail. Empty-state when the window has no mapped commands."""
+    df = load_all()
+    if df.empty or "tactic" not in df.columns:
+        return html.Div("No data yet.", className="empty-state")
+    cur, _prev = _mitre_window(df, days)
+    tagged = cur[cur["tactic"].notna()]
+    cols = _killchain_columns(tagged)
+    if not cols:
+        return html.Div("No ATT&CK-mapped commands in this period.",
+                        className="empty-state")
+
+    rail = []
+    for i, c in enumerate(cols):
+        if i:
+            rail.append(html.Div("›", className="kc-chevron", **{"aria-hidden": "true"}))
+        rail.append(_kc_column(c))
+
+    total = sum(c["alerts"] for c in cols)
+    ntech = sum(len(c["techniques"]) for c in cols)
+    return html.Div([
+        html.Div(f"{total:,} mapped events · {ntech} techniques across "
+                 f"{len(cols)} tactics · ordered by MITRE kill chain · "
+                 f"click a technique for detail",
+                 className="caption", style={"marginBottom": "10px"}),
+        html.Div(className="kc-rail", children=rail),
+    ])
+
+
+def _kc_detail(tid, tactic, days):
+    """Drill-down body: the real events behind one technique card."""
+    df = load_all()
+    cur, _prev = _mitre_window(df, days)
+    d = cur[(cur["technique_id"] == tid) & (cur["tactic"] == tactic)]
+    if d.empty:
+        return html.Div("No events for this technique in the current window.",
+                        className="empty-state")
+    d = d.sort_values("timestamp", ascending=False)
+    worst = int(d["fi_score"].max()) if "fi_score" in d else 0
+    label, colour = _kc_severity(worst)
+
+    # Usernames come from the auth table, matched on src_ip. auth has no
+    # session_id column, so this is "accounts seen from these sources", not
+    # "the account that ran this command" — labelled as such rather than
+    # implying a join the schema cannot support.
+    users = []
+    try:
+        ips = tuple(str(x) for x in d["src_ip"].dropna().unique()[:40])
+        if ips:
+            with storage.connect_readonly() as conn:
+                q = ("SELECT username, COUNT(*) c FROM auth WHERE src_ip IN "
+                     f"({','.join('?' * len(ips))}) AND username IS NOT NULL "
+                     "GROUP BY username ORDER BY c DESC LIMIT 6")
+                users = [r[0] for r in conn.execute(q, ips)]
+    except Exception:
+        users = []
+
+    rows = [{
+        "Time": (r["timestamp"].strftime("%Y-%m-%d %H:%M:%S")
+                 if pd.notna(r["timestamp"]) else "—"),
+        "Sensor": r.get("instance") or "—",
+        "Source": str(r.get("src_ip") or "—")[:16],
+        "Sev": _kc_severity(r.get("fi_score"))[0],
+        "Command": str(r.get("cmd") or "")[:120],
+    } for _i, r in d.head(40).iterrows()]
+
+    facts = [("TECHNIQUE", tid), ("TACTIC", tactic), ("SEVERITY", label),
+             ("EVENTS", f"{len(d):,}"), ("SESSIONS", f"{d['session_id'].nunique():,}"),
+             ("SENSORS", ", ".join(sorted(map(str, d['instance'].dropna().unique()))[:3]) or "—"),
+             ("ACCOUNTS SEEN", ", ".join(users) if users else "none recorded")]
+
+    return html.Div([
+        html.Div(className="kc-detail-head", children=[
+            html.Div([html.Span(tid, className="kc-detail-id"),
+                      html.Span(label, className="kc-detail-sev",
+                                style={"background": colour})]),
+            html.Div(_technique_name(tid), className="kc-detail-name"),
+        ]),
+        html.Div(className="kc-facts", children=[
+            html.Div(className="kc-fact", children=[
+                html.Div(k, className="kc-fact-l"), html.Div(v, className="kc-fact-v")])
+            for k, v in facts
+        ]),
+        html.Div("MOST RECENT EVENTS", className="side-head",
+                 style={"marginTop": "14px"}),
+        _top_table(rows, ["Time", "Sensor", "Source", "Sev", "Command"],
+                   widths=[{"if": {"column_id": "Time"}, "width": "17%"},
+                           {"if": {"column_id": "Sensor"}, "width": "14%"},
+                           {"if": {"column_id": "Source"}, "width": "14%"},
+                           {"if": {"column_id": "Sev"}, "width": "11%"},
+                           {"if": {"column_id": "Command"}, "width": "44%"}],
+                   row_padding="7px 6px"),
+        html.Div(f"Showing {min(40, len(d))} of {len(d):,} events. Response "
+                 "playbooks are not wired to this deployment — no automated "
+                 "remediation status is available to display.",
+                 className="caption", style={"marginTop": "8px"}),
+    ])
+
+
+@app.callback(
+    Output("kc-detail-store", "data"),
+    Input({"type": "kc-card", "tid": ALL, "tactic": ALL}, "n_clicks"),
+    prevent_initial_call=True,
+)
+def _kc_open(clicks):
+    """Which card was clicked. Dash fires this for every card on render, so a
+    click is only real when that card's own n_clicks is non-zero."""
+    tid = ctx.triggered_id
+    # Dash delivers a LIST for an ALL pattern, but a bare int when exactly one
+    # component matches. Normalise rather than assume, or the callback 500s the
+    # first time a tactic column holds a single technique.
+    if isinstance(clicks, (int, float)):
+        clicks = [clicks]
+    if not tid or not any(c for c in (clicks or []) if c):
+        raise PreventUpdate
+    if not isinstance(tid, dict):
+        raise PreventUpdate
+    return {"tid": tid.get("tid"), "tactic": tid.get("tactic")}
+
+
+@app.callback(
+    Output("kc-sheet", "className"),
+    Output("kc-sheet-body", "children"),
+    Input("kc-detail-store", "data"),
+    Input("kc-close", "n_clicks"),
+    State("mitre-window", "value"),
+    prevent_initial_call=True,
+)
+def _kc_sheet(sel, _close, days):
+    if ctx.triggered_id == "kc-close" or not sel:
+        return "kc-sheet", no_update
+    return "kc-sheet kc-open", _kc_detail(sel["tid"], sel["tactic"], days)
 
 
 # ── Database browser ─────────────────────────────────────────────────────────
@@ -2430,6 +3193,20 @@ def _refresh_mitre(days):
     return _cached_page(("mitre-body", days), lambda: build_mitre_body(days))
 
 
+# Human labels for the IOC scope keys used by _scope_filter_rows(). This was
+# referenced by _ioc_status_text() but never defined, so every click on
+# "Generate Intelligence" raised NameError after the snapshot had already been
+# built — 14 seconds of work thrown away and the button appeared dead. The
+# .get() fallback means an unrecognised scope degrades to its raw key rather
+# than crashing again.
+_SCOPE_LABEL = {
+    "all":              "All collected data",
+    "last_24h":         "Last 24 hours",
+    "current_session":  "Current session",
+    "selected_session": "Selected session",
+}
+
+
 def _ioc_status_text(ioc_data):
     if not ioc_data:
         return "No analysis generated yet — click \"Generate Intelligence\" to run it."
@@ -2437,7 +3214,18 @@ def _ioc_status_text(ioc_data):
     return f"Last updated: {ioc_data['generated_at']}  ·  scope: {scope}"
 
 
-def _ioc_table_rows(recs):
+def _ioc_table_rows(recs, hide_benign=True):
+    """Table rows, benign observables suppressed by default.
+
+    `benign` is set by threat_intel.ioc_extractor against MISP's warninglists
+    (public DNS resolvers, Cisco Umbrella top 10k). Those are real observations
+    — attackers curl 8.8.8.8 and google.com to test egress — but they are not
+    indicators, and they were sitting at the top of the table by volume where
+    they read as the honeypot's main finding. Suppressed for display only; the
+    snapshot and the STIX export still contain them.
+    """
+    if hide_benign:
+        recs = [r for r in recs if not r.get("benign")]
     return [
         {
             "Type": r["type"],
@@ -2450,6 +3238,10 @@ def _ioc_table_rows(recs):
         }
         for r in recs[:200]
     ]
+
+
+def _benign_count(recs):
+    return sum(1 for r in (recs or []) if r.get("benign"))
 
 
 def _render_ioc_body(ioc_data):
