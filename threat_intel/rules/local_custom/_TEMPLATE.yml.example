@@ -1,0 +1,62 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Local Threat Intel Tier — Custom Sigma Rule template
+#
+# Copy this file, rename it to <technique>_<slug>.yml (the .example suffix
+# keeps this template out of the loader), and edit.
+#
+# Files here are parsed by threat_intel/mitre_mapper.py, whose engine matches
+# COMMAND TEXT. It supports two fields and five modifiers:
+#
+#   fields      command   the whole command line as typed
+#               segment   each part after splitting on && || ;   (pipes are
+#                         NOT split — a pipeline stays one segment)
+#                         Each segment is also offered with a leading path or
+#                         `busybox ` stripped, so a rule written for `chmod`
+#                         also catches `/bin/chmod` and `/bin/busybox chmod`.
+#
+#   modifiers   |re          regex, case-insensitive
+#               |contains    substring
+#               |startswith  prefix
+#               |endswith    suffix
+#               |contains|all  every listed value must appear
+#               (no modifier) exact, case-insensitive
+#
+#   condition   selection / and / or / not / parentheses /
+#               `1 of selection*` / `all of selection*`
+#
+# A list of values under one field is OR. Two fields in one selection are AND.
+# `priority` decides which technique tag() returns first (lower wins).
+# ─────────────────────────────────────────────────────────────────────────────
+id: 00000000-0000-0000-0000-000000000000   # must be unique — uuidgen
+title: Short human-readable name
+status: stable                              # stable | test | experimental
+description: >-
+  What behaviour this catches and, just as importantly, what it deliberately
+  does NOT catch and why. Auditors read this field.
+references:
+  - https://attack.mitre.org/techniques/T1083
+author: HydraPoT
+date: 2026-08-26
+technique: T1083                            # MITRE ID — resolved to name/tactic
+technique_name: 'File and Directory Discovery'   # fallback if catalog is stale
+tactic: 'Discovery'
+priority: 65                                # lower = preferred primary tag
+confidence: high                            # low | medium | high
+logsource:
+  product: cowrie
+  category: command
+detection:
+  selection_tool:
+    segment|re:
+      - '^\s*(?:sudo\s+)?(?:ls|dir|vdir)\b'
+  selection_path:
+    command|contains:
+      - '/root'
+      - '/home'
+  filter_noise:
+    command|re:
+      - '\bls\s+--help\b'
+  condition: 1 of selection* and not filter_noise
+tags:
+  - attack.discovery
+  - attack.t1083

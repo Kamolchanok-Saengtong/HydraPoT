@@ -97,26 +97,12 @@ def _join_raw_arg(flag: str, quote: str, body: str) -> str:
 
 def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str = "?",
                          plugins=None, sri_max_events: int = 10, sync_state: bool = True,
-                         capture_cost: bool = False):
+                         capture_cost: bool = False, username: str = "root"):
 
-    TOOL_TO_PACKAGE = {
-        "nmap": "nmap", "masscan": "masscan", "ncat": "nmap",
-        "netcat": "netcat-openbsd", "nc": "netcat-openbsd",
-        "tcpdump": "tcpdump", "socat": "socat", "whois": "whois",
-        "python": "python3", "python3": "python3", "python2": "python2",
-        "perl": "perl", "ruby": "ruby", "php": "php",
-        "node": "nodejs", "lua": "lua5.3",
-        "gcc": "gcc", "g++": "g++", "make": "make",
-        "gdb": "gdb", "git": "git", "strace": "strace",
-        "nginx": "nginx", "apache2": "apache2",
-        "mysql": "mysql-server", "mysqldump": "mysql-client",
-        "redis-cli": "redis-tools", "docker": "docker.io",
-        "vim": "vim", "nano": "nano", "emacs": "emacs",
-        "wget": "wget", "curl": "curl",
-        "htop": "htop", "screen": "screen", "tmux": "tmux",
-        "zip": "zip", "unzip": "unzip", "7z": "p7zip-full",
-        "jq": "jq", "tree": "tree",
-    }
+    # Package names are distro-specific data, so they live in
+    # config.yaml system_state.tool_packages. The resolution and routing
+    # logic that uses this mapping stays here in Python.
+    TOOL_TO_PACKAGE = dict(config.system_state.get("tool_packages", {}))
 
     # Base system tools — SINGLE SOURCE: config.yaml system_state.base_tools.
     # Parsed robustly so the comma-per-line YAML format works (each line may
@@ -140,33 +126,9 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
     SLOW        = ("masscan",)
     INTERACTIVE = ("adduser", "useradd", "userdel")
 
-    DEFAULT_VERSIONS = {
-        "nmap":      "Nmap version 7.80 ( https://nmap.org )",
-        "python3":   "Python 3.10.12",
-        "python":    "Python 3.10.12",
-        "git":       "git version 2.34.1",
-        "vim":       "VIM - Vi IMproved 8.2 (2019 Dec 12)",
-        "gcc":       "gcc (Ubuntu 11.4.0-1ubuntu1~22.04) 11.4.0",
-        "g++":       "g++ (Ubuntu 11.4.0-1ubuntu1~22.04) 11.4.0",
-        "curl":      "curl 7.81.0 (x86_64-pc-linux-gnu)",
-        "wget":      "GNU Wget 1.21.2 built on linux-gnu.",
-        "perl":      "This is perl 5, version 34, subversion 0 (v5.34.0)",
-        "ruby":      "ruby 3.0.2p107 (2021-07-07 revision 0db68f0233)",
-        "php":       "PHP 8.1.2-1ubuntu2.14 (cli)",
-        "node":      "v18.19.0",
-        "make":      "GNU Make 4.3",
-        "docker":    "Docker version 24.0.7, build afdd53b",
-        "nginx":     "nginx version: nginx/1.18.0 (Ubuntu)",
-        "htop":      "htop 3.2.1",
-        "tmux":      "tmux 3.2a",
-        "screen":    "Screen version 4.09.00 (GNU) 01-Sep-21",
-        "nano":      "GNU nano, version 6.2",
-        "emacs":     "GNU Emacs 27.1",
-        "mysql":     "mysql  Ver 8.0.36-0ubuntu0.22.04.1 for Linux on x86_64",
-        "strace":    "strace -- version 5.16",
-        "gdb":       "GNU gdb (Ubuntu 12.1-0ubuntu1~22.04) 12.1",
-        "systemctl": "systemd 249 (249.11-0ubuntu3.12)",
-    }
+    # Version strings pin the persona to a distro/release, so they are
+    # config.yaml system_state.versions rather than literals here.
+    DEFAULT_VERSIONS = dict(config.system_state.get("versions", {}))
 
     SESSION_ID = datetime.now().strftime("%Y%m%d_%H%M%S")
     print(f"[HydraPot] New session {SESSION_ID} from {src_ip}")
@@ -189,6 +151,10 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
     SYSTEM_STATE = {
         "versions":  {},
         "installed": {},
+        # Home of the account that actually logged in, not always /root.
+        # validate_password() accepts any username, so an attacker connecting
+        # as `admin` must land in /home/admin or the first `pwd` gives the
+        # honeypot away. Filled in just below, once "users" exists.
         "cwd":       "/root",   # tracked so `cd` can be resolved deterministically
                                  # instead of left to the LLM to guess/hallucinate
         "files":     dict(config.system_state.get("starting_files", {})),
@@ -197,20 +163,24 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
         # of prior actions, an internal inconsistency an attacker could probe
         # (stop a service, then immediately query status and see it "running").
         "services":  {},   # {service_name: {"active": bool, "enabled": bool}}
-        "users": {
-            "root":     {"uid": 0,    "gid": 0,    "home": "/root",       "shell": "/bin/bash"},
-            "daemon":   {"uid": 1,    "gid": 1,    "home": "/usr/sbin",   "shell": "/bin/sh"},
-            "bin":      {"uid": 2,    "gid": 2,    "home": "/bin",        "shell": "/bin/sh"},
-            "www-data": {"uid": 33,   "gid": 33,   "home": "/var/www",    "shell": "/bin/sh"},
-            "nobody":   {"uid": 65534,"gid": 65534,"home": "/nonexistent","shell": "/bin/sh"},
-            "sshd":     {"uid": 101,  "gid": 65534,"home": "/var/run/sshd","shell": "/usr/sbin/nologin"},
-            "phil":     {"uid": 1000, "gid": 1000, "home": "/home/phil",  "shell": "/bin/bash"},
-        },
-        "shadow": {
-            "root": "$6$4aOmWdpJ$/kyPOik9rR0kSLyABIYNXgg/UqlWX3c1eIaovOLWphShTGXmuUAMq6iu9DrcQqlVUw3Pirizns4u27w3Ugvb6.",
-            "phil": "$6$ErqInBoz$FibX212AFnHMvyZdWW87bq5Cm3214CoffqFuUyzz.ZKmZ725zKqSPRRlQ1fGGP02V/WawQWQrDda6YiKERNR61",
-        },
+        # Persona — see config.yaml system_state.users / .shadow. Copied so
+        # a session mutating state (useradd/userdel/chpasswd) cannot leak into
+        # the shared config object and affect the next session.
+        "users":  {u: dict(v) for u, v in config.system_state.get("users", {}).items()},
+        "shadow": dict(config.system_state.get("shadow", {})),
     }
+
+    # The account the attacker authenticated as. Unknown names are registered
+    # on the fly with a conventional /home/<user> — a real box would have the
+    # account in /etc/passwd, and without this `cd ~` and bare `cd` resolve to
+    # root's home for every user.
+    if username not in SYSTEM_STATE["users"]:
+        SYSTEM_STATE["users"][username] = {
+            "uid": 1001, "gid": 1001,
+            "home": "/root" if username == "root" else f"/home/{username}",
+            "shell": "/bin/bash",
+        }
+    SYSTEM_STATE["cwd"] = SYSTEM_STATE["users"][username]["home"]
 
     def _resolve_path(p: str) -> str:
         """Absolute, normalized form of `p` as the shell would see it from the
@@ -227,7 +197,7 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
         if not p:
             return p
         s = p.strip().strip("\"'")
-        home = SYSTEM_STATE["users"].get("root", {}).get("home", "/root")
+        home = SYSTEM_STATE["users"].get(username, {}).get("home", "/root")
         if s == "~":
             s = home
         elif s.startswith("~/"):
@@ -284,12 +254,10 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
     # LLM in system_setting.txt ("standard Linux layout with /home /tmp
     # /etc /var /usr"), just enumerated here so `cd` can be resolved
     # deterministically against it instead of left to the model's guess.
-    _KNOWN_BASE_DIRS = frozenset({
-        "/", "/root", "/home", "/tmp", "/var", "/etc", "/usr", "/bin",
-        "/sbin", "/proc", "/sys", "/dev", "/opt", "/srv", "/mnt", "/media",
-        "/run", "/lib", "/lib64", "/boot", "/var/tmp", "/var/log", "/var/run",
-        "/usr/bin", "/usr/sbin", "/usr/local",
-    })
+    # Directories that exist with nothing tracked under them — see
+    # config.yaml system_state.known_dirs. Each user's home is unioned in at
+    # use time (see _compute_cd), so a custom account's home always resolves.
+    _KNOWN_BASE_DIRS = frozenset(config.system_state.get("known_dirs", []))
 
     def _compute_cd(actual_cmd: str) -> tuple[bool, str | None, str | None]:
         """
@@ -322,7 +290,7 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
         if target == "-":
             return False, None, None   # previous-directory tracking not implemented
 
-        home = SYSTEM_STATE["users"].get("root", {}).get("home", "/root")
+        home = SYSTEM_STATE["users"].get(username, {}).get("home", "/root")
         if target == "~":
             target = home
         elif target.startswith("~/"):
@@ -392,6 +360,13 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
             return False, None   # flag-only or wildcard target — too ambiguous here
 
         target = _resolve_path(target)
+        rec = SYSTEM_STATE["files"].get(target)
+        if rec and rec.get("backend") == "cowrie":
+            # Cowrie owns this file. Answering here updated SYSTEM_STATE only,
+            # so `chmod +x f` reported success while the next `ls -la f` still
+            # showed -rw-r--r-- straight from Cowrie. Fall through and let
+            # Cowrie perform the change.
+            return False, None
         if target in SYSTEM_STATE["files"]:
             update_state(actual_cmd, "")   # existing numeric/+x perms bookkeeping
             return True, None
@@ -554,7 +529,15 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
                     continue
                 if p in VIRTUAL_FILES:          # virtual: always has content
                     return True
-                if _resolve_path(p) in files and files[_resolve_path(p)].get("content"):
+                rp = _resolve_path(p)
+                if rp in files and files[rp].get("content"):
+                    # A file Cowrie really downloaded is NOT "tracked" for
+                    # routing purposes: Cowrie has the true bytes, and the
+                    # stored content is a placeholder. Claiming it here sent
+                    # `cat` to on_device, which then answered "No such file or
+                    # directory" for a file that demonstrably existed.
+                    if files[rp].get("backend") == "cowrie":
+                        continue
                     return True
         if cmd_base == "sed":
             parts = cmd.strip().split()
@@ -763,6 +746,11 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
                 SYSTEM_STATE["files"][filename] = {
                     "content": f"[downloaded from {url}]", "source": url,
                     "perms": "-rw-r--r--", "size": "4.2K",
+                    # Cowrie performed this transfer for real and holds the
+                    # actual bytes. The "content" above is only a placeholder
+                    # for SRi; anything READING this file must go to Cowrie,
+                    # which is what "backend" signals.
+                    "backend": "cowrie",
                 }
         # chpasswd — update shadow passwords
         m = re.match(r'^echo\s+["\']?(\w+):(\S+?)["\']?\s*\|\s*chpasswd', cmd.strip())
@@ -989,10 +977,43 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
             """
             for token in actual_cmd.split():
                 token = token.strip('|;&\'"')
-                if token in SYSTEM_STATE["files"]:
-                    return token
+                rec = SYSTEM_STATE["files"].get(token)
+                if rec is None:
+                    continue
+                # Per this function's own contract: only files Cowrie may NOT
+                # have. A wget/curl download IS Cowrie-managed — it holds the
+                # real bytes — so claiming it here dragged `cat` onto
+                # on_device, which answered "No such file or directory" for a
+                # file `ls` had just listed at 5,278 bytes.
+                if rec.get("backend") == "cowrie":
+                    continue
+                return token
             return None
         
+        def _cowrie_backed_path(actual_cmd: str) -> str | None:
+            """The Cowrie-owned file this command touches, if any.
+
+            The mirror of _references_tracked_file(): that one finds files
+            Cowrie may NOT have, this one finds files Cowrie definitely DOES
+            have because it downloaded them itself. Anything reading or
+            mutating such a file has to go to Cowrie, which holds the real
+            bytes — otherwise the honeypot contradicts itself, e.g.
+            `rm README.md` answering "No such file or directory" while the
+            very next `cat README.md` prints 5KB of content.
+
+            Resolves relative paths, unlike _references_tracked_file's exact
+            token match: the attacker types `rm README.md` but the file is
+            stored as `/root/README.md`.
+            """
+            for token in actual_cmd.split():
+                token = token.strip('|;&\'"')
+                if not token or token.startswith("-"):
+                    continue
+                rec = SYSTEM_STATE["files"].get(_resolve_path(token))
+                if rec and rec.get("backend") == "cowrie":
+                    return _resolve_path(token)
+            return None
+
         # ── general SRi-state safety net ───────────────────────────────────
         tracked_path = _references_tracked_file(actual_cmd)
 
@@ -1138,12 +1159,25 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
                     time.sleep(random.uniform(0.1, 0.4))
                 return _finish(cmd, "cowrie", output, fi_score, t_start, streamed=True)
 
-        # ── wget/curl — fake download, streamed ──────────────────────────
+        # ── wget/curl — REAL download via Cowrie, streamed ───────────────
+        # This used to call _fake_download_output(): a synthetic transcript
+        # that logged as agent "cowrie" without ever contacting Cowrie. It
+        # looked perfect and saved nothing, so the attacker's next
+        # `cat <file>` returned "No such file or directory" — and the fake
+        # log said "Connecting to ...:80" even for an https:// URL, which is
+        # a one-line giveaway.
+        #
+        # Cowrie implements wget/curl for real: it opens the socket, fetches
+        # the bytes, and registers the file in its filesystem. CowrieAgent
+        # holds one persistent shell per session, so a later `cat` (FI 0 ->
+        # cowrie) reads that same filesystem and returns the real content.
+        # Verified against the live backend: a 5,278-byte README.md that
+        # `ls -la` listed and `cat` printed in full.
+        #
+        # update_state() still runs so SYSTEM_STATE["files"] tracks the
+        # download too — that is what the on_device/cloud agents read.
         if actual_base in ("wget", "curl") and re.search(r'https?://', actual_cmd):
-            output = _fake_download_output(actual_cmd, actual_base)
-            for line in output.split("\n"):
-                write_fn(line + "\r\n")
-                time.sleep(random.uniform(0.2, 0.6))
+            output, _ = cowrie.send_streaming(cmd, write_fn)
             update_state(cmd, output)
             return _finish(cmd, "cowrie", output, fi_score, t_start, streamed=True)
 
@@ -1231,6 +1265,14 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
         if tracked_path and agent == "cowrie":
             agent      = "on_device"
             needs_llm  = True   # forces it into the on_device branch below
+
+        # Inverse of the rule above: a file Cowrie downloaded is Cowrie's, and
+        # only Cowrie can read or mutate it truthfully. Without this `rm f`
+        # (FI 4 -> on_device) invented "No such file or directory" for a file
+        # `cat f` then printed in full — a contradiction in two commands.
+        if _cowrie_backed_path(actual_cmd) and config.agents.cowrie.enabled:
+            agent     = "cowrie"
+            needs_llm = False
 
         # command not found — only for unknown commands not in any pattern
         if agent == "cowrie" and not needs_llm and not _is_tool_available(lookup_base):
@@ -1402,8 +1444,9 @@ def main():
 
     try:
         start_server(
-            handler_factory = lambda src_ip="?", public_ip="?": make_command_handler(
-                _make_cowrie(), src_ip=src_ip, public_ip=public_ip, plugins=plugins
+            handler_factory = lambda src_ip="?", public_ip="?", username="root": make_command_handler(
+                _make_cowrie(), src_ip=src_ip, public_ip=public_ip,
+                plugins=plugins, username=username
             ),
             host            = config.honeypot.host,
             port            = config.honeypot.port,

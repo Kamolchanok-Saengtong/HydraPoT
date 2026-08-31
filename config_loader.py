@@ -121,6 +121,84 @@ class Config:
             "/etc/shadow": {"perms": "-rw-r-----", "size": "1.4K"},
             "/var/log":    {"perms": "drwxr-xr-x", "size": "4.0K"},
         },
+        # ── Persona: what the fake machine IS ────────────────────────────
+        # These four used to be hardcoded in main.py. They describe the box
+        # an attacker thinks they landed on, so a deployment must be able to
+        # change them without editing Python: a database sensor wants
+        # `postgres`, a web sensor wants `www-data`, and a CentOS persona
+        # needs entirely different version strings.
+        #
+        # Note `phil` is deliberately absent — it is Cowrie's stock demo
+        # account, and shipping it makes the honeypot fingerprintable.
+
+        # Fake /etc/passwd. `home` is also what `cd ~` and bare `cd` resolve
+        # to for that account.
+        "users": {
+            "root":     {"uid": 0,    "gid": 0,    "home": "/root",        "shell": "/bin/bash"},
+            "daemon":   {"uid": 1,    "gid": 1,    "home": "/usr/sbin",    "shell": "/bin/sh"},
+            "bin":      {"uid": 2,    "gid": 2,    "home": "/bin",         "shell": "/bin/sh"},
+            "www-data": {"uid": 33,   "gid": 33,   "home": "/var/www",     "shell": "/bin/sh"},
+            "nobody":   {"uid": 65534,"gid": 65534,"home": "/nonexistent", "shell": "/bin/sh"},
+            "sshd":     {"uid": 101,  "gid": 65534,"home": "/var/run/sshd","shell": "/usr/sbin/nologin"},
+        },
+        # Fake /etc/shadow. Values are shown verbatim by `cat /etc/shadow`.
+        "shadow": {
+            "root": "$6$4aOmWdpJ$/kyPOik9rR0kSLyABIYNXgg/UqlWX3c1eIaovOLWphShTGXmuUAMq6iu9DrcQqlVUw3Pirizns4u27w3Ugvb6.",
+        },
+        # `<tool> --version` output. Pins the persona to a distro/release.
+        "versions": {
+            "nmap":    "Nmap version 7.80 ( https://nmap.org )",
+            "python3": "Python 3.10.12",
+            "python":  "Python 3.10.12",
+            "git":     "git version 2.34.1",
+            "vim":     "VIM - Vi IMproved 8.2 (2019 Dec 12)",
+            "gcc":     "gcc (Ubuntu 11.4.0-1ubuntu1~22.04) 11.4.0",
+            "g++":     "g++ (Ubuntu 11.4.0-1ubuntu1~22.04) 11.4.0",
+            "curl":    "curl 7.81.0 (x86_64-pc-linux-gnu)",
+            "wget":    "GNU Wget 1.21.2 built on linux-gnu.",
+            "perl":    "This is perl 5, version 34, subversion 0 (v5.34.0)",
+            "ruby":    "ruby 3.0.2p107 (2021-07-07 revision 0db68f0233)",
+            "php":     "PHP 8.1.2-1ubuntu2.14 (cli)",
+            "node":    "v18.19.0",
+            "make":    "GNU Make 4.3",
+            "docker":  "Docker version 24.0.7, build afdd53b",
+            "nginx":   "nginx version: nginx/1.18.0 (Ubuntu)",
+            "htop":    "htop 3.2.1",
+            "tmux":    "tmux 3.2a",
+            "screen":  "Screen version 4.09.00 (GNU) 01-Sep-21",
+            "nano":    "GNU nano, version 6.2",
+            "emacs":   "GNU Emacs 27.1",
+            "mysql":   "mysql  Ver 8.0.36-0ubuntu0.22.04.1 for Linux on x86_64",
+        },
+        # Directories that exist even with no file tracked under them, so
+        # `cd /opt` succeeds. Each user's `home` above is added automatically.
+        "known_dirs": [
+            "/", "/root", "/home", "/tmp", "/var", "/etc", "/usr", "/bin",
+            "/sbin", "/proc", "/sys", "/dev", "/opt", "/srv", "/mnt", "/media",
+            "/run", "/lib", "/lib64", "/boot", "/var/tmp", "/var/log",
+            "/var/run", "/usr/bin", "/usr/sbin", "/usr/local",
+        ],
+        # `apt install <pkg>` -> which command that provides. Package names
+        # are distro-specific, so this is data; the resolution/routing logic
+        # around it stays in main.py.
+        "tool_packages": {
+            "nmap": "nmap", "masscan": "masscan", "ncat": "nmap",
+            "netcat": "netcat-openbsd", "nc": "netcat-openbsd",
+            "tcpdump": "tcpdump", "socat": "socat", "whois": "whois",
+            "python": "python3", "python3": "python3", "python2": "python2",
+            "perl": "perl", "ruby": "ruby", "php": "php",
+            "node": "nodejs", "lua": "lua5.3",
+            "gcc": "gcc", "g++": "g++", "make": "make",
+            "gdb": "gdb", "git": "git", "strace": "strace",
+            "nginx": "nginx", "apache2": "apache2",
+            "mysql": "mysql-server", "mysqldump": "mysql-client",
+            "redis-cli": "redis-tools", "docker": "docker.io",
+            "vim": "vim", "nano": "nano", "emacs": "emacs",
+            "wget": "wget", "curl": "curl",
+            "htop": "htop", "screen": "screen", "tmux": "tmux",
+            "zip": "zip", "unzip": "unzip", "7z": "p7zip-full",
+            "jq": "jq", "tree": "tree",
+        },
     })
 
 

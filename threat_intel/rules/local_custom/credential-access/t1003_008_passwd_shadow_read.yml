@@ -1,10 +1,25 @@
 id: 1f2f4d6c-3bec-475e-b89a-c7e242364e0a
 title: /etc/passwd or /etc/shadow read
 status: stable
+description: >-
+  The credential stores are READ, which is what enables offline cracking.
+
+  Direction matters. MITRE defines T1003.008 as dumping the contents of
+  /etc/passwd and /etc/shadow to enable offline password cracking. The
+  previous rule matched `sed` anywhere near those paths, so
+  `sed -i 's/.../' /etc/shadow` — which INJECTS an attacker-chosen password
+  hash — was tagged as credential dumping. That is account manipulation
+  (T1098) or credential modification (T1556), the opposite operation. The
+  precision audit of 2026-08-26 scored 2 of 5 sampled tags wrong for this.
+
+  The filter below removes in-place edits and redirects that target the files
+  rather than read them. `cat /etc/shadow > /tmp/out` still matches, because
+  there the shadow file is the SOURCE.
 references:
   - https://attack.mitre.org/techniques/T1003/008
+  - https://github.com/redcanaryco/atomic-red-team/blob/master/atomics/T1003.008/T1003.008.md
 author: HydraPoT
-date: 2026-08-25
+date: 2026-08-26
 technique: T1003.008
 technique_name: '/etc/passwd and /etc/shadow'
 tactic: 'Credential Access'
@@ -16,8 +31,14 @@ logsource:
 detection:
   selection:
     command|re:
-      - '\b(?:cat|less|more|head|tail|strings|cp|grep|awk|sed)\b[^|;]*/etc/(?:shadow|passwd)\b'
-  condition: selection
+      - '\b(?:cat|less|more|head|tail|strings|cp|grep|egrep|awk|sed|sort|uniq)\b[^|;]*/etc/(?:shadow|passwd|master\.passwd)\b'
+  # The file is being MODIFIED, not read out.
+  filter_write:
+    command|re:
+      - '\bsed\s+(?:-\w+\s+)*-\w*i\w*\b[^|;]*/etc/(?:shadow|passwd|master\.passwd)\b'
+      - '(?:>>?|\btee\b)\s*\S*/etc/(?:shadow|passwd|master\.passwd)\b'
+      - '\b(?:chpasswd|passwd|usermod|useradd|adduser)\b[^|;]*/etc/(?:shadow|passwd)\b'
+  condition: selection and not filter_write
 tags:
   - attack.credential_access
   - attack.t1003.008

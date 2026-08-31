@@ -1,10 +1,29 @@
 id: a9a34abf-7d54-4969-9245-0639819d62dc
 title: Outbound SSH/SCP/SFTP
 status: stable
+description: >-
+  The session reaches OUT to another host over SSH — the pivot step.
+
+  Direction is the whole technique. T1021.004 is using SSH to move to a
+  different machine; it is not "the string ssh appeared". Measured against the
+  honeypot's own corpus the previous version was 46 of 46 rows wrong, and
+  every one of them was `/etc/init.d/ssh restart` — restarting the LOCAL sshd,
+  which is the opposite end of the connection.
+
+  The cause is worth recording because it is self-inflicted. The matcher
+  expands each segment into path-stripped variants so that `/bin/chmod` can
+  match a rule written for `chmod`. That same expansion rewrites
+  `/etc/init.d/ssh restart` into `ssh restart`, which then satisfies a bare
+  `^\s*ssh\s+\S` selection. The stripping is correct and useful for binaries
+  in /bin and /usr/bin, so the fix belongs here rather than in the matcher:
+  this rule now excludes service-management forms explicitly.
+
+  Local sshd administration is service control, not lateral movement. If it
+  should be tagged at all it is T1489/T1685 territory, not this technique.
 references:
   - https://attack.mitre.org/techniques/T1021/004
 author: HydraPoT
-date: 2026-08-25
+date: 2026-08-26
 technique: T1021.004
 technique_name: 'SSH'
 tactic: 'Lateral Movement'
@@ -16,8 +35,17 @@ logsource:
 detection:
   selection:
     segment|re:
-      - '^\s*(?:ssh|scp|sftp)\s+\S'
-  condition: selection
+      - '^\s*(?:sudo\s+)?(?:ssh|scp|sftp)\s+\S'
+  # Managing the local SSH daemon, not connecting out. `sshd` is the daemon;
+  # a lone service verb after `ssh` is what the path-stripped
+  # `/etc/init.d/ssh restart` collapses to.
+  filter_local_daemon:
+    command|re:
+      - '/etc/init\.d/sshd?\b'
+      - '\b(?:systemctl|service|invoke-rc\.d|rc-service|chkconfig)\b[^|;]*\bsshd?\b'
+      - '\bsshd\b'
+      - '\bssh\s+(?:start|stop|restart|reload|status|force-reload|condrestart|enable|disable)\b'
+  condition: selection and not filter_local_daemon
 tags:
   - attack.lateral_movement
   - attack.t1021.004

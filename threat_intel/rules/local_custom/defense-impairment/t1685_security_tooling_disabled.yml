@@ -28,10 +28,13 @@ description: >-
   called, and SigmaHQ enumerates the same way. Everything else in this rule
   is mechanism-matched.
 
-  Deliberately NOT covered: `history -c` (ART test "Clear History"). Clearing
-  history is T1070.003 Clear Command History and is already tagged as such;
-  T1685 here covers *disabling* history logging (`set +o history`,
-  `unset HISTFILE`). That atomic is expected to stay undetected under T1685.
+  Deliberately NOT covered: anything to do with shell history. MITRE scopes
+  T1685 to security tools and applications; a history file is not one.
+  Clearing history is T1070.003 and preventing it being written is T1690,
+  each with its own rule. A history selection was removed from here on
+  2026-08-26 after the precision audit scored all 5 sampled T1685 tags wrong,
+  every one of them a history command. ART's "Clear History" and "Suspend
+  History" atomics are therefore expected to stay undetected under T1685.
 references:
   - https://attack.mitre.org/techniques/T1685
   - https://github.com/redcanaryco/atomic-red-team/blob/master/atomics/T1562.001/T1562.001.md
@@ -89,13 +92,6 @@ detection:
     command|re:
       - '>\s*/proc/sys/vm/drop_caches\b'
       - '\bswapoff\s+-a\b'
-  # Shell history logging turned off (as opposed to cleared, which is T1070.003).
-  selection_history_off:
-    command|re:
-      - '\bset\s+\+o\s+history\b'
-      - '\bunset\s+HIST(?:FILE|SIZE|FILESIZE)\b'
-      - '\bHISTFILE\s*=\s*(?:/dev/null|["'']{2})'
-      - '\bHISTSIZE\s*=\s*0\b'
   # EDR agents driven through their own CLI.
   selection_edr_cli:
     command|re:

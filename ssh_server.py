@@ -128,12 +128,26 @@ async def _shell_session(process, handler_factory, hostname, os_banner):
     src_port = peer[1] if peer else 0
     peer_str = f"{src_ip}:{src_port}"
 
-    conn       = process.get_extra_info("connection")
-    server_obj = conn.get_extra_info("server") if conn else None
-    username   = getattr(server_obj, "username", None) or "root"
+    # asyncssh has no "server" extra_info key, so the old lookup always
+    # returned None and every session silently fell back to root — logging in
+    # as `admin` still gave `root@psu:~#`. Ask asyncssh directly, then the
+    # connection owner (our HoneypotServer, which records username in
+    # validate_password), then give up.
+    conn     = process.get_extra_info("connection")
+    username = process.get_extra_info("username")
+    if not username and conn is not None:
+        username = conn.get_extra_info("username")
+        if not username:
+            owner = conn.get_owner() if hasattr(conn, "get_owner") else None
+            username = getattr(owner, "username", None)
+    username = username or "root"
 
     prompt_char = "#" if username == "root" else "$"
-    cwd         = "/root"
+    # Home follows the account, like a real box. Was hardcoded "/root", so
+    # logging in as `admin` showed `admin@psu:~$` while `pwd` returned /root —
+    # a giveaway an attacker checks in the first few commands.
+    home        = "/root" if username == "root" else f"/home/{username}"
+    cwd         = home
 
     # ── resolve public IP for geo mapping ─────────────────────────
     import ipaddress
@@ -150,12 +164,13 @@ async def _shell_session(process, handler_factory, hostname, os_banner):
         public_ip = src_ip
 
     def make_prompt():
-        display = "~" if cwd == "/root" else cwd
+        display = "~" if cwd == home else cwd
         return f"{username}@{hostname}:{display}{prompt_char} "
 
     prompt = make_prompt()
     swallow = {"lines": 0}
-    command_handler = handler_factory(src_ip=src_ip, public_ip=public_ip)
+    command_handler = handler_factory(src_ip=src_ip, public_ip=public_ip,
+                                      username=username)
 
     try:
         process.stdout.write(f"Welcome to {os_banner}\r\n\r\n")
@@ -203,17 +218,28 @@ async def _shell_session(process, handler_factory, hostname, os_banner):
                         print(f"[ssh_server] {peer_str} clean exit via '{cmd}'")
                         raise SystemExit
 
+                    is_cd = False
                     if cmd == "clear":
                         process.stdout.write("\x1b[H\x1b[2J\x1b[3J" + prompt)
                         continue
 
-                    # ── cd handled locally so prompt always tracks correctly ──
-                    if cmd == "cd" or cmd.startswith("cd "):
+                    # ── cd: tracked locally AND forwarded ────────────────
+                    # Local tracking keeps the prompt instant. Forwarding is
+                    # what was missing: this block used to `continue`, so the
+                    # agent never saw `cd` and SYSTEM_STATE["cwd"] stayed at
+                    # its initial value forever — the prompt said /home while
+                    # `pwd` and `ls` still answered from /root.
+                    is_cd = cmd == "cd" or cmd.startswith("cd ")
+                    if is_cd:
                         parts = cmd.split(None, 1)
-                        target = parts[1].strip() if len(parts) > 1 else "/root"
+                        # bare `cd` and `cd ~` go to THIS account's home, not
+                        # always /root — same reason as the prompt above
+                        target = parts[1].strip() if len(parts) > 1 else home
 
                         if target == "~":
-                            target = "/root"
+                            target = home
+                        elif target.startswith("~/"):
+                            target = home.rstrip("/") + target[1:]
                         elif target == "-":
                             target = cwd          # simplification
                         elif not target.startswith("/"):
@@ -232,8 +258,8 @@ async def _shell_session(process, handler_factory, hostname, os_banner):
                             cwd = "/"
 
                         prompt = make_prompt()
-                        process.stdout.write(prompt)
-                        continue
+                        # no `continue` — fall through to the agent so it can
+                        # update its own cwd and report a real cd error
                     actual = cmd.strip()[5:].strip() if cmd.strip().startswith("sudo ") else cmd.strip()
                     if actual.split()[0] == "passwd":
                         try:
@@ -261,8 +287,10 @@ async def _shell_session(process, handler_factory, hostname, os_banner):
                         response, new_prompt = (f"bash: error: {e}", "")
 
                     # only accept new_prompt from agent if it contains path info
-                    # otherwise we keep our locally tracked prompt
-                    if new_prompt:
+                    # otherwise we keep our locally tracked prompt. For `cd` the
+                    # local prompt already reflects the move and carries the
+                    # real username, so it stays authoritative.
+                    if new_prompt and not is_cd:
                         prompt = new_prompt if new_prompt.endswith(" ") else new_prompt + " "
                         
                     if isinstance(response, str) and response.startswith("__SWALLOW_"):

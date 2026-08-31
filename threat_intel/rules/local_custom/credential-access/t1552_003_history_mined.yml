@@ -1,10 +1,27 @@
 id: bc882970-db9d-4dfd-8f69-ed55d717bd33
 title: Shell history mined for credentials
 status: stable
+description: >-
+  Shell history is READ, looking for credentials typed on a command line.
+
+  The direction matters and the previous version could not tell it. Its
+  selection was `(?:cat|grep|…)[^|;]*\.bash_history`, and `[^|;]*` spans a
+  redirect operator, so `cat /dev/null > /root/.bash_history` matched on the
+  `cat` at the front and the `.bash_history` at the back — while that command
+  is the exact opposite of mining, it destroys the file. Measured against the
+  honeypot's own corpus this was 48 of 48 rows wrong: every single tag this
+  rule had ever produced was a history *wipe*, not a history read.
+
+  Wiping history is T1070.003 Clear Command History, which those commands
+  already carry correctly, so nothing is lost by filtering them out here.
+
+  This is the same defect class as the T1485 false positive fixed earlier: a
+  rule keyed on a filename, blind to whether the file is being read or
+  overwritten. The filter below asks the direction question explicitly.
 references:
   - https://attack.mitre.org/techniques/T1552/003
 author: HydraPoT
-date: 2026-08-25
+date: 2026-08-26
 technique: T1552.003
 technique_name: 'Shell History'
 tactic: 'Credential Access'
@@ -16,8 +33,15 @@ logsource:
 detection:
   selection:
     command|re:
-      - '\b(?:cat|grep|less|more|tail|head|awk|sed|strings)\b[^|;]*(?:\.bash_history|\.zsh_history|\.sh_history|\.mysql_history|\.psql_history|\.history)\b'
-  condition: selection
+      - '\b(?:cat|grep|egrep|fgrep|less|more|tail|head|awk|sed|strings|sort|uniq)\b[^|;]*(?:\.bash_history|\.zsh_history|\.sh_history|\.mysql_history|\.psql_history|\.python_history|\.history)\b'
+  # The history file is the TARGET of a write, a truncation, or a delete —
+  # that is destruction, not mining.
+  filter_destructive:
+    command|re:
+      - '(?:>>?|\btee\b)\s*\S*(?:\.bash_history|\.zsh_history|\.sh_history|\.mysql_history|\.psql_history|\.python_history|\.history)\b'
+      - '\b(?:rm|shred|truncate|unlink|mv|ln)\b[^|;]*(?:\.bash_history|\.zsh_history|\.sh_history|\.history)\b'
+      - '^\s*:\s*>\s*\S*(?:\.bash_history|\.zsh_history|\.history)\b'
+  condition: selection and not filter_destructive
 tags:
   - attack.credential_access
   - attack.t1552.003
