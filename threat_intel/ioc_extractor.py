@@ -34,6 +34,7 @@ import uuid
 import ipaddress
 from collections import defaultdict
 from datetime import datetime, timezone
+from urllib.parse import unquote, urlparse
 
 # ── IOC patterns (shape-based, not value-based) ───────────────────────────────
 _RE = {
@@ -53,6 +54,44 @@ _RE = {
     "cve": re.compile(r'\bCVE-\d{4}-\d{4,7}\b', re.I),
     "email": re.compile(r'\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,24}\b'),
 }
+
+# ── defanged-IOC support ───────────────────────────────────────────────────────
+# Attacker-fetched dropper scripts and pasted content sometimes carry IOCs in
+# "defanged" form to dodge naive auto-linking/scanners: 1[.]2[.]3[.]4,
+# hxxp://evil[.]com, user[at]evil[.]com. Matched with their own patterns, then
+# normalised (refanged) back to the real form before being stored — so a
+# defanged IOC lands in the same "ipv4"/"url"/"domain"/"email" bucket as a
+# plain one, never a separate type the rest of the pipeline (STIX export,
+# dashboard) would have to know about. Modeled on msticpy's IoCExtract
+# (microsoft/msticpy), which does the same thing more generally.
+_DOT_DF = r'(?:\[\.\]|\(\.\)|\[dot\])'
+_AT_DF  = r'(?:\[at\]|\(at\))'
+
+_RE_DEFANGED = {
+    "ipv4": re.compile(
+        r'\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)' + _DOT_DF + r'){3}'
+        r'(?:25[0-5]|2[0-4]\d|1?\d?\d)\b'),
+    "url": re.compile(r'\bhxxps?://[^\s\'"<>`]+', re.I),
+    "domain": re.compile(
+        r'\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?' + _DOT_DF + r')+'
+        r'[a-z]{2,24}\b', re.I),
+    "email": re.compile(
+        r'\b[a-zA-Z0-9._%+-]+' + _AT_DF + r'[a-zA-Z0-9-]+(?:' + _DOT_DF +
+        r'[a-zA-Z0-9-]+)*' + _DOT_DF + r'[a-zA-Z]{2,24}\b'),
+}
+
+
+def _refang(value: str) -> str:
+    """Normalise a defanged observable back to its real form."""
+    v = re.sub(r'\[\.\]|\(\.\)|\[dot\]', '.', value, flags=re.I)
+    v = re.sub(r'\[at\]|\(at\)', '@', v, flags=re.I)
+    v = re.sub(r'^hxxp', 'http', v, flags=re.I)
+    return v
+
+
+# Matches just the protocol marker, used to find a SECOND url start embedded
+# further inside an already-decoded url (see _add_url below).
+_PROTO_START = re.compile(r'(?:https?|ftps?)://', re.I)
 
 # domains that are the honeypot's own noise / not attacker infrastructure
 _DOMAIN_IGNORE = {"example.com", "www.example.com", "example.org", "example.net",
@@ -229,10 +268,17 @@ def is_known_benign(ioc_type: str, value: str) -> bool:
     return v in pool
 
 
-def extract_from_text(text: str) -> list:
+def extract_from_text(text: str, _depth: int = 0) -> list:
     """Return [(ioc_type, value), ...] found in a single string. Longest/most
-    specific patterns first so a sha256 isn't also reported as md5, etc."""
-    if not text:
+    specific patterns first so a sha256 isn't also reported as md5, etc.
+
+    Also matches defanged IOCs (hxxp://, 1[.]2[.]3[.]4, user[at]domain[.]com)
+    and refangs them into the same bucket as a plain match, and re-scans a
+    matched URL's percent-decoded form once for an IOC hiding in a
+    redirector/proxy's query string (?url=http%3A%2F%2Fevil.com%2Fx.sh).
+    `_depth` bounds that recursion since this processes attacker-controlled
+    input — it must not be able to make this call itself unboundedly."""
+    if not text or _depth > 2:
         return []
     found = []
     seen = set()
@@ -245,8 +291,48 @@ def extract_from_text(text: str) -> list:
 
     # URLs first (so their host isn't separately double-counted as a domain)
     url_spans = []
+
+    def _consider_url(raw):
+        """Reject a URL whose host is a fake/reserved-placeholder domain —
+        the same is_valid_tld()/_DOMAIN_IGNORE checks the domain and email
+        paths already apply. A bare-IP host has no TLD to check and is
+        validated separately where ipv4/ipv6 IOCs are extracted, so it's
+        exempt here."""
+        v = raw.rstrip('.,);')
+        host = (urlparse(v).hostname or "").lower().rstrip('.')
+        if host and ':' not in host and not _RE["ipv4"].fullmatch(host):
+            if host in _DOMAIN_IGNORE or host.endswith(_DOMAIN_IGNORE_SUFFIX):
+                return None
+            if not is_valid_tld(host):
+                return None
+        return v
+
+    def _add_url(raw):
+        v = _consider_url(raw)
+        if not v:
+            return
+        add("url", v)
+        decoded = unquote(v)
+        if decoded == v:
+            return
+        # A redirector/proxy URL often hides its real target percent-encoded
+        # in a query parameter (?url=http%3A%2F%2Fevil.com%2Fx.sh). The url
+        # regex applied to the whole decoded string would just re-swallow it
+        # as one big match (its char class doesn't stop at an embedded
+        # "http://"), so instead look for a SECOND protocol marker further in
+        # and isolate + extract just that nested URL on its own.
+        starts = [m.start() for m in _PROTO_START.finditer(decoded)]
+        for pos in starts[1:]:
+            nested = _RE["url"].match(decoded, pos)
+            if nested:
+                for t, dv in extract_from_text(nested.group(0), _depth + 1):
+                    add(t, dv)
+
     for m in _RE["url"].finditer(text):
-        add("url", m.group(0).rstrip('.,);'))
+        _add_url(m.group(0))
+        url_spans.append((m.start(), m.end()))
+    for m in _RE_DEFANGED["url"].finditer(text):
+        _add_url(_refang(m.group(0)))
         url_spans.append((m.start(), m.end()))
 
     def _inside_url(pos):
@@ -254,10 +340,31 @@ def extract_from_text(text: str) -> list:
 
     # Emails next (so an email's domain half isn't separately double-counted
     # as a bare "domain", same reasoning as URLs above)
+    def _consider_email(raw):
+        """Reject an email whose domain half isn't a real one — same checks
+        the bare-domain path below already applies. Without this,
+        `jdoe@machine.example`/`user@x.test` (RFC 5322's own illustrative
+        examples, `.example`/`.test` are IANA-reserved, never delegated)
+        extracted as real observables 63 times against a clean baseline."""
+        v = raw.lower()
+        domain = v.rsplit("@", 1)[-1]
+        if domain in _DOMAIN_IGNORE or domain.endswith(_DOMAIN_IGNORE_SUFFIX):
+            return None
+        if not is_valid_tld(domain):
+            return None
+        return v
+
     email_spans = []
     for m in _RE["email"].finditer(text):
-        add("email", m.group(0).lower())
         email_spans.append((m.start(), m.end()))
+        v = _consider_email(m.group(0))
+        if v:
+            add("email", v)
+    for m in _RE_DEFANGED["email"].finditer(text):
+        email_spans.append((m.start(), m.end()))
+        v = _consider_email(_refang(m.group(0)))
+        if v:
+            add("email", v)
 
     def _inside_email(pos):
         return any(a <= pos < b for a, b in email_spans)
@@ -280,29 +387,38 @@ def extract_from_text(text: str) -> list:
         v = m.group(0)
         if _is_public_ip(v):
             add("ipv4", v)
+    for m in _RE_DEFANGED["ipv4"].finditer(text):
+        v = _refang(m.group(0))
+        if _is_public_ip(v):
+            add("ipv4", v)
     for m in _RE["ipv6"].finditer(text):
         v = m.group(0)
         if _is_public_ip(v):
             add("ipv6", v)
 
-    for m in _RE["domain"].finditer(text):
-        v = m.group(0).lower().rstrip('.')
-        if _inside_url(m.start()) or _inside_email(m.start()):
-            continue
+    def _consider_domain(raw, pos):
+        v = raw.lower().rstrip('.')
+        if _inside_url(pos) or _inside_email(pos):
+            return
         if v in _DOMAIN_IGNORE or v.endswith(_DOMAIN_IGNORE_SUFFIX):
-            continue
+            return
         # skip things that are actually IPs
         if _RE["ipv4"].fullmatch(v):
-            continue
+            return
         # The regex accepts any 2-24 char final label, so `rpc.idmapd`,
         # `libnss.so` and `foo.bar` all look like domains. Require a real
         # IANA-delegated TLD. `rpc.idmapd` alone was 131 false observations.
         if not is_valid_tld(v):
-            continue
+            return
         # skip filenames whose "TLD" is really a file/script/unit extension
         if v.rsplit(".", 1)[-1] in _FILE_EXT_TLDS:
-            continue
+            return
         add("domain", v)
+
+    for m in _RE["domain"].finditer(text):
+        _consider_domain(m.group(0), m.start())
+    for m in _RE_DEFANGED["domain"].finditer(text):
+        _consider_domain(_refang(m.group(0)), m.start())
 
     return found
 
