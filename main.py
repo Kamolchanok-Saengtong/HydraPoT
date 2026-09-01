@@ -800,6 +800,13 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
                 SYSTEM_STATE["files"][dst] = SYSTEM_STATE["files"].pop(src)
 
     def sync_history(cmd):
+        # Cowrie is the only thing this writes to. With Cowrie down, every
+        # command attempted its own reconnect and printed its own failure —
+        # one line per keystroke, which buries real events and fills the disk
+        # on a busy sensor. Skip entirely while Cowrie is known unavailable;
+        # _cowrie_send() restores the flag when it comes back.
+        if not getattr(cowrie, "available", True):
+            return
         safe = cmd.replace("'", "'\\''")
         housekeeping = f"HISTFILE=~/.bash_history; history -s '{safe}'; history -w"
         try:
@@ -818,7 +825,12 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
                 cowrie.shell.send(housekeeping + "\n")
                 cowrie._collect_until_prompt(housekeeping)
             except Exception as e:
-                print(f"[sync_history] FAILED: {e}")
+                # Once per outage, not once per command. Reset when Cowrie
+                # reconnects so a later outage is still reported.
+                if not getattr(cowrie, "_history_warned", False):
+                    cowrie._history_warned = True
+                    print(f"[sync_history] Cowrie unreachable ({type(e).__name__}) "
+                          f"— history sync paused until it returns")
 
     def log(cmd, agent, response, fi_score=0, latency_ms=0.0):
         entry = {
@@ -990,6 +1002,45 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
                 return token
             return None
         
+        def _cowrie_fallback(cmd_text: str) -> tuple[str, str]:
+            """Answer a Cowrie-bound command with the on-device model.
+
+            Cowrie is a hard dependency for FI 0-1 traffic and for wget/curl,
+            so when the container dies those commands used to return "" and
+            the attacker got silence on nearly everything — the loudest
+            possible tell that the box is fake. Degrading to on_device keeps
+            the session believable; the FI band and the log still record what
+            was asked.
+            """
+            if ondevice is None:
+                return "", "on_device"
+            try:
+                sys_p, usr_p = prompt_manager.build_prompt(actual_cmd)
+                out = ondevice.send(sys_p, usr_p)
+                return (out or ""), "on_device"
+            except Exception as e:
+                print(f"[main] on_device fallback failed: {type(e).__name__}: {e}")
+                return "", "on_device"
+
+        def _cowrie_send(cmd_text: str, write_fn=None) -> tuple[str, str]:
+            """cowrie.send()/send_streaming() with automatic degradation.
+
+            Returns (output, agent_actually_used) so the caller logs the truth
+            rather than crediting Cowrie for output the model produced.
+            """
+            try:
+                if write_fn is not None:
+                    out, _ = cowrie.send_streaming(cmd_text, write_fn)
+                else:
+                    out, _ = cowrie.send(cmd_text)
+            except Exception as e:
+                print(f"[main] cowrie call raised {type(e).__name__}: {e}")
+                cowrie.available = False
+                out = ""
+            if not getattr(cowrie, "available", True):
+                return _cowrie_fallback(cmd_text)
+            return out, "cowrie"
+
         def _cowrie_backed_path(actual_cmd: str) -> str | None:
             """The Cowrie-owned file this command touches, if any.
 
@@ -1138,6 +1189,8 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
                 update_state(cmd, output)
                 return _finish(cmd, agent, output, fi_score, t_start)
             elif force_agent == "cowrie":
+                # force_agent=="cowrie" is the measurement arm — it must reach
+                # the real container, so no fallback here on purpose.
                 agent  = "cowrie"
                 output, _ = cowrie.send(cmd)
                 update_state(cmd, output)
@@ -1177,9 +1230,9 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
         # update_state() still runs so SYSTEM_STATE["files"] tracks the
         # download too — that is what the on_device/cloud agents read.
         if actual_base in ("wget", "curl") and re.search(r'https?://', actual_cmd):
-            output, _ = cowrie.send_streaming(cmd, write_fn)
+            output, used = _cowrie_send(cmd, write_fn=write_fn)
             update_state(cmd, output)
-            return _finish(cmd, "cowrie", output, fi_score, t_start, streamed=True)
+            return _finish(cmd, used, output, fi_score, t_start, streamed=True)
 
         if actual_base == "passwd" and not cloud_routed:
             fi_manager.process(command=cmd, output="", agent="on_device", session_id=SESSION_ID)
@@ -1274,6 +1327,13 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
             agent     = "cowrie"
             needs_llm = False
 
+        # Cowrie already known dead — do not send anything else its way. The
+        # command that discovered the failure degrades inside _cowrie_send();
+        # every command after it is routed correctly from the start.
+        if agent == "cowrie" and not getattr(cowrie, "available", True):
+            agent     = "on_device"
+            needs_llm = True
+
         # command not found — only for unknown commands not in any pattern
         if agent == "cowrie" and not needs_llm and not _is_tool_available(lookup_base):
             if actual_base and actual_base not in ("echo", "cd", "exit",
@@ -1361,13 +1421,11 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
                 update_state(cmd, output)
 
             else:
-                agent     = "cowrie"
-                output, _ = cowrie.send(cmd)
+                output, agent = _cowrie_send(cmd)
                 update_state(cmd, output)
 
         else:  # agent == "cowrie"
-            agent     = "cowrie"
-            output, _ = cowrie.send(cmd)
+            output, agent = _cowrie_send(cmd)
             update_state(cmd, output)
 
         if (agent == "cowrie" and not streamed
@@ -1410,8 +1468,34 @@ def main():
         max_tokens  = config.agents.cloud.max_tokens,
     ) if config.agents.cloud.enabled else None
 
+    if ondevice is not None:
+        # Bounds how long a session waits for its turn at the serialised
+        # model; see ondevice_agent._MODEL_LOCK.
+        ondevice.wait_timeout = float(
+            getattr(config.honeypot, "model_wait_timeout", 20.0) or 0)
     print(f"[HydraPot] on_device: {'loaded' if ondevice else 'DISABLED'}")
     print(f"[HydraPot] cloud: {'loaded' if cloud else 'DISABLED'}")
+
+    # Optional startup prune. Off unless logging.retention_on_start is true —
+    # nothing should silently delete capture data just because the process
+    # restarted. Failures are reported and ignored: a retention problem must
+    # never stop the honeypot from starting.
+    if getattr(config.logging, "retention_on_start", False):
+        try:
+            res = storage.prune(
+                retention_days=config.logging.retention_days,
+                max_rows=config.logging.retention_max_rows,
+                protect_instances=config.logging.retention_protect_instances,
+                vacuum=config.logging.retention_vacuum,
+                dry_run=False,
+            )
+            gone = sum(v["deleted"] for v in res.values() if isinstance(v, dict))
+            if gone:
+                print(f"[HydraPot] retention: pruned {gone:,} rows, "
+                      f"{res['size_before']/1048576:.0f}MB -> "
+                      f"{res['size_after']/1048576:.0f}MB")
+        except Exception as e:
+            print(f"[HydraPot] retention FAILED ({type(e).__name__}: {e}) — continuing")
 
     def _make_cowrie():
         c = CowrieAgent(
@@ -1452,6 +1536,7 @@ def main():
             port            = config.honeypot.port,
             hostname        = config.honeypot.hostname,
             os_banner       = config.honeypot.os,
+            max_sessions    = getattr(config.honeypot, "max_sessions", 0),
         )
     except KeyboardInterrupt:
         print("\n[HydraPot] Shutting down...")

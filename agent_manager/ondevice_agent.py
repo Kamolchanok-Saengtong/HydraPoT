@@ -7,7 +7,34 @@ import re
 import sys
 import glob
 import os
+import threading
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Serialises every call into the local model.
+#
+# llama.cpp's CUDA VMM pool is a STACK allocator: ggml-cuda.cu:575 asserts that
+# the buffer being freed is the top of the stack. Two threads allocating and
+# freeing at once interleave those frees, the assert fails, and GGML_ASSERT
+# calls abort() — which kills the WHOLE honeypot process, not just the one
+# session:
+#
+#     ggml-cuda.cu:575: GGML_ASSERT(ptr == (void *)((char *)(pool_addr)
+#                                   + pool_used)) failed
+#     Aborted (core dumped)
+#
+# ssh_server.py dispatches each attacker command through asyncio.to_thread(),
+# so two concurrent sessions is all it takes. llama-cpp-python is not
+# thread-safe in any case — context, KV cache and sampler state are shared.
+#
+# Module-level, not per-instance: there is one GPU, and two OnDeviceAgent
+# objects would still collide on it.
+#
+# Trade-off: concurrent sessions now QUEUE on the model instead of crashing
+# the process. A queued attacker waits; a crashed honeypot logs nothing at
+# all. Most traffic is routed to Cowrie anyway, so few commands reach here.
+_MODEL_LOCK = threading.Lock()
 
 
 def _estimate_gflops(n_params: int | None, prompt_tokens, completion_tokens) -> float | None:
@@ -62,6 +89,10 @@ def _find_gguf_file(model_id: str, preferred_file: str = "") -> str | None:
 
 
 class OnDeviceAgent:
+    # Longest a caller waits for its turn at the model. Overridden from
+    # config.honeypot.model_wait_timeout at construction.
+    wait_timeout: float = 20.0
+
     def __init__(self, model: str, quantization: str = "4bit",
                  temperature: float = 0.7, max_tokens: int = 256,
                  do_sample: bool = True, gguf_file: str = ""):
@@ -205,21 +236,38 @@ class OnDeviceAgent:
         if len(combined_text) > self._MAX_PROMPT_CHARS_HARD_CEILING:
             return "", None
 
-        if self.is_gguf and self.llm is not None:
-            try:
-                n_tokens = len(self.llm.tokenize(combined_text.encode("utf-8", errors="ignore")))
-                n_ctx    = self.llm.n_ctx()
-                if n_tokens > n_ctx - self.max_tokens - 64:   # small safety margin
-                    return "", None
-            except Exception:
-                pass   # tokenization itself failing shouldn't block a real attempt
+        # One lock spanning BOTH the token pre-check and generation: tokenize()
+        # touches the same model object, so locking only the generate call
+        # still leaves a thread racing inside llama.cpp.
+        #
+        # Bounded wait, not a plain `with`: the lock serialises every session
+        # onto one GPU, so a queue forms under load. Waiting forever means one
+        # slow generation stalls every session behind it and the honeypot goes
+        # quiet without ever crashing. Give up instead and return empty, which
+        # main.py already treats as "this agent had nothing" and handles.
+        timeout = self.wait_timeout if self.wait_timeout and self.wait_timeout > 0 else -1
+        if not _MODEL_LOCK.acquire(timeout=timeout):
+            print(f"[on_device] busy — gave up waiting after {timeout}s "
+                  f"(model queue saturated)")
+            return "", None
         try:
-            if self.is_gguf:
-                return self._send_gguf(system_prompt, user_prompt)
-            else:
-                return self._send_transformers(system_prompt, user_prompt)
-        except Exception as e:
-            return f"[on_device error: {e}]", None
+            if self.is_gguf and self.llm is not None:
+                try:
+                    n_tokens = len(self.llm.tokenize(combined_text.encode("utf-8", errors="ignore")))
+                    n_ctx    = self.llm.n_ctx()
+                    if n_tokens > n_ctx - self.max_tokens - 64:   # small safety margin
+                        return "", None
+                except Exception:
+                    pass   # tokenization itself failing shouldn't block a real attempt
+            try:
+                if self.is_gguf:
+                    return self._send_gguf(system_prompt, user_prompt)
+                else:
+                    return self._send_transformers(system_prompt, user_prompt)
+            except Exception as e:
+                return f"[on_device error: {e}]", None
+        finally:
+            _MODEL_LOCK.release()
 
     def _send_gguf(self, system_prompt: str, user_prompt: str):
         output = self.llm.create_chat_completion(

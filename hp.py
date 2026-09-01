@@ -157,14 +157,70 @@ def _serve_dashboard(host, port, debug):
     dash_app.run(host=host, port=port, debug=debug, threaded=True)
 
 
+def _is_loopback(host: str) -> bool:
+    """True for addresses only reachable from this machine.
+
+    Anything else is world-reachable as far as this check is concerned: it is
+    better to make an operator type --i-accept-public-exposure for a LAN bind
+    than to guess which private ranges are actually private in their network.
+    """
+    import ipaddress
+    h = (host or "").strip()
+    if h in ("localhost", ""):
+        return True
+    try:
+        return ipaddress.ip_address(h).is_loopback
+    except ValueError:
+        return False
+
+
 @main.command()
 @click.option("--port", default=8050, type=int, help="Dash port")
-@click.option("--host", default="127.0.0.1", help="Bind address (use 0.0.0.0 to expose externally)")
+@click.option("--host", default="127.0.0.1",
+              help="Bind address. Keep 127.0.0.1 and reach it over an SSH "
+                   "tunnel; --host 0.0.0.0 needs --i-accept-public-exposure")
 @click.option("--debug/--no-debug", default=False, help="Enable Flask debug/reloader")
 @click.option("--foreground", is_flag=True,
               help="Run in this terminal (blocking) instead of the background")
-def dashboard(port, host, debug, foreground):
-    """Start the analytics dashboard in the background (stop: hp dashboard-stop)."""
+@click.option("--i-accept-public-exposure", is_flag=True,
+              help="Required to bind a non-loopback address. Read the warning.")
+def dashboard(port, host, debug, foreground, i_accept_public_exposure):
+    """Start the analytics dashboard in the background (stop: hp dashboard-stop).
+
+    Binds loopback only by default. View it from another machine with an SSH
+    tunnel rather than by exposing the port:
+
+        ssh -N -L 8050:127.0.0.1:8050 user@sensor -p <admin-port>
+    """
+    # The dashboard has NO authentication and its Database page includes a
+    # read-only SQL console over the capture database. Read-only is not the
+    # same as harmless: `SELECT username, password FROM auth` returns every
+    # credential the honeypot ever collected, plus every attacker IP and
+    # command. Binding it to the internet publishes all of that to anyone who
+    # finds the port.
+    #
+    # So a public bind has to be typed out deliberately. The tunnel costs one
+    # command and leaves nothing listening to find.
+    if not _is_loopback(host) and not i_accept_public_exposure:
+        click.echo(click.style(
+            f"\n  Refusing to bind {host}: the dashboard has no login and "
+            f"exposes a SQL console\n  over your captured credentials.\n",
+            fg="red", bold=True))
+        click.echo("  Use an SSH tunnel instead (nothing listens publicly):\n")
+        click.echo(click.style(
+            f"      ssh -N -L {port}:127.0.0.1:{port} <user>@<sensor-host> -p <admin-ssh-port>\n",
+            fg="green"))
+        click.echo(f"  then open http://localhost:{port} on your own machine.\n")
+        click.echo("  If you genuinely need a public bind, put it behind a reverse")
+        click.echo("  proxy with TLS and auth, and re-run with:")
+        click.echo(f"      hp dashboard --host {host} --i-accept-public-exposure\n")
+        raise SystemExit(2)
+
+    if not _is_loopback(host):
+        click.echo(click.style(
+            f"  WARNING: binding {host} — dashboard is unauthenticated and "
+            f"exposes a SQL console.", fg="yellow", bold=True))
+
     if foreground:
         click.echo(f"🍯 Dashboard on http://{host}:{port}  (Ctrl+C to stop)")
         _serve_dashboard(host, port, debug)
@@ -185,7 +241,9 @@ def dashboard(port, host, debug, foreground):
     log = open(DASHBOARD_LOG, "ab", buffering=0)
     proc = subprocess.Popen(
         [sys.argv[0], "dashboard", "--foreground",
-         "--host", str(host), "--port", str(port)] + (["--debug"] if debug else []),
+         "--host", str(host), "--port", str(port)]
+        + (["--debug"] if debug else [])
+        + (["--i-accept-public-exposure"] if i_accept_public_exposure else []),
         stdout=log, stderr=log, stdin=subprocess.DEVNULL,
         start_new_session=True, cwd=_HP_DIR,
     )

@@ -6,6 +6,8 @@ The handler we receive from main.py has signature:
 """
 
 import asyncio
+import signal
+import threading
 import os
 import queue
 import json
@@ -54,16 +56,59 @@ def get_host_key():
     return key
 
 
+# Live session counter. Model calls are serialised (ondevice_agent._MODEL_LOCK
+# — concurrent access aborts the process), so every extra session lengthens the
+# queue everyone else waits in. Unbounded, a flood makes the honeypot answer
+# nobody: still "up", still logging connections, useless. Refusing past a cap
+# reads as a busy server, which is ordinary; hanging forever does not.
+MAX_SESSIONS = 0        # set from config in start_server(); 0 = unlimited
+_active_sessions = 0
+_sessions_lock = threading.Lock()
+
+
+def _session_slots() -> tuple:
+    with _sessions_lock:
+        return _active_sessions, MAX_SESSIONS
+
+
 class HoneypotServer(asyncssh.SSHServer):
     """Records every auth attempt and remembers the username for the session."""
 
     def __init__(self):
         self._peer    = ("?", 0)
         self.username = None
+        self._counted = False
 
     def connection_made(self, conn):
+        global _active_sessions
         self._peer = conn.get_extra_info("peername") or ("?", 0)
         ip, port = self._peer
+
+        # Refuse over the cap BEFORE auth, so a flood costs us a TCP accept
+        # and nothing else — no shell, no model queue slot. The attempt is
+        # still logged: knowing you were flooded is the point.
+        if MAX_SESSIONS:
+            with _sessions_lock:
+                over = _active_sessions >= MAX_SESSIONS
+                if not over:
+                    _active_sessions += 1
+                    self._counted = True
+            if over:
+                print(f"[ssh_server] REFUSED {ip}:{port} — at capacity "
+                      f"({MAX_SESSIONS} sessions)")
+                _append_json(AUTH_LOG_PATH, {
+                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "src_ip": ip, "src_port": port,
+                    "event": "refused_capacity", "username": None,
+                    "password": None, "auth_type": "tcp_connect",
+                    "instance": INSTANCE_NAME,
+                })
+                conn.abort()
+                return
+        else:
+            with _sessions_lock:
+                _active_sessions += 1
+                self._counted = True
         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         print(f"[ssh_server] Connection from {ip}:{port}")
         _append_json(AUTH_LOG_PATH, {
@@ -78,6 +123,13 @@ class HoneypotServer(asyncssh.SSHServer):
         })
 
     def connection_lost(self, exc):
+        global _active_sessions
+        # Release the slot exactly once, whatever the reason for the drop —
+        # a leak here would silently shrink capacity until nobody gets in.
+        if self._counted:
+            self._counted = False
+            with _sessions_lock:
+                _active_sessions = max(0, _active_sessions - 1)
         if exc:
             print(f"[ssh_server] Connection lost: {exc}")
 
@@ -169,8 +221,14 @@ async def _shell_session(process, handler_factory, hostname, os_banner):
 
     prompt = make_prompt()
     swallow = {"lines": 0}
-    command_handler = handler_factory(src_ip=src_ip, public_ip=public_ip,
-                                      username=username)
+    # handler_factory() connects to the Cowrie backend (main.py's
+    # _make_cowrie()), a blocking socket call now bounded by
+    # CowrieAgent.CONNECT_TIMEOUT but still slow. asyncssh runs every session
+    # on one event loop, so calling this inline used to freeze every other
+    # connected attacker's I/O for the duration — off-loaded the same way
+    # per-command dispatch already is below.
+    command_handler = await asyncio.to_thread(
+        handler_factory, src_ip=src_ip, public_ip=public_ip, username=username)
 
     try:
         process.stdout.write(f"Welcome to {os_banner}\r\n\r\n")
@@ -352,9 +410,38 @@ async def _run_server(handler_factory, host, port, hostname, os_banner):
 
 
 def start_server(handler_factory, host="127.0.0.1", port=2223,
-                 hostname="svr04", os_banner="Ubuntu 12.04 LTS"):
+                 hostname="svr04", os_banner="Ubuntu 12.04 LTS",
+                 max_sessions=0):
+    global MAX_SESSIONS
+    MAX_SESSIONS = int(max_sessions or 0)
+    if MAX_SESSIONS:
+        print(f"[ssh_server] session cap: {MAX_SESSIONS} concurrent")
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
+
+    # SIGTERM is what systemd and Docker send to stop a service; Ctrl-C sends
+    # SIGINT. Only SIGINT became KeyboardInterrupt, so under a service manager
+    # the process was killed outright and main()'s `finally` — which flushes
+    # buffered SIEM events — never ran. Every restart silently dropped
+    # whatever had not been exported yet.
+    #
+    # loop.stop() returns run_forever() normally, so the finally blocks here
+    # and in main() both execute. add_signal_handler is Unix-only and raises
+    # on some embedded loops, hence the guard.
+    def _graceful(signame):
+        print(f"\n[ssh_server] {signame} received — closing sessions and "
+              f"flushing buffers...")
+        loop.stop()
+
+    for signame in ("SIGTERM", "SIGINT"):
+        sig = getattr(signal, signame, None)
+        if sig is None:
+            continue
+        try:
+            loop.add_signal_handler(sig, _graceful, signame)
+        except (NotImplementedError, RuntimeError):
+            pass   # non-Unix or a loop that does not support it
+
     try:
         loop.run_until_complete(
             _run_server(handler_factory, host, port, hostname, os_banner)

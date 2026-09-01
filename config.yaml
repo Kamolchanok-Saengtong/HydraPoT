@@ -9,6 +9,16 @@ honeypot:
   os: Ubuntu 22.04 LTS
   host: 0.0.0.0
   port: 2223
+
+  # ── Concurrency bounds ────────────────────────────────────────────────
+  # Calls into the local model are serialised (concurrent access aborts the
+  # process), so sessions queue behind each other. Unbounded, a flood makes
+  # the honeypot answer nobody — down, but silently, with no crash to alert
+  # on. These two put a ceiling on that.
+  max_sessions: 50          # concurrent attackers; extra are refused at TCP
+                            # accept, which reads as a busy server. 0 = no cap
+  model_wait_timeout: 20.0  # seconds a command waits for the model before
+                            # giving up so it cannot stall the queue. 0 = wait
 agents:
   cowrie:
     enabled: true
@@ -60,6 +70,28 @@ logging:
   impactful_dir: data/logs/impactful
   auth_log: data/logs/auth_log.json
   fi_threshold: 2
+
+  # ── Retention ─────────────────────────────────────────────────────────
+  # OFF by default (0 = keep everything). A honeypot on port 22 takes
+  # thousands of hits a day and nothing prunes the database, so on a real
+  # deployment it grows until the disk fills and the sensor stops recording
+  # silently — the worst way for a sensor to fail.
+  #
+  # READ BEFORE ENABLING. This database holds live capture, the CyberLab
+  # corpus (2019 timestamps) and the NSC experiment runs in the SAME tables.
+  # `retention_days: 90` would delete CyberLab first — it is the oldest data
+  # on the box and the only real attacker corpus. List anything
+  # irreplaceable under retention_protect_instances before switching this on.
+  #
+  # Always dry-run first:
+  #     python tools/prune_logs.py --days 90
+  # and only then:
+  #     python tools/prune_logs.py --days 90 --apply
+  retention_days: 0                 # delete rows older than N days
+  retention_max_rows: 0             # per table, keep only the N newest rows
+  retention_protect_instances: []   # never delete these, e.g. ["CyberLab"]
+  retention_vacuum: true            # reclaim disk after a prune
+  retention_on_start: false         # prune once when the honeypot starts
 system_state:
   pre_installed:
   - coreutils
@@ -240,37 +272,6 @@ system_state:
     /root/.bash_history:
       perms: -rw-------
       size: 0B
-sensors:
-  dbserver:
-    instance_name: Database Server
-    hostname: db-prod-01
-    host: 127.0.0.1
-    port: 2223
-    cowrie_host: 127.0.0.1
-    cowrie_port: 2222
-    session_dir: data/logs/sessions_dbserver
-    impactful_dir: data/logs/impactful_dbserver
-    auth_log: data/logs/auth_log_dbserver.json
-  dmz:
-    instance_name: DMZ Web Server
-    hostname: dmz-web-01
-    host: 127.0.0.1
-    port: 2233
-    cowrie_host: 127.0.0.1
-    cowrie_port: 2232
-    session_dir: data/logs/sessions_dmz
-    impactful_dir: data/logs/impactful_dmz
-    auth_log: data/logs/auth_log_dmz.json
-  internal:
-    instance_name: Internal Network
-    hostname: corp-internal-01
-    host: 127.0.0.1
-    port: 2243
-    cowrie_host: 127.0.0.1
-    cowrie_port: 2242
-    session_dir: data/logs/sessions_internal
-    impactful_dir: data/logs/impactful_internal
-    auth_log: data/logs/auth_log_internal.json
 power_tariff:
   tiers:
   - max_units: 15

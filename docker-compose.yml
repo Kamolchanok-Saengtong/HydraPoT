@@ -1,15 +1,5 @@
 services:
-  cowrie-dbserver:
+  cowrie:
     image: cowrie/cowrie
     ports:
       - "127.0.0.1:2222:2222"
-
-  cowrie-dmz:
-    image: cowrie/cowrie
-    ports:
-      - "127.0.0.1:2232:2222"
-
-  cowrie-internal:
-    image: cowrie/cowrie
-    ports:
-      - "127.0.0.1:2242:2222"

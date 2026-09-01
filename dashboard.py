@@ -3549,4 +3549,9 @@ def build_session_detail(df, selected):
 
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=8050)
+    # Safe-by-default: mirrors `hp dashboard`'s own defaults. This file has no
+    # exposure guard of its own — `hp.py` is what enforces the loopback-only /
+    # --i-accept-public-exposure rule (see hp.py's `dashboard` command). A
+    # direct `python dashboard.py` must never bind publicly or run Werkzeug's
+    # debugger (unauthenticated RCE via the debugger pin if it's reachable).
+    app.run(debug=False, host="127.0.0.1", port=8050)

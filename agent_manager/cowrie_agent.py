@@ -36,6 +36,7 @@ def strip_ansi(text: str) -> str:
 class CowrieAgent:
     SLOW_DELAYS = {'wget': 0.8, 'curl': 0.3, 'masscan': 0.4, 'apt': 0.3, 'apt-get': 0.3}
     INTERACTIVE_TIMEOUT = 10.0   # safety hard-stop for interactive cmds
+    CONNECT_TIMEOUT = 10.0       # bound the initial handshake if Cowrie is dead/unreachable
     def __init__(self, host="127.0.0.1", port=2222, username="root", password="root"):
         self.host     = host
         self.port     = port
@@ -45,14 +46,28 @@ class CowrieAgent:
         self.client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         self.shell    = None
         self._original_prompt = ""
+        # Health flag. Cowrie is a hard dependency for FI 0-1 traffic and for
+        # wget/curl, so when the container dies every one of those commands
+        # used to answer with silence — the single most obvious way for an
+        # attacker to notice something is wrong. Callers check this and fall
+        # back to the on-device model instead.
+        self.available = True
         
     # ── connection ───────────────────────────────────────────────────────────
     def _connect(self):
+        # Pessimistic: assume unavailable until the shell is actually up. If
+        # this raises (container down, wrong creds), `available` must already
+        # be False — otherwise callers keep routing to a dead Cowrie and the
+        # attacker gets silence. Set True only at the end, on success.
+        self.available = False
         self.client = paramiko.SSHClient()
         self.client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         self.client.connect(self.host, port=self.port,
                             username=self.username, password=self.password,
-                            look_for_keys=False, allow_agent=False)
+                            look_for_keys=False, allow_agent=False,
+                            timeout=self.CONNECT_TIMEOUT,
+                            banner_timeout=self.CONNECT_TIMEOUT,
+                            auth_timeout=self.CONNECT_TIMEOUT)
         
         # term='dumb' tells cowrie not to emit colors / cursor codes
         self.shell = self.client.invoke_shell(term='dumb')
@@ -64,6 +79,9 @@ class CowrieAgent:
         cleaned_lines = [l for l in strip_ansi(banner).split('\n') if l.strip()]
         if cleaned_lines:
             self._original_prompt = cleaned_lines[-1].strip()
+        self.available = True
+        # clear the one-shot outage warning so a future outage is reported
+        self._history_warned = False
         print(f"[cowrie_agent] Connected. Original prompt: {self._original_prompt!r}")
 
     def send(self, cmd: str) -> tuple[str, str]:
@@ -74,6 +92,7 @@ class CowrieAgent:
         except Exception:
             pass
         if not self.shell:
+            self.available = False
             return "", ""
         cmd_base = cmd.strip().split()[0] if cmd.strip() else ""
 
@@ -103,8 +122,9 @@ class CowrieAgent:
                 self._connect()
                 self.shell.send(cmd + '\n')
             except Exception as e:
+                self.available = False
                 print(f"[cowrie_agent] reconnect FAILED ({type(e).__name__}: {e}) "
-                      f"— returning empty output, session stays alive")
+                      f"— marking Cowrie unavailable; caller falls back to on_device")
                 return "", ""
 
         return self._collect_until_prompt(cmd)
@@ -113,12 +133,27 @@ class CowrieAgent:
                        delay: Optional[float] = None) -> tuple[str, str]:
         """Slow commands (wget, curl, masscan). Streams line-by-line."""
         if not self.shell:
+            self.available = False
             return "", ""
         cmd_base = cmd.strip().split()[0] if cmd.strip() else ""
         if delay is None:
             delay = self.SLOW_DELAYS.get(cmd_base, 0.5)
 
-        self.shell.send(cmd + '\n')
+        # Same reconnect-then-degrade contract as send(). Without this an
+        # unprotected shell.send() raised straight out of a live attacker
+        # session, and wget/curl now route here for every download.
+        try:
+            self.shell.send(cmd + '\n')
+        except (OSError, EOFError, paramiko.SSHException):
+            print("[cowrie_agent] Socket closed during streaming — reconnecting...")
+            try:
+                self._connect()
+                self.shell.send(cmd + '\n')
+            except Exception as e:
+                self.available = False
+                print(f"[cowrie_agent] reconnect FAILED ({type(e).__name__}: {e}) "
+                      f"— marking Cowrie unavailable; caller falls back to on_device")
+                return "", ""
         return self._collect_streaming(cmd, write_fn, delay)
 
     def send_interactive(self, cmd: str,
