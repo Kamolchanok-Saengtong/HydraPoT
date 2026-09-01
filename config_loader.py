@@ -25,6 +25,20 @@ class HoneypotCfg:
     os: str = "Ubuntu 12.04 LTS"
     host: str = "127.0.0.1"
     port: int = 2223
+    # ── Concurrency bounds ───────────────────────────────────────────────
+    # Calls into the local model are serialised (see ondevice_agent's
+    # _MODEL_LOCK — concurrent access aborts the process), so sessions QUEUE
+    # behind each other. Without a bound that queue grows until the honeypot
+    # answers nobody: down, but silently, with no crash to alert on.
+    #
+    # max_sessions caps how many attackers are connected at once; anything
+    # beyond it is refused at TCP accept, which looks like a busy server
+    # rather than a honeypot. 0 disables the cap.
+    max_sessions: int = 50
+    # Longest a command will wait for its turn at the model before giving up
+    # and being answered some cheaper way. Stops one slow generation from
+    # stalling every other session behind it. 0 waits forever.
+    model_wait_timeout: float = 20.0
     # Self-identifies this deployment in every log record it writes (e.g.
     # "Database Server", "DMZ Web Server") — set once via `hp init`, not a
     # runtime flag. Lets a central SOC dashboard aggregate many HydraPoT
@@ -83,6 +97,17 @@ class LoggingCfg:
     impactful_dir: str = "data/logs/impactful"
     auth_log: str = "data/logs/auth_log.json"
     fi_threshold: int = 2
+    # ── Retention ────────────────────────────────────────────────────────
+    # OFF by default. This database holds live capture, the CyberLab corpus
+    # (2019 timestamps) and the NSC experiment runs in the same tables, so an
+    # age rule switched on blindly deletes the oldest real attacker data
+    # first. Turn it on deliberately, and list anything irreplaceable under
+    # retention_protect_instances.
+    retention_days: int = 0            # 0 = keep everything
+    retention_max_rows: int = 0        # 0 = no per-table row cap
+    retention_protect_instances: list = field(default_factory=list)
+    retention_vacuum: bool = True      # reclaim disk after a prune
+    retention_on_start: bool = False   # prune once at honeypot startup
 
 @dataclass
 class Config:
@@ -90,11 +115,6 @@ class Config:
     agents: AgentsCfg = field(default_factory=AgentsCfg)
     routing: RoutingCfg = field(default_factory=RoutingCfg)
     logging: LoggingCfg = field(default_factory=LoggingCfg)
-    # {sensor_key: {instance_name, hostname, host, port, cowrie_host,
-    # cowrie_port, session_dir, impactful_dir, auth_log}} — multi-sensor
-    # deployments. Selected via HYDRAPOT_SENSOR env var, merged onto
-    # honeypot/agents.cowrie/logging above at load time.
-    sensors: dict = field(default_factory=dict)
     static_commands: list = field(default_factory=lambda: [...])
     # MEA/PEA residential tariff (ประเภท 1.2) — plain dict like system_state
     # below, since tiers is a list-of-dicts that doesn't map cleanly onto a
@@ -253,23 +273,6 @@ def load_config(path: str = CONFIG_PATH) -> Config:
     routing  = _merge_dict_into_dataclass(RoutingCfg,   raw.get("routing"))
     logging_ = _merge_dict_into_dataclass(LoggingCfg,   raw.get("logging"))
 
-    sensors = raw.get("sensors") or {}
-    sensor_key = os.environ.get("HYDRAPOT_SENSOR")
-    if sensor_key and sensor_key in sensors:
-        s = sensors[sensor_key]
-        honeypot.hostname      = s.get("hostname", honeypot.hostname)
-        honeypot.instance_name = s.get("instance_name", honeypot.instance_name)
-        honeypot.host          = s.get("host", honeypot.host)
-        honeypot.port          = s.get("port", honeypot.port)
-        cowrie.host            = s.get("cowrie_host", cowrie.host)
-        cowrie.port            = s.get("cowrie_port", cowrie.port)
-        logging_.session_dir   = s.get("session_dir", logging_.session_dir)
-        logging_.impactful_dir = s.get("impactful_dir", logging_.impactful_dir)
-        logging_.auth_log      = s.get("auth_log", logging_.auth_log)
-    elif sensor_key:
-        print(f"[config] HYDRAPOT_SENSOR={sensor_key!r} not found in config.yaml's "
-              f"sensors: section — using top-level honeypot/logging values.")
-
     static_cmds   = raw.get("static_commands")
     system_state  = raw.get("system_state")
     power_tariff  = raw.get("power_tariff")
@@ -300,7 +303,6 @@ def load_config(path: str = CONFIG_PATH) -> Config:
         agents=agents,
         routing=routing,
         logging=logging_,
-        sensors=sensors,
         static_commands=static_cmds,
         system_state=system_state,
         power_tariff=power_tariff,
