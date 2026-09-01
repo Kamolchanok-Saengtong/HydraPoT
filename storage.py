@@ -26,6 +26,7 @@ double-insert.
 
 import json
 import os
+from datetime import datetime, timedelta
 import sqlite3
 import glob
 
@@ -396,6 +397,143 @@ def migrate_impactful_from_json(imp_glob: str = None, path: str = DB_PATH) -> di
 # moot: the connection physically cannot modify anything.
 
 MAX_BROWSE_ROWS = 500      # hard cap on rows returned to the browser at once
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# RETENTION
+# ══════════════════════════════════════════════════════════════════════════════
+# A honeypot on port 22 takes thousands of hits a day and nothing here ever
+# deleted a row. Left alone the database grows until the disk fills and the
+# sensor stops recording — silently, which is the worst way for a sensor to
+# fail.
+#
+# DISABLED BY DEFAULT, and deliberately so. This database holds more than live
+# traffic: the NSC experiment runs and the CyberLab capture live in the same
+# tables. CyberLab is from 2019, so a naive "delete anything older than 90
+# days" would destroy the only real attacker corpus on the box before it
+# touched a single row of noise. Retention must be switched on knowingly, and
+# `protect_instances` exists so the rows behind published results can never be
+# reached by it.
+#
+# Always dry-run first: prune(..., dry_run=True) reports exactly what would go.
+
+PRUNE_TABLES = ("sessions", "impactful", "auth")
+
+
+def prune(retention_days: int = 0,
+          max_rows: int = 0,
+          protect_instances=(),
+          vacuum: bool = True,
+          dry_run: bool = True,
+          path: str = DB_PATH) -> dict:
+    """Delete old rows so the database cannot grow without bound.
+
+    retention_days    delete rows whose timestamp is older than this. 0 = off.
+    max_rows          per table, keep only this many newest rows. 0 = off.
+    protect_instances instance names that are NEVER deleted, whatever the age.
+    vacuum            reclaim the freed pages afterwards. Needs temporary disk
+                      roughly equal to the final database size, so it is
+                      skipped automatically when free space looks tight.
+    dry_run           report what would be deleted and change nothing.
+
+    Returns {table: {"deleted": n, "kept": n}, "vacuum": bool, "dry_run": bool,
+             "size_before": bytes, "size_after": bytes}
+    """
+    out = {"dry_run": dry_run, "vacuum": False,
+           "size_before": os.path.getsize(path) if os.path.exists(path) else 0}
+    if retention_days <= 0 and max_rows <= 0:
+        out["skipped"] = "retention disabled (retention_days and max_rows both 0)"
+        out["size_after"] = out["size_before"]
+        return out
+
+    protect = tuple(protect_instances or ())
+    conn = connect(path)
+    try:
+        for table in PRUNE_TABLES:
+            try:
+                total = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            except sqlite3.OperationalError:
+                continue          # table not present in this database
+            where, params = [], []
+
+            if retention_days > 0:
+                # The two timestamp formats in this database are NOT
+                # interchangeable: sessions/auth store "YYYY-MM-DD HH:MM:SS"
+                # strings, impactful stores a UNIX float. SQLite orders every
+                # number before every string, so comparing a float column
+                # against a date string matched EVERY row — a dry run showed
+                # all 49,234 impactful rows queued for deletion regardless of
+                # age. Detect the storage type and compare like with like.
+                cutoff_dt = datetime.now() - timedelta(days=retention_days)
+                probe = conn.execute(
+                    f"SELECT timestamp FROM {table} "
+                    f"WHERE timestamp IS NOT NULL LIMIT 1").fetchone()
+                numeric_ts = bool(probe) and isinstance(probe[0], (int, float))
+                if numeric_ts:
+                    where.append("CAST(timestamp AS REAL) < ?")
+                    params.append(cutoff_dt.timestamp())
+                else:
+                    where.append("timestamp < ?")
+                    params.append(cutoff_dt.strftime("%Y-%m-%d %H:%M:%S"))
+
+            if protect:
+                where.append(f"instance NOT IN ({','.join('?' * len(protect))})")
+                params.extend(protect)
+
+            if not where:
+                deleted = 0
+            else:
+                sql_where = " AND ".join(where)
+                deleted = conn.execute(
+                    f"SELECT COUNT(*) FROM {table} WHERE {sql_where}", params
+                ).fetchone()[0]
+                if not dry_run and deleted:
+                    conn.execute(f"DELETE FROM {table} WHERE {sql_where}", params)
+
+            # max_rows runs AFTER the age pass, on whatever survived, and also
+            # respects protect_instances.
+            if max_rows > 0:
+                keep_guard = ""
+                kp = []
+                if protect:
+                    keep_guard = f" AND instance NOT IN ({','.join('?' * len(protect))})"
+                    kp = list(protect)
+                over = conn.execute(
+                    f"SELECT COUNT(*) FROM {table} WHERE id NOT IN "
+                    f"(SELECT id FROM {table} ORDER BY id DESC LIMIT ?){keep_guard}",
+                    [max_rows] + kp).fetchone()[0]
+                deleted += over
+                if not dry_run and over:
+                    conn.execute(
+                        f"DELETE FROM {table} WHERE id NOT IN "
+                        f"(SELECT id FROM {table} ORDER BY id DESC LIMIT ?){keep_guard}",
+                        [max_rows] + kp)
+
+            out[table] = {"deleted": deleted, "kept": total - deleted}
+        if not dry_run:
+            conn.commit()
+    finally:
+        conn.close()
+
+    if not dry_run and vacuum:
+        # VACUUM rebuilds the file, so it needs free space about the size of
+        # the result. Skip rather than risk filling the very disk this is
+        # meant to protect.
+        try:
+            st = os.statvfs(os.path.dirname(path) or ".")
+            free = st.f_bavail * st.f_frsize
+            if free > out["size_before"] * 1.2:
+                c2 = sqlite3.connect(path)
+                c2.execute("VACUUM")
+                c2.close()
+                out["vacuum"] = True
+            else:
+                out["vacuum_skipped"] = "not enough free disk for VACUUM"
+        except Exception as e:
+            out["vacuum_skipped"] = f"{type(e).__name__}: {e}"
+
+    out["size_after"] = os.path.getsize(path) if os.path.exists(path) else 0
+    return out
 
 
 def _deny_attach(action, arg1, arg2, db_name, trigger):
