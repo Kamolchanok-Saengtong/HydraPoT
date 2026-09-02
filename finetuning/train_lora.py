@@ -72,11 +72,22 @@ def main():
 
     # nf4 + double quant + bf16 compute: the standard QLoRA recipe, and what
     # makes a 4B model trainable inside 8 GB at all
+    #
+    # llm_int8_enable_fp32_cpu_offload: this model's 248,320-token vocab makes
+    # its embedding/lm_head tensors large and they are NOT touched by 4-bit
+    # quantization (bitsandbytes only quantizes nn.Linear inside the
+    # transformer blocks). Forcing everything onto the GPU
+    # (device_map={"": 0}) measurably OOM'd during weight loading itself —
+    # "18 MiB free, tried to allocate 16 MiB", i.e. short by single-digit MB,
+    # not fundamentally too large. This flag lets accelerate's device_map
+    # dispatcher put just the oversized non-quantized layers on CPU in fp32
+    # while every quantizable transformer block still trains on GPU.
     bnb = BitsAndBytesConfig(
         load_in_4bit=True,
         bnb_4bit_quant_type="nf4",
         bnb_4bit_use_double_quant=True,
         bnb_4bit_compute_dtype=torch.bfloat16,
+        llm_int8_enable_fp32_cpu_offload=True,
     )
     model = AutoModelForCausalLM.from_pretrained(
         args.model, quantization_config=bnb, dtype=torch.bfloat16, device_map="auto")

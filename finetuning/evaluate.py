@@ -22,8 +22,8 @@ sys.path.insert(0, _ROOT)
 
 DATA = os.path.join(_HERE, "data")
 OUT = os.path.join(_HERE, "out")
-BASE_MODEL = "Qwen/Qwen3.5-4B"
-ADAPTER = os.path.join(OUT, "qwen3.5-4b-hydrapot-lora")
+BASE_MODEL = "Qwen/Qwen3.5-2B"          # must match train_lora.py's BASE_MODEL
+ADAPTER = os.path.join(OUT, "Qwen", "Qwen3.5-2B-finetuned")
 
 
 def _metrics(pred: str, gold: str) -> dict:
@@ -69,6 +69,12 @@ def main():
     tok = AutoTokenizer.from_pretrained(args.model)
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
+    # Unlike training, plain inference has no gradients/optimizer state/
+    # activation checkpointing to fit alongside the model, so the whole
+    # quantized model (including the big embedding/lm_head) should fit on
+    # one GPU without the CPU-offload training needed — worth pinning
+    # everything to GPU here since offload makes token-by-token generate()
+    # pay a slow CPU round trip on every single generated token.
     bnb = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4",
                              bnb_4bit_use_double_quant=True,
                              bnb_4bit_compute_dtype=torch.bfloat16)
@@ -76,7 +82,7 @@ def main():
     results = {}
     for tag in (["adapter"] if args.adapter_only else ["base", "adapter"]):
         model = AutoModelForCausalLM.from_pretrained(
-            args.model, quantization_config=bnb, dtype=torch.bfloat16, device_map="auto")
+            args.model, quantization_config=bnb, dtype=torch.bfloat16, device_map={"": 0})
         if tag == "adapter":
             model = PeftModel.from_pretrained(model, args.adapter)
         model.eval()
