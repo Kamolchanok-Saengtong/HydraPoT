@@ -115,16 +115,19 @@ def main():
         lr_scheduler_type="cosine",
         warmup_ratio=0.03,
         logging_steps=10,
-        # Was save_strategy/eval_strategy="epoch". Two problems on an 8 GB card:
-        # (1) eval at the epoch boundary runs a forward pass on top of memory
-        #     training still holds -> OOM at step 149 (= 447/3, end of epoch 1),
-        # (2) the save happens AFTER eval, so that OOM threw away 4h26m of
-        #     training without ever writing a checkpoint.
-        # Save often instead, and keep eval off the training loop.
+        # Was save_strategy/eval_strategy="epoch": eval at the epoch boundary
+        # (step 149) OOM'd on top of memory training still held, and losing
+        # that eval threw away 4h26m of training since save ran AFTER eval.
+        # Save often so a crash costs little either way. Re-tested 2026-09-02
+        # with llm_int8_enable_fp32_cpu_offload in place (below) — eval_steps=25
+        # now survives cleanly (confirmed on a live run), so it's back on: this
+        # is what actually answers "is it overfitting" as training happens,
+        # instead of only finding out from a one-off check at the end.
         save_strategy="steps",
         save_steps=25,
         save_total_limit=3,
-        eval_strategy="no",
+        eval_strategy="steps",
+        eval_steps=25,
         bf16=True,
         max_length=args.max_seq,
         gradient_checkpointing=True,
