@@ -25,6 +25,21 @@ class HoneypotCfg:
     os: str = "Ubuntu 12.04 LTS"
     host: str = "127.0.0.1"
     port: int = 2223
+    # ── Kernel identity, as reported by `uname` ──────────────────────────
+    # `uname` used to fall through to Cowrie, which answered with ITS OWN
+    # identity: "Linux svr04 3.2.0-4-amd64 ... Debian 3.2.68-1+deb7u1" — a
+    # 2013 Debian 7 box, on a honeypot whose banner says Ubuntu 22.04 and
+    # whose prompt says `psu`. `uname -a` is one of the first things an
+    # attacker types, so that contradiction gave the whole thing away.
+    #
+    # These three must stay CONSISTENT WITH `os` above. They are separate
+    # keys rather than derived from `os` on purpose: there is no reliable
+    # mapping from a release name to a kernel build string, and guessing one
+    # would produce a plausible-looking but fake pairing that fingerprints
+    # just as badly as the mismatch it replaced.
+    kernel: str = "5.15.0-91-generic"          # uname -r
+    kernel_build: str = "#101-Ubuntu SMP Tue Nov 14 13:30:08 UTC 2023"   # uname -v
+    arch: str = "x86_64"                       # uname -m / -p / -i
     # ── Concurrency bounds ───────────────────────────────────────────────
     # Calls into the local model are serialised (see ondevice_agent's
     # _MODEL_LOCK — concurrent access aborts the process), so sessions QUEUE
@@ -99,7 +114,7 @@ class LoggingCfg:
     fi_threshold: int = 2
     # ── Retention ────────────────────────────────────────────────────────
     # OFF by default. This database holds live capture, the CyberLab corpus
-    # (2019 timestamps) and the NSC experiment runs in the same tables, so an
+    # (2019 timestamps) and the experiment-sandbox runs in the same tables, so an
     # age rule switched on blindly deletes the oldest real attacker data
     # first. Turn it on deliberately, and list anything irreplaceable under
     # retention_protect_instances.
@@ -119,6 +134,12 @@ class Config:
     # MEA/PEA residential tariff (ประเภท 1.2) — plain dict like system_state
     # below, since tiers is a list-of-dicts that doesn't map cleanly onto a
     # typed dataclass. See config.yaml's power_tariff section for the shape.
+    # Measured cost inputs (GPU watts, cloud $/command). Plain dict for the
+    # same reason as power_tariff below — see cost_model.py.
+    cost_model: dict = field(default_factory=lambda: {
+        "gpu_avg_watt": 112.89,
+        "cloud_usd_per_cmd": 0.0301 / 67,
+    })
     power_tariff: dict = field(default_factory=lambda: {
         "tiers": [
             {"max_units": 15,  "rate_thb_per_unit": 2.3488},
@@ -276,12 +297,17 @@ def load_config(path: str = CONFIG_PATH) -> Config:
     static_cmds   = raw.get("static_commands")
     system_state  = raw.get("system_state")
     power_tariff  = raw.get("power_tariff")
+    cost_model    = raw.get("cost_model")
 
     # handle the field defaults properly
     if static_cmds is None:
         static_cmds = Config().static_commands
     if power_tariff is None:
         power_tariff = Config().power_tariff
+    # Merge per-key: a config.yaml that names only one of the two measured
+    # values must not silently drop the other back to nothing.
+    _default_cost = Config().cost_model
+    cost_model = {**_default_cost, **(cost_model or {})}
 
     # system_state: merge PER-KEY with the defaults rather than replacing the
     # whole dict. Previously any config.yaml that defined system_state at all
@@ -306,6 +332,7 @@ def load_config(path: str = CONFIG_PATH) -> Config:
         static_commands=static_cmds,
         system_state=system_state,
         power_tariff=power_tariff,
+        cost_model=cost_model,
     )
 
 

@@ -2,7 +2,7 @@ archive_code/
 data/
 evaluation/
 production/
-NSC/
+experiment_data/
 
 geoip.mmdb
 test.py
@@ -34,3 +34,4 @@ eval_cowrie_results.json
 threat_intel/enterprise-attack.json
 
 threat_intel/.art_cache/
+/threat_intel/tests
