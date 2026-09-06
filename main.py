@@ -97,7 +97,8 @@ def _join_raw_arg(flag: str, quote: str, body: str) -> str:
 
 def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str = "?",
                          plugins=None, sri_max_events: int = 10, sync_state: bool = True,
-                         capture_cost: bool = False, username: str = "root"):
+                         capture_cost: bool = False, username: str = "root",
+                         store: str = "sqlite", store_dir: str = ""):
 
     # Package names are distro-specific data, so they live in
     # config.yaml system_state.tool_packages. The resolution and routing
@@ -135,14 +136,16 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
 
     # No impactful_dir/session_dir setup any more: both logs go to SQLite, so
     # creating those directories only recreated empty folders after every
-    # cleanup. NSC still writes its own JSON, but to its own paths.
+    # cleanup. A JSON backend is still available via store="json" below.
+    # `store` selects the logging backend for BOTH tables this handler writes:
+    # session records below, and impactful events here. They are deliberately
+    # driven by one parameter — when they were separate, setting only the
+    # FILogManager backend left every session row still going to SQLite, and
+    # the two silently disagreed about where a run's data lived.
     fi_manager = FILogManager(
         max_events=sri_max_events,
         min_fi=config.logging.fi_threshold,
-        # Production records impactful events in the shared DB. NSC builds its
-        # own FILogManager and keeps the JSON default, so the experiment
-        # harness is unaffected by this.
-        store="sqlite",
+        store=store,
         instance=getattr(getattr(config, "honeypot", None), "instance_name", "default"),
     )
     if plugins:
@@ -377,6 +380,57 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
 
 
     # ── Virtual file generation ───────────────────────────────────────────
+    def _resolve_uname(actual_cmd: str) -> tuple[bool, str | None]:
+        """`uname` answered from config.yaml, never from Cowrie.
+
+        Same reasoning as _resolve_cd / _resolve_chmod: a computed answer
+        cannot contradict itself. Routed by FI band, `uname` is FI 0 and so
+        landed on Cowrie, which answered with Cowrie's OWN identity —
+        "Linux svr04 3.2.0-4-amd64 #1 SMP Debian 3.2.68-1+deb7u1" — while the
+        login banner said Ubuntu 22.04 and the prompt said `psu`. Three
+        different machines in one session; `uname -a` is typically the second
+        or third command an attacker runs.
+
+        Returns (handled, output) — same contract as the other resolvers, so
+        an unrecognised form falls through to normal routing rather than
+        being answered wrongly here.
+        """
+        parts = actual_cmd.split()
+        if not parts or parts[0] != "uname":
+            return False, None
+        if re.search(r'--version\b|--help\b', actual_cmd):
+            return False, None      # version/help query — not an identity question
+
+        hn    = config.honeypot.hostname
+        kern  = config.honeypot.kernel
+        build = config.honeypot.kernel_build
+        arch  = config.honeypot.arch
+
+        _LONG = {"--all": "a", "--kernel-name": "s", "--nodename": "n",
+                 "--kernel-release": "r", "--kernel-version": "v",
+                 "--machine": "m", "--processor": "p",
+                 "--hardware-platform": "i", "--operating-system": "o"}
+        flags: set[str] = set()
+        for p in parts[1:]:
+            if p in _LONG:
+                flags.add(_LONG[p])
+            elif p.startswith("-") and len(p) > 1 and not p.startswith("--"):
+                flags.update(p[1:])
+            else:
+                return False, None  # operand or unknown long flag — don't guess
+
+        if "a" in flags:
+            # Real order: kernel-name nodename release version machine
+            #             processor hardware-platform operating-system
+            return True, f"Linux {hn} {kern} {build} {arch} {arch} {arch} GNU/Linux"
+        if not flags:
+            return True, "Linux"    # bare `uname` == `uname -s`
+
+        order = [("s", "Linux"), ("n", hn), ("r", kern), ("v", build),
+                 ("m", arch), ("p", arch), ("i", arch), ("o", "GNU/Linux")]
+        out = [val for f, val in order if f in flags]
+        return (True, " ".join(out)) if out else (False, None)
+
     # /etc/passwd and /etc/shadow are generated on-demand from SYSTEM_STATE
     # ["users"] / ["shadow"] — no stored content to keep in sync.
 
@@ -860,6 +914,21 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
         # not already do. The historical .json files are kept on disk as an
         # archive (storage.migrate_from_json() imported them), but nothing
         # writes to them any more.
+        # store="json" writes JSON Lines instead of SQLite. Appended one line
+        # per command rather than re-dumping an array: a long session would
+        # otherwise cost O(n^2) bytes, which is the exact problem the SQLite
+        # migration removed. Appending also means a crashed run keeps
+        # everything written up to that point.
+        if store == "json":
+            try:
+                target = store_dir or config.logging.session_dir
+                os.makedirs(target, exist_ok=True)
+                with open(os.path.join(target, f"{src_ip}.jsonl"), "a") as fh:
+                    fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+            except Exception as e:
+                print(f"[storage] LOST command for {SESSION_ID}: {e}")
+            return
+
         try:
             storage.insert_command(entry)
         except Exception:
@@ -1138,6 +1207,15 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
             if actual_base == "unset":
                 return _finish(cmd, "cowrie", "", fi_score, t_start)
 
+            # uname — identity comes from config.yaml, not from whichever
+            # backend happens to answer. Logged as "cowrie" like cd/chmod/
+            # unset above: this is the agent the command WOULD have reached,
+            # so the routing statistics stay honest about what was displaced.
+            if actual_base == "uname":
+                handled, uname_out = _resolve_uname(actual_cmd)
+                if handled:
+                    return _finish(cmd, "cowrie", uname_out, fi_score, t_start)
+
             # systemctl/service — resolved deterministically, UNCONDITIONALLY
             # (unlike chmod, not gated by `not cloud_routed`). This isn't about
             # single-response quality (where cloud is measurably better) — it's
@@ -1395,7 +1473,22 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
                 else:
                     file_key  = cmd.strip()[2:].split()[0] if cmd.strip().startswith("./") else actual_cmd.split()[-1]
                     file_info = SYSTEM_STATE["files"].get(_resolve_path(file_key), {})
-                    if file_info.get("content", "").startswith("[downloaded from"):
+                    # Executing a path we do NOT track: hand it to Cowrie, which
+                    # owns the real filesystem and therefore knows whether the
+                    # file is there and whether it carries an exec bit. Asking
+                    # the model instead made it guess, and a guess is not stable:
+                    # the SAME command answered "Permission denied" once and
+                    # "command not found" the next time — and both were wrong,
+                    # because the file was /tmp/scanner.sh while the cwd was
+                    # /tmp/tools, so the honest answer was "No such file or
+                    # directory". A real shell never contradicts itself about
+                    # its own filesystem, and contradiction is exactly what an
+                    # attacker probes for.
+                    if not file_info and (cmd.strip().startswith("./")
+                                          or actual_base in ("bash", "sh")):
+                        output, agent = _cowrie_send(actual_cmd, write_fn=write_fn)
+                        streamed = True
+                    elif file_info.get("content", "").startswith("[downloaded from"):
                         sys_p = (
                             f"You are a Linux terminal. The attacker ran: {cmd}\n"
                             f"This is a script downloaded from the internet. "
