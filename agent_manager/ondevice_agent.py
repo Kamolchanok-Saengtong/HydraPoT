@@ -303,11 +303,20 @@ class OnDeviceAgent:
             messages, tokenize=False, add_generation_prompt=True,
         )
         model_inputs = self.tokenizer([text], return_tensors="pt").to(self.model.device)
+        # HF's generate() rejects do_sample=True with temperature<=0 outright
+        # (a sampling temperature of 0 is undefined) — unlike llama.cpp's own
+        # sampler (_send_gguf above), which treats temperature=0 as greedy
+        # decoding natively. Map that same intent here explicitly: temperature
+        # <= 0 means greedy, regardless of the configured do_sample flag.
+        sample_kwargs = (
+            {"do_sample": True, "temperature": self.temperature}
+            if self.do_sample and self.temperature > 0
+            else {"do_sample": False}
+        )
         generated_ids = self.model.generate(
             **model_inputs,
             max_new_tokens=self.max_tokens,
-            temperature=self.temperature,
-            do_sample=self.do_sample,
+            **sample_kwargs,
             repetition_penalty=1.15,
         )
         prompt_tokens = model_inputs.input_ids.shape[1]

@@ -151,7 +151,7 @@ class CloudAgent:
         (it returned SSE chunks as a raw unparsed string instead). Going
         straight to HTTP avoids that SDK quirk entirely.
 
-        Used by the architecture-overhead experiment (NSC/) to log real
+        Used by the architecture-overhead experiment (experiment_data/) to log real
         billed cost per command. NOT used by main.py's production path —
         that keeps using send() (streaming via SDK), unchanged.
 
