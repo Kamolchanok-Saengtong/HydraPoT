@@ -146,6 +146,13 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
         max_events=sri_max_events,
         min_fi=config.logging.fi_threshold,
         store=store,
+        # store_dir must reach BOTH logs. FILogManager's own default points at
+        # data/logs/impactful/, so a caller that set store="json" with a
+        # store_dir still had its impactful events written into the production
+        # log folder — session rows redirected, impactful rows not. That split
+        # is exactly how the two drifted apart the first time.
+        **({"impactful_path": os.path.join(store_dir, "impactful.json")}
+           if store == "json" and store_dir else {}),
         instance=getattr(getattr(config, "honeypot", None), "instance_name", "default"),
     )
     if plugins:
