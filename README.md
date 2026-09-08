@@ -2,6 +2,10 @@
 # 🍯 HydraPoT
 
 ![CI](https://github.com/Kamolchanok-Saengtong/HydraPoT/actions/workflows/ci.yml/badge.svg)
+![Python](https://img.shields.io/badge/python-3.10%2B-blue)
+![Status](https://img.shields.io/badge/status-research%20%2F%20thesis%20project-yellow)
+![Last Commit](https://img.shields.io/github/last-commit/Kamolchanok-Saengtong/HydraPoT)
+[![License](https://img.shields.io/badge/license-Custom%20(NSTDA)-lightgrey)](./license)
 
 **An Intelligent Honeypot Framework Using Large Language Models for Interactive Attack Analysis**
 
