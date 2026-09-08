@@ -1,0 +1,25 @@
+name: CI
+
+# Kept deliberately minimal and dependency-free: HydraPoT's real stack
+# (torch, bitsandbytes, llama-cpp-python) needs a GPU and heavy compiled
+# packages that a standard GitHub-hosted runner can't reliably provide.
+# What this DOES check, honestly: every Python file in the repo still
+# parses/compiles cleanly. That's a real, always-true-or-false signal —
+# not a full test suite, but not a fake green checkmark either.
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  syntax-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Compile-check every Python file
+        run: python -m compileall -q .
