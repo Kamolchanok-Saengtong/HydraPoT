@@ -5,7 +5,7 @@
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![Last Commit](https://img.shields.io/github/last-commit/Kamolchanok-Saengtong/HydraPoT)
 [![License](https://img.shields.io/badge/license-Custom%20(NSTDA)-lightgrey)](./license)
-![Status](https://img.shields.io/badge/status-research%20project-yellow)
+<!-- ![Status](https://img.shields.io/badge/status-research%20project-yellow) -->
 ![Research](https://img.shields.io/badge/type-research-blue)
 ![Peer Review](https://img.shields.io/badge/peer%20review-in%20progress-orange)
 ![Publication](https://img.shields.io/badge/publication-in%20progress-orange)
