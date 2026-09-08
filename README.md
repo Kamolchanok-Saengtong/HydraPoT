@@ -1,6 +1,8 @@
 # HydraPoT
 # 🍯 HydraPoT
 
+![CI](https://github.com/Kamolchanok-Saengtong/HydraPoT/actions/workflows/ci.yml/badge.svg)
+
 **An Intelligent Honeypot Framework Using Large Language Models for Interactive Attack Analysis**
 
 HydraPoT is a multi-agent SSH honeypot that tricks attackers into thinking they're on a real Linux server. Every command typed by the attacker is routed to the best agent for a convincing response — a static emulator for fast simple commands, a local LLM for context-aware interactions, or a cloud LLM for the most dangerous obfuscated attacks.
