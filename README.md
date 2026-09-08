@@ -1,9 +1,7 @@
-<p align="center">
-  <img src="assets/hydrapot_logo.png" alt="HydraPoT logo" width="120">
-</p>
-
-# HydraPoT
-# 🍯 HydraPoT
+<h1 align="center">
+  <img src="assets/hydrapot_logo.png" alt="HydraPoT logo" width="50" valign="middle">
+  🍯 HydraPoT
+</h1>
 
 ![CI](https://github.com/Kamolchanok-Saengtong/HydraPoT/actions/workflows/ci.yml/badge.svg)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
