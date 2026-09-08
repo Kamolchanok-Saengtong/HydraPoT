@@ -1,4 +1,3 @@
-```markdown
 ## Threat Intelligence Source
 
 HydraPoT implements a dedicated Threat Intelligence feature that leverages
