@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/hydrapot_logo.png" alt="HydraPoT logo" width="120">
+</p>
+
 # HydraPoT
 # 🍯 HydraPoT
 
