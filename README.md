@@ -12,9 +12,11 @@
 ![Peer Review](https://img.shields.io/badge/peer%20review-in%20progress-orange)
 ![Publication](https://img.shields.io/badge/publication-in%20progress-orange)
 
-**An Intelligent Honeypot Framework Using Large Language Models for Interactive Attack Analysis**
+**HydraPoT: A Configurable Multi-Agent Framework for Cost-Aware LLM-Assisted Honeypots**
 
-HydraPoT is a multi-agent SSH honeypot that tricks attackers into thinking they're on a real Linux server. Every command typed by the attacker is routed to the best agent for a convincing response — a static emulator for fast simple commands, a local LLM for context-aware interactions, or a cloud LLM for the most dangerous obfuscated attacks.
+HydraPoT is a configurable multi-agent SSH honeypot designed to provide realistic, context-aware interactions while balancing interaction fidelity, latency, and operational cost. It combines traditional static emulation with lightweight local LLMs and powerful cloud LLMs, routing each attacker command to an appropriate agent according to a configurable complexity-based policy.
+
+A shared session state maintains contextual consistency across agent transitions, allowing HydraPoT to preserve the continuity of an attack session while dynamically switching between heterogeneous agents.
 
 > By Kamolchanok Saengtong
 
