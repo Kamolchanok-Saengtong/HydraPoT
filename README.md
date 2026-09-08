@@ -450,6 +450,72 @@ export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
 
 ---
 
+## Credits & Third-Party Sources
+
+HydraPoT builds on work by others. Listed here with what is actually used, so
+the boundary between their contribution and ours is explicit.
+
+### Software HydraPoT runs
+
+| Project | Repository | Used for |
+|---|---|---|
+| **Cowrie** | https://github.com/cowrie/cowrie | Low-interaction SSH backend. Runs as the stock `cowrie/cowrie` Docker image and provides the real fake filesystem. HydraPoT mounts its own generated `fs.pickle` and never modifies the image. |
+| **llama.cpp / llama-cpp-python** | https://github.com/abetlen/llama-cpp-python · https://github.com/ggerganov/llama.cpp | Runs the on-device GGUF model on the GPU |
+| **AsyncSSH** | https://github.com/ronf/asyncssh | The SSH server attackers connect to |
+| **Plotly Dash** | https://github.com/plotly/dash | The SIEM dashboard |
+
+### Threat Intelligence Open Source
+
+Detection and enrichment data that ships in this repo but was **not written by
+us**. Cached locally so the honeypot works offline after the first fetch.
+
+| What | Where | Size | Source |
+|---|---|---|---|
+| **SigmaHQ rules** | `threat_intel/rules/upstream/` | 756 K, 180 YAML | https://github.com/SigmaHQ/sigma |
+| **MISP warninglists** | `threat_intel/.fp_cache/` | 1.6 M, 4 JSON | https://github.com/MISP/misp-warninglists |
+| **MITRE CAR analytics** | `threat_intel/.car_cache/` | 480 K, 102 JSON | https://github.com/mitre-attack/car |
+| **MITRE ATT&CK catalog** | `threat_intel/mitre_catalog.json` | 20 K | distilled from https://github.com/mitre-attack/attack-stix-data |
+
+How each is used, and the limits we placed on it:
+
+- **SigmaHQ** — 180 rules consulted *before* our own. `tag()` is strict
+  priority (upstream first), `tag_all()` returns the union.
+- **MISP warninglists** — `public-dns-v4`, `public-dns-v6`, `cisco_top1000`,
+  `cisco_top10k`, fetched as `lists/<name>/list.json`. Used **only** to
+  suppress false positives. No malicious-indicator feed is consumed, so every
+  positive detection originates from HydraPoT's own rules.
+- **MITRE CAR** — an independent reference for *validating* our ATT&CK
+  tagging. Validation only; it never produces a tag.
+- **MITRE ATT&CK** — technique IDs, names and tactics come from MITRE's
+  official STIX bundle. The detection logic that decides *which* technique a
+  command maps to is ours.
+
+Our own detection rules live in `threat_intel/rules/local_custom/` — 39 rules,
+written in Sigma's schema but authored for this project.
+
+### Other external data
+
+| What | Where | Source |
+|---|---|---|
+| **Cowrie stock filesystem** | `tools/cowrie/base/fs.pickle` | https://github.com/cowrie/cowrie — 25,901 entries used as the base tree; `tools/cowrie_fs.py` adds our own on top |
+| **IANA TLD list** | `threat_intel/.fp_cache/tlds.txt` | https://data.iana.org/TLD/tlds-alpha-by-domain.txt |
+| **Atomic Red Team** | evaluation only | https://github.com/redcanaryco/atomic-red-team — ground-truth commands for measuring ATT&CK mapping accuracy |
+
+### Designs we followed without taking code
+
+| Project | Repository | Relationship |
+|---|---|---|
+| **msticpy** (Microsoft) | https://github.com/microsoft/msticpy | `threat_intel/ioc_extractor.py` follows the approach of its `IoCExtract` — a regex table per observable type. **msticpy is not a dependency and is not installed**; the extractor, including the BTC/ETH/XMR wallet patterns, is our own implementation. |
+
+### What is ours
+
+The multi-agent router (FI-based routing, obfuscation detection), the SRi/H_i
+state model, the 39 local detection rules in
+`threat_intel/rules/local_custom/`, the IOC extractor and STIX export, the
+dashboard, and the NSC evaluation framework.
+
+---
+
 ## License
 
 This project is part of an academic thesis at Prince of Songkla University. See [`license`](license) for the full usage agreement (NSTDA National Software Contest disclaimer).
