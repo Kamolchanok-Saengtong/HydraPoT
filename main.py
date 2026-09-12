@@ -231,6 +231,8 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
         SYSTEM_STATE,
         hostname=config.honeypot.hostname,
         os_name=config.honeypot.os,
+        kernel=config.honeypot.kernel,
+        arch=config.honeypot.arch,
         builtins   = BUILTIN_TOOLS,
         sync_state = sync_state,
     )
@@ -320,6 +322,13 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
         if tracked and not tracked.get("perms", "").startswith("d"):
             return True, None, f"bash: cd: {target}: Not a directory"
 
+        # Not in anything WE know about. That is not the same as "not there":
+        # Cowrie's filesystem holds ~26,000 entries we never declared, plus
+        # whatever tools/cowrie_fs.py added. Saying "No such file or directory"
+        # from here alone is how `cd coc-student-portal` failed for a directory
+        # `ls` had just listed. _resolve_cd() checks with Cowrie before this
+        # answer reaches the attacker; the resolved path is returned so it can.
+        _compute_cd.last_resolved = resolved
         return True, None, f"bash: cd: {target}: No such file or directory"
 
     def _resolve_cd(actual_cmd: str) -> tuple[bool, str | None]:
@@ -343,6 +352,25 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
             return False, None
         if new_cwd is not None:
             SYSTEM_STATE["cwd"] = new_cwd
+            return True, error
+
+        # About to tell the attacker the directory does not exist. Check with
+        # Cowrie first — it owns the real tree and knows about paths we never
+        # declared. `cd X && pwd` prints the new path only when the cd worked,
+        # so its output is the test.
+        if error and error.endswith("No such file or directory"):
+            probe = getattr(_compute_cd, "last_resolved", None)
+            if probe:
+                try:
+                    out, _ = cowrie.send(f"cd {probe} && pwd")
+                except Exception:
+                    out = ""
+                if out and probe in out:
+                    SYSTEM_STATE["cwd"] = probe
+                    # Remember it, so the next cd here resolves without asking.
+                    SYSTEM_STATE["files"].setdefault(
+                        probe, {"perms": "drwxr-xr-x", "size": "4.0K"})
+                    return True, None
         return True, error
 
     def _resolve_chmod(actual_cmd: str) -> tuple[bool, str | None]:
@@ -1098,6 +1126,23 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
                 print(f"[main] on_device fallback failed: {type(e).__name__}: {e}")
                 return "", "on_device"
 
+        def _cowrie_sync(cmd_text: str) -> None:
+            """Replay a state-changing command into Cowrie's real shell.
+
+            For commands answered deterministically here (touch, mkdir, chmod)
+            whose effect must ALSO exist in Cowrie's filesystem, because a
+            later command may be routed there and would otherwise see a
+            different machine. Output is discarded — the answer was already
+            produced locally; this only keeps the two sides in step.
+
+            Best effort by design. Cowrie being down must degrade the
+            filesystem's consistency, never break the session.
+            """
+            try:
+                cowrie.send(cmd_text)
+            except Exception:
+                pass
+
         def _cowrie_send(cmd_text: str, write_fn=None) -> tuple[str, str]:
             """cowrie.send()/send_streaming() with automatic degradation.
 
@@ -1203,6 +1248,11 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
             if actual_base == "chmod" and not cloud_routed:
                 handled, chmod_error = _resolve_chmod(actual_cmd)
                 if handled:
+                    # Only forward a chmod we actually accepted. Forwarding one
+                    # we answered with "No such file" would create the file's
+                    # permissions on a file we just said does not exist.
+                    if chmod_error is None:
+                        _cowrie_sync(actual_cmd)
                     return _finish(cmd, "cowrie", chmod_error or "", fi_score, t_start)
 
             # unset always succeeds silently in real bash, regardless of
@@ -1448,12 +1498,22 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
                 update_state(cmd, output)
                 return _finish(cmd, agent, output, fi_score, t_start)
 
-            elif actual_base == "touch":
+            elif actual_base in ("touch", "mkdir"):
+                # Forward to Cowrie as well as recording it here. These used to
+                # update SYSTEM_STATE only, so the file existed on our side and
+                # not in Cowrie's real filesystem — and the two then disagreed
+                # the moment any command reached the other side:
+                #
+                #   touch payload.sh    -> our state only
+                #   ls -la payload.sh   -> answered here, file "exists"
+                #   chmod 755 payload.sh-> our state only, Cowrie unchanged
+                #   rm payload.sh       -> routed to Cowrie -> "No such file"
+                #
+                # Same fix as `cd` above: answer locally for speed and state,
+                # forward so the container stays in step. Best effort — a
+                # logging or backend problem must never kill a live session.
                 update_state(cmd, "")
-                return _finish(cmd, "cowrie", "", fi_score, t_start)
-
-            elif actual_base == "mkdir":
-                update_state(cmd, "")
+                _cowrie_sync(actual_cmd)
                 return _finish(cmd, "cowrie", "", fi_score, t_start)
 
             elif actual_base == "mv":
