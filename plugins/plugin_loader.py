@@ -27,6 +27,7 @@ import json
 import yaml
 import importlib.util
 import threading
+import time
 from datetime import datetime
 
 
@@ -121,8 +122,31 @@ class SIEMExporter:
         self.batch_size     = self.settings.get("batch_size", 10)
         self.flush_interval = self.settings.get("flush_interval_sec", 30)
 
+    def _normalize(self, event: dict) -> dict:
+        """Raw HydraPoT event -> canonical OCSF event.
+
+        Auth rows and command rows are different OCSF classes, so the shape of
+        the incoming dict decides which normalizer runs. An event that is
+        neither is passed through untouched rather than being forced into a
+        class it does not belong to.
+        """
+        from threat_intel import normalize as _n
+        if event.get("auth_type") or event.get("event") in (
+                "connection", "login.success", "login.failed", "auth"):
+            return _n.normalize_auth(event)
+        if "cmd" in event or "command" in event:
+            return _n.normalize_command(event)
+        return event
+
     def should_export(self, event: dict) -> bool:
-        """Check if this event passes the export filters."""
+        """Operational export filter — NOT a severity judgement.
+
+        min_fi is a legitimate volume control: "do not ship every `ls` to my
+        paid SIEM". It is kept, because deciding WHICH events are worth the
+        bandwidth is a different question from how dangerous they are. What was
+        removed is FI reaching the CEF severity column, where downstream tools
+        read it as a security rating (see normalize.to_cef).
+        """
         min_fi = self.filters.get("min_fi", 0)
         if event.get("fi", event.get("fi_score", 0)) < min_fi:
             return False
@@ -138,12 +162,23 @@ class SIEMExporter:
         return True
 
     def emit(self, event: dict):
-        """Buffer an event and flush when batch is full."""
+        """Buffer an event and flush when batch is full.
+
+        NORMALIZES HERE, once, for every exporter. Previously each subclass
+        received the raw internal dict and decided for itself what to do with
+        it: syslog converted to CEF, Splunk and Elasticsearch shipped the raw
+        shape. That meant HydraPoT had no canonical representation and every
+        new exporter would invent another mapping.
+
+        Filtering still runs against the RAW event, because should_export()
+        filters on operational fields (min_fi, agents) that deliberately do not
+        exist at the top level of the normalized form.
+        """
         if not self.enabled or not self.should_export(event):
             return
 
         with self._lock:
-            self._buffer.append(event)
+            self._buffer.append(self._normalize(event))
             if len(self._buffer) >= self.batch_size:
                 self._flush()
 
@@ -191,13 +226,19 @@ class SplunkHECExporter(SIEMExporter):
         host       = self.settings.get("host", "honeypot")
 
         for event in events:
+            # Splunk indexes arbitrary JSON and OCSF is a published schema, so
+            # the canonical event ships as-is -- no Splunk-specific mapping to
+            # maintain. `time` is OCSF epoch MILLISECONDS; HEC wants seconds.
+            from threat_intel.normalize import to_json
+            doc = to_json(event)
+            ocsf_ms = doc.get("time")
             payload = json.dumps({
                 "index":      index,
                 "sourcetype": sourcetype,
                 "host":       host,
-                "time":       event.get("timestamp", datetime.now().isoformat()),
-                "event":      event,
-            }).encode()
+                "time":       (ocsf_ms / 1000.0) if ocsf_ms else time.time(),
+                "event":      doc,
+            }, default=str).encode()
 
             req = urllib.request.Request(url, data=payload, method="POST")
             req.add_header("Authorization", f"Splunk {token}")
@@ -240,8 +281,12 @@ class ElasticsearchExporter(SIEMExporter):
         index = index_pattern.replace("{date}", date_str)
 
         for event in events:
+            # ECS, because Elastic's own dashboards and detection rules are
+            # written against it. HydraPoT is NOT internally ECS -- this is a
+            # translation at the boundary, the same way syslog gets CEF.
+            from threat_intel.normalize import to_ecs
             url = f"{host}/{index}/_doc"
-            payload = json.dumps(event).encode()
+            payload = json.dumps(to_ecs(event), default=str).encode()
 
             req = urllib.request.Request(url, data=payload, method="POST")
             req.add_header("Content-Type", "application/json")
@@ -287,8 +332,13 @@ class SyslogExporter(SIEMExporter):
             self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self._socket.connect((host, port))
         else:
+            # No connect() and no stored destination: _send() passes the
+            # address to sendto() per datagram. This used to set
+            # `self._socket._dest = (host, port)`, which raises AttributeError
+            # -- socket objects use __slots__ -- so every UDP send failed
+            # inside the try/except and UDP syslog export never worked. The
+            # attribute was never read.
             self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            self._socket._dest = (host, port)
 
         return self._socket
 
@@ -304,7 +354,7 @@ class SyslogExporter(SIEMExporter):
             if fmt == "cef":
                 msg = self._to_cef(event)
             else:
-                msg = json.dumps(event)
+                msg = json.dumps(event, default=str)
 
             # syslog priority: facility=local0 (16), severity=warning (4)
             priority = (16 * 8) + 4
@@ -324,18 +374,22 @@ class SyslogExporter(SIEMExporter):
         print(f"[syslog] Exported {len(events)} events via {protocol}://{host}:{port}")
 
     def _to_cef(self, event: dict) -> str:
-        """Convert event to CEF (Common Event Format) string."""
-        fi = event.get("fi", event.get("fi_score", 0))
-        severity = {0: 1, 1: 3, 2: 5, 3: 7, 4: 10}.get(fi, 1)
-        cmd = event.get("cmd", event.get("command", "")).replace("=", "\\=").replace("|", "\\|")
-        src = event.get("src_ip", "?")
-        agent = event.get("agent", "unknown")
+        """Canonical OCSF event -> CEF.
 
-        return (
-            f"CEF:0|HydraPoT|Honeypot|1.0|{fi}|"
-            f"FI-{fi} Command|{severity}|"
-            f"src={src} msg={cmd} cs1={agent} cs1Label=Agent"
-        )
+        The mapping itself lives in threat_intel/normalize.to_cef so the CEF
+        shape is testable without a socket, and so a second CEF consumer would
+        not fork it.
+
+        THE BUG THIS REPLACED: the old implementation did
+        `severity = {0:1, 1:3, 2:5, 3:7, 4:10}.get(fi, 1)` and used FI as both
+        the CEF signature id and the severity column. FI is HydraPoT's routing
+        metric -- it decides which agent answers a command -- so every SIEM
+        receiving this read a loud-but-harmless `rm` as severity 10 and a quiet
+        credential read as 3. Severity now comes from severity_id (which only
+        findings carry) and FI travels as a labelled custom field, cs3.
+        """
+        from threat_intel.normalize import to_cef
+        return to_cef(event)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -510,6 +564,33 @@ class PluginManager:
         """Send an auth event to all enabled SIEM exporters."""
         event = {**auth_entry, "event": "auth"}
         self.export_event(event)
+
+    def export_finding(self, detection: dict, alert: dict = None):
+        """Send an ANALYSED finding to the SIEM exporters.
+
+        The other half of interoperability. export_event() ships raw telemetry
+        -- a command, a login -- which is what the honeypot OBSERVED.
+        Correlation, detection and severity output previously reached only the
+        dashboard and alerts.jsonl, so external SIEMs received raw commands and
+        none of the analysis that is HydraPoT's actual contribution.
+
+        Bypasses should_export() deliberately: those filters (min_fi, agents)
+        are about raw event volume, and a finding has already passed a
+        detection rule AND an alert rule. Re-filtering it on the routing metric
+        of one of its member commands would drop findings for the wrong reason.
+        """
+        from threat_intel.normalize import normalize_finding
+        ocsf = normalize_finding(detection, alert)
+        for exporter in self.exporters:
+            if not exporter.enabled:
+                continue
+            try:
+                with exporter._lock:
+                    exporter._buffer.append(ocsf)
+                    if len(exporter._buffer) >= exporter.batch_size:
+                        exporter._flush()
+            except Exception as e:
+                print(f"[plugin] Finding export error ({exporter.name}): {e}")
 
     def flush_exporters(self):
         """Flush all exporter buffers (call on shutdown)."""

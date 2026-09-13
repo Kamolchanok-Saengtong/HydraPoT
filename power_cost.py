@@ -67,7 +67,6 @@ def kwh_to_thb(kwh: float, tariff_cfg: dict) -> dict:
     subtotal = energy_charge + ft_charge
     vat = subtotal * vat_rate
     total = subtotal + vat
-    print("finish")
 
     return {
         "kwh": round(kwh, 6),

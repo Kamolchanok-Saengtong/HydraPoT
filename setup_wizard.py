@@ -103,6 +103,7 @@ def build_default_config(existing: dict) -> dict:
             "instance_name": hp.get("instance_name", "default"),
             "os":            hp.get("os",       "Ubuntu 12.04 LTS"),
             "port":          hp.get("port",     2223),
+            **kernel_for(hp.get("os", "Ubuntu 12.04 LTS"), hp),
         },
         deployment = {"host": hp.get("host", "127.0.0.1")},
         cowrie     = {
@@ -329,6 +330,40 @@ def load_existing() -> dict:
 
 # ─── Wizard Questions ─────────────────────────────────────────────────────────
 
+# The kernel identity `uname` must report for each OS we offer to impersonate.
+# Deliberately kept beside the OS list, in ONE structure, so the two can never
+# drift apart. They used to be unrelated: the OS came from here while `uname`
+# fell through to Cowrie and answered "Debian 3.2.68-1+deb7u1" no matter what
+# was chosen — a 2013 Debian kernel on a box advertising Ubuntu 22.04.
+# `uname -a` is one of the first commands an attacker runs.
+OS_KERNELS = {
+    "Ubuntu 12.04 LTS": ("3.2.0-29-generic",
+                         "#46-Ubuntu SMP Fri Jul 27 17:03:23 UTC 2012", "x86_64"),
+    "Ubuntu 22.04 LTS": ("5.15.0-91-generic",
+                         "#101-Ubuntu SMP Tue Nov 14 13:30:08 UTC 2023", "x86_64"),
+    "Debian 11":        ("5.10.0-26-amd64",
+                         "#1 SMP Debian 5.10.197-1 (2023-09-29)", "x86_64"),
+    "CentOS 7":         ("3.10.0-1160.el7.x86_64",
+                         "#1 SMP Mon Oct 19 16:18:59 UTC 2020", "x86_64"),
+}
+
+
+def kernel_for(chosen_os: str, hp: dict) -> dict:
+    """Kernel identity for the chosen OS, preserving a hand-edited override.
+
+    If the operator kept the same OS and had already tuned these by hand, their
+    values win — re-running `hp init` must not silently revert a deliberate
+    choice. Changing the OS re-derives them, because a kernel left over from the
+    previous OS is exactly the mismatch this table exists to prevent.
+    """
+    kern, build, arch = OS_KERNELS.get(chosen_os, OS_KERNELS["Ubuntu 22.04 LTS"])
+    if hp.get("os") == chosen_os:
+        kern  = hp.get("kernel",       kern)
+        build = hp.get("kernel_build", build)
+        arch  = hp.get("arch",         arch)
+    return {"kernel": kern, "kernel_build": build, "arch": arch}
+
+
 def ask_honeypot(existing: dict) -> dict:
     """Section 1: Honeypot identity."""
     hp = existing.get("honeypot", {})
@@ -361,6 +396,7 @@ def ask_honeypot(existing: dict) -> dict:
         "instance_name": hp.get("instance_name", "default"),
         "os": chosen_os,
         "port": port,
+        **kernel_for(chosen_os, hp),
     }
 
 
@@ -872,6 +908,10 @@ def build_config(honeypot: dict, deployment: dict, cowrie: dict,
             "hostname":      honeypot["hostname"],
             "instance_name": honeypot.get("instance_name", "default"),
             "os":            honeypot["os"],
+            # Must stay consistent with "os" — see OS_KERNELS.
+            "kernel":        honeypot["kernel"],
+            "kernel_build":  honeypot["kernel_build"],
+            "arch":          honeypot["arch"],
             "host":          deployment["host"],
             "port":          honeypot["port"],
         },
