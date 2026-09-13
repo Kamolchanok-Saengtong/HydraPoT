@@ -218,6 +218,31 @@ def load_session_commands(session_id, instance=None):
     return rows
 
 
+def clear_caches():
+    """Drop every cached derivation. The ONE place that knows them all.
+
+    The Refresh button used to clear four of these inline and miss
+    _detect_cache and _session_cmd_cache, so a manual refresh left detections,
+    severity and alerts up to five minutes stale while the rest of the page
+    updated -- the two halves of the screen disagreeing is exactly what the
+    button exists to prevent. Adding a cache should mean editing this function,
+    not hunting for every caller.
+    """
+    _cache["all_ts"] = 0
+    _cache["auth_ts"] = 0
+    _cache["raw_rows_ts"] = 0
+    _feed_cache.clear()
+    _page_cache.clear()
+    _overview_cache.clear()
+    _detect_cache.clear()
+    _session_cmd_cache.clear()
+    try:
+        from api.services.common import _ioc_cache
+        _ioc_cache.clear()
+    except Exception:
+        pass        # the API package is optional for a dashboard-only install
+
+
 def load_alerts(instance=None, state=None, limit=200):
     """Alert records for the dashboard.
 

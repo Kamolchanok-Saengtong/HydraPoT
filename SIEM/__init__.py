@@ -22,6 +22,7 @@ import SIEM.pages.live_feed     # noqa: F401  (registers _refresh_live_feed)
 import SIEM.pages.summary       # noqa: F401
 import SIEM.pages.mitre         # noqa: F401  (registers several callbacks)
 import SIEM.pages.investigate   # noqa: F401  (registers _select_detection)
+import SIEM.pages.assistant     # noqa: F401  (registers the chat callbacks)
 import SIEM.pages.database      # noqa: F401  (registers several callbacks)
 import SIEM.pages.threat_intel  # noqa: F401  (registers several callbacks)
 

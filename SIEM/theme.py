@@ -851,6 +851,136 @@ app.index_string = """
     }
     .q-num { font-weight:800; color:var(--ink); }
 
+    /* ══ AI analyst widget ═══════════════════════════════════════════════
+       A floating button and a small panel. Deliberately NOT a full-page chat:
+       the assistant exists to answer a question about what is already on
+       screen, so it must not replace the screen. Fixed to the viewport so it
+       stays reachable while the dashboard scrolls. */
+    .ai-fab {
+      position:fixed; right:22px; bottom:22px; z-index:1200;
+      width:54px; height:54px; border-radius:50%; cursor:pointer;
+      border:1px solid """ + Y_500 + """; background:""" + Y_400 + """; color:""" + INK + """;
+      box-shadow:0 6px 20px rgba(38,35,31,0.28);
+      display:flex; align-items:center; justify-content:center;
+      transition: transform var(--dur-hover) var(--ease-out),
+                  box-shadow var(--dur-hover) var(--ease-out);
+    }
+    .ai-fab:hover { transform:translateY(-2px);
+                    box-shadow:0 10px 26px rgba(38,35,31,0.34); }
+    .ai-fab:active { transform:translateY(0); }
+    .ai-fab-icon { font-size:1.35rem; line-height:1; }
+
+    .ai-panel {
+      position:fixed; right:22px; bottom:88px; z-index:1200;
+      width:390px; max-width:calc(100vw - 44px);
+      height:540px; max-height:calc(100vh - 130px);
+      display:flex; flex-direction:column; overflow:hidden;
+      background:""" + CARD + """; border:1px solid var(--line-strong);
+      border-radius:12px; box-shadow:0 16px 44px rgba(38,35,31,0.26);
+      animation: ai-rise var(--dur-open) var(--ease-out) backwards;
+    }
+    /* REQUIRED. `display:flex` above beats the user-agent stylesheet's
+       `[hidden] { display:none }`, so without this the panel is open on every
+       page load and the button only ever closes it. A CSS display value always
+       outranks the hidden ATTRIBUTE -- the attribute is not magic. */
+    .ai-panel[hidden] { display:none !important; }
+    /* `backwards`, not `both`: a filled final state outranks normal
+       declarations, which would freeze the panel's transform and kill hover
+       on anything inside it. */
+    @keyframes ai-rise {
+      from { opacity:0; transform:translateY(10px) scale(0.985); }
+      to   { opacity:1; transform:none; }
+    }
+
+    .ai-head { display:flex; align-items:flex-start; justify-content:space-between;
+               gap:10px; padding:13px 14px; background:""" + INK + """; color:#fff; }
+    .ai-title { display:block; font-size:0.86rem; font-weight:800; }
+    .ai-sub { display:block; font-size:0.62rem; color:#CFC7B8; margin-top:2px; }
+    .ai-x { background:transparent; border:none; color:#CFC7B8; cursor:pointer;
+            font-size:0.9rem; padding:2px 4px; }
+    .ai-x:hover { color:#fff; }
+
+    .ai-log { flex:1; min-height:0; overflow-y:auto; padding:14px;
+              display:flex; flex-direction:column; gap:10px;
+              background:var(--paper); }
+
+    /* Messages. The analyst's replies are the wide ones: they carry the
+       evidence, and cramping them to match a one-line question wastes the
+       panel. */
+    .ai-msg { font-size:0.78rem; line-height:1.5; border-radius:10px;
+              padding:9px 11px; max-width:88%; }
+    .ai-msg-user { align-self:flex-end; background:""" + INK + """; color:#fff;
+                   border-bottom-right-radius:3px; }
+    .ai-msg-bot { align-self:flex-start; background:""" + CARD + """; color:var(--ink);
+                  border:1px solid var(--line); border-bottom-left-radius:3px; }
+    .ai-md p { margin:0 0 7px; }
+    .ai-md p:last-child { margin-bottom:0; }
+    .ai-md ul, .ai-md ol { margin:6px 0; padding-left:18px; }
+    .ai-md code { font-family:'JetBrains Mono',monospace; font-size:0.7rem;
+                  background:var(--y-50); padding:1px 4px; border-radius:3px;
+                  word-break:break-all; }
+    .ai-md strong { font-weight:800; }
+
+    /* Which tools produced the answer. Quiet, but always present -- an answer
+       with no tool line made no evidence call, and that should be visible. */
+    .ai-tools { margin-top:8px; padding-top:7px;
+                border-top:1px dashed var(--line);
+                font-family:'JetBrains Mono',monospace; font-size:0.58rem;
+                color:var(--ink-3); word-break:break-word; }
+    .ai-tools-l { text-transform:uppercase; letter-spacing:0.07em; }
+
+    /* The "not enabled" card. Full width and quieter than a normal reply --
+       it is an explanation, not an answer, and should not look like Hydra
+       said something. */
+    .ai-msg-off { max-width:100%; background:var(--y-50);
+                  border-style:dashed; }
+    .ai-msg-off code { background:""" + CARD + """; }
+
+    /* A disabled input should look unavailable, not merely unresponsive. */
+    .ai-field input:disabled, .ai-send:disabled {
+      opacity:0.5; cursor:not-allowed; }
+
+    .ai-thinking { padding:12px 13px; }
+    .ai-dots { display:flex; gap:4px; }
+    .ai-dots span { width:6px; height:6px; border-radius:50%;
+                    background:var(--ink-3); animation: ai-blink 1.2s infinite; }
+    .ai-dots span:nth-child(2) { animation-delay:0.18s; }
+    .ai-dots span:nth-child(3) { animation-delay:0.36s; }
+    @keyframes ai-blink { 0%,80%,100% { opacity:0.25; } 40% { opacity:1; } }
+
+    /* The starter chips now follow the greeting bubble instead of being
+       centred in an empty panel, so they read as "or try one of these" rather
+       than as the whole content. */
+    .ai-empty { text-align:left; }
+    .ai-empty-t { font-size:0.76rem; color:var(--ink-3); margin-bottom:11px; }
+    .ai-chips { display:flex; flex-direction:column; gap:6px; }
+    .ai-chip { font-family:inherit; font-size:0.72rem; text-align:left;
+               cursor:pointer; padding:8px 11px; border-radius:8px;
+               border:1px solid var(--line-strong); background:""" + CARD + """;
+               color:var(--ink-2);
+               transition: background var(--dur-hover) var(--ease-out); }
+    .ai-chip:hover { background:var(--y-50); color:var(--ink); }
+
+    .ai-input { display:flex; gap:8px; padding:11px 12px;
+                border-top:1px solid var(--line-strong); background:""" + CARD + """; }
+    /* dcc.Input renders a WRAPPER div carrying the className, so the real
+       <input> has to be targeted through it. */
+    .ai-field { flex:1; }
+    .ai-field input { width:100%; padding:8px 11px; font-family:inherit;
+                      font-size:0.76rem; color:var(--ink);
+                      border:1px solid var(--line-strong); border-radius:8px;
+                      background:var(--paper); }
+    .ai-field input:focus { outline:2px solid var(--focus); outline-offset:1px; }
+    .ai-send { font-family:inherit; font-size:0.74rem; font-weight:700;
+               padding:8px 15px; border-radius:8px; cursor:pointer;
+               border:1px solid """ + INK + """; background:""" + INK + """; color:""" + Y_300 + """; }
+    .ai-send:hover { background:var(--ink-2); }
+
+    @media (max-width: 560px) {
+      .ai-panel { right:12px; left:12px; width:auto; bottom:80px; }
+      .ai-fab { right:14px; bottom:14px; }
+    }
+
     /* ══ Investigation workspace ═════════════════════════════════════════
        An analyst console, not a dashboard. The rules this block follows:
 

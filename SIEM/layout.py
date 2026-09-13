@@ -13,12 +13,12 @@ import storage
 
 from SIEM.server import app
 from SIEM.theme import SUCCESS, CRITICAL, Y_400
-from SIEM.data import (_cache, _feed_cache, _page_cache, _overview_cache,
-                       agent_health, _cached_page)
+from SIEM.data import clear_caches, agent_health, _cached_page
 from SIEM.geo import MMDB_PATH
 from SIEM.ioc import build_ioc_snapshot
 from SIEM.pages.summary import build_summary_page
 from SIEM.pages.live_feed import build_live_page
+from SIEM.pages.assistant import widget as assistant_widget
 from SIEM.pages.mitre import build_mitre_page
 from SIEM.pages.investigate import build_investigate_page
 from SIEM.pages.database import build_database_page
@@ -150,6 +150,10 @@ app.layout = html.Div(className="app-shell", children=[
     # build_live_feed(), so this only changes WHEN that runs (push, not just
     # a fixed poll), so there is exactly one place that formats a feed row.
     dcc.Store(id="ws-feed-store", data=0),
+    # Floating AI analyst. Lives in the SHELL, not on a page, so it stays put
+    # while you navigate and its conversation survives the move -- an assistant
+    # you must re-open and re-explain yourself to is one nobody uses.
+    assistant_widget(),
 ])
 
 
@@ -224,14 +228,9 @@ def switch_page(n_summary, n_investigate, n_live, n_intel, n_mitre, n_db, n_page
 
 @app.callback(Output("interval", "n_intervals"), Input("manual-refresh", "n_clicks"), prevent_initial_call=True)
 def manual_refresh(_n):
-    _cache["all_ts"] = 0
-    _cache["auth_ts"] = 0
-    _cache["raw_rows_ts"] = 0
-    # both are keyed dicts, so expiring them means dropping the keys — setting
-    # a "ts" entry would just add a stray key and leave the entries live
-    _feed_cache.clear()
-    _page_cache.clear()
-    _overview_cache.clear()
+    # One call rather than clearing each cache here: this list drifted before,
+    # leaving detections and session commands stale after a manual refresh.
+    clear_caches()
     return 0
 
 
