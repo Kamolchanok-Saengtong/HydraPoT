@@ -315,6 +315,9 @@ def load_rules(rules_dir: str = RULES_DIR, force: bool = False) -> list:
     # primary-tag order: explicit priority, then confidence, then technique id
     found.sort(key=lambda r: (r.priority, _CONFIDENCE_ORDER[r.confidence], r.technique))
     _rules, _load_errors = found, errors
+    # The per-command match cache holds results computed against the OLD rule
+    # set; keeping it would silently ignore every rule edit.
+    _match_rules_cached.cache_clear()
     return _rules
 
 
@@ -358,12 +361,33 @@ def _context(cmd: str) -> dict:
     return {"command": s, "segments": expanded}
 
 
+@functools.lru_cache(maxsize=8192)
+def _match_rules_cached(cmd: str) -> tuple:
+    """Memoised local-rule sweep. Tuple because lru_cache needs a hashable
+    return; the Rule objects themselves are the stable instances load_rules()
+    hands out, so this holds references, not copies.
+
+    The upstream (SigmaHQ) tier has been cached since it was written, but this
+    local tier was not — and it is the expensive half: profiling a sensor
+    switch showed 3,326 tag_all() calls fanning out into 129,714 matches() and
+    835,494 predicate evaluations, 2.0s of a 2.5s page build. The same command
+    strings were being re-matched by several callers that each kept their own
+    higher-level cache (aggregator._chain, ioc_extractor's per-IOC tagging,
+    SIEM/data.load_all), so none of them shared the work. Caching HERE fixes
+    every caller at once instead of adding a fourth private cache.
+
+    Invalidated by load_rules(force=True) — see the cache_clear there — so
+    editing a rule file still re-tags everything on the next refresh.
+    """
+    ctx = _context(cmd)
+    return tuple(r for r in load_rules() if r.matches(ctx))
+
+
 def match_rules(cmd: str) -> list:
     """Every Rule whose condition holds, best-primary first. Never truncated."""
     if not cmd or not cmd.strip():
         return []
-    ctx = _context(cmd)
-    return [r for r in load_rules() if r.matches(ctx)]
+    return list(_match_rules_cached(cmd))
 
 
 def classify_all(cmd: str) -> list:

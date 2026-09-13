@@ -10,14 +10,27 @@
 # This keeps credentials out of the repo/config file.
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# Only alert on events at or above this severity (FI 0-4). 3 = HIGH and above.
-min_fi: 3
-
-# Also send an alert for login attempts (auth events)?
-include_auth: false
-
-# Don't spam: minimum seconds between alerts for the same source IP.
-cooldown_sec: 60
+# ── WHAT gets sent is NOT configured here ─────────────────────────────────────
+# This file answers "where do alerts go". Which findings are worth sending is
+# decided in threat_intel/rules/alert_rules.yml, by the `notify:` list on each
+# rule, alongside every other routing decision.
+#
+# min_fi / include_auth / cooldown_sec used to live here and have been removed,
+# not just ignored. They notified per COMMAND on FI -- HydraPoT's routing
+# metric, which decides which agent answers a command. That meant a loud `rm`
+# of a file the attacker created themselves (FI 4) paged you, while a
+# multi-session loader whose commands were each FI 1 did not. Leaving them as
+# dead keys would be worse than deleting them: you would set min_fi: 1 and
+# nothing would change.
+#
+# Severity now comes from threat_intel/rules/session_severity.yml, and
+# de-duplication is structural -- an alert record is delivered once and stamped,
+# so no cooldown is needed.
+#
+# NOTHING IS SENT until you enable BOTH:
+#   1. the `channels` sink in threat_intel/rules/alert_sinks.yml
+#   2. a channel below
+# ══════════════════════════════════════════════════════════════════════════════
 
 channels:
 

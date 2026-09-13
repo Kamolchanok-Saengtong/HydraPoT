@@ -1,0 +1,160 @@
+# session_severity.yml — SOC severity rules, evaluated per SESSION.
+#
+# Every other ruleset in threat_intel/rules/ answers "what is THIS COMMAND".
+# This one answers "how dangerous is this WHOLE SESSION", which is the
+# question a SOC analyst actually opens the dashboard with.
+#
+# Evaluated by threat_intel/severity.py against facts derived from the
+# session's FULL MITRE chain (tag_all, re-tagged at read time -- never the
+# stored technique_id column, which is a frozen snapshot: see the _chain
+# docstring in threat_intel/aggregator.py for why that matters).
+#
+# DELIBERATELY DOES NOT USE FI.
+# FI is HydraPoT's internal routing/interaction-impact metric -- it decides
+# which agent answers a command. It is not a security severity, and conflating
+# the two would mean a loud-but-harmless command (FI 4 `rm` of a file the
+# attacker themselves created) outranking a quiet, genuine compromise.
+# Severity here is anchored ONLY to attacker technique and behaviour.
+#
+# Severity ladder: critical > high > medium > low > info
+# A session's severity is the highest severity among the rules that fired,
+# and the UI shows WHICH rules fired as the evidence -- never an unexplainable
+# composite score.
+#
+# Supported conditions (see severity.py):
+#   any_techniques  [str]   fires if the session used ANY of these technique IDs
+#   all_techniques  [str]   fires only if the session used EVERY one of these
+#   any_tactics     [str]   fires if the session touched ANY of these tactics
+#   min_distinct_tactics int  fires at/above this many distinct tactics
+#   min_commands_per_minute float  pacing floor (skipped when duration is 0)
+
+rules:
+
+  # ── critical ──────────────────────────────────────────────────────────────
+  - id: payload-retrieve-and-execute
+    title: Payload downloaded and executed
+    severity: critical
+    description: >-
+      The session both retrieved a remote file and ran a shell payload. This is
+      the loader pattern behind most SSH botnet infections (wget/tftp the
+      binary, chmod it, execute) and means the attacker attempted actual code
+      execution, not reconnaissance.
+    when:
+      all_techniques: [T1105, T1059.004]
+
+  - id: destructive-impact
+    title: Destructive or account-takeover action
+    severity: critical
+    description: >-
+      An Impact-tactic technique was used -- e.g. changing the root password
+      (T1531) to lock the owner out, or destroying data. The attacker moved
+      from access to consequence.
+    when:
+      any_tactics: [Impact]
+
+  # ── high ──────────────────────────────────────────────────────────────────
+  - id: persistence-established
+    title: Persistence mechanism touched
+    severity: high
+    description: >-
+      cron, a new account, or another persistence technique was used, so
+      access is intended to survive reboot or password reset.
+    when:
+      any_tactics: [Persistence]
+
+  - id: credential-access
+    title: Credential store accessed
+    severity: high
+    description: >-
+      The session reached credential material (/etc/shadow, /etc/passwd, keys
+      or secrets in files). Assume anything readable there is compromised.
+    when:
+      any_tactics: [Credential Access]
+
+  - id: privilege-escalation
+    title: Privilege escalation attempted
+    severity: high
+    description: >-
+      sudo abuse, setuid, or another elevation technique was attempted.
+    when:
+      any_tactics: [Privilege Escalation]
+
+  - id: anti-forensics
+    title: Evidence destruction
+    severity: high
+    description: >-
+      Shell history cleared (T1070.003) or files deleted to cover tracks
+      (T1070.004). An attacker cleaning up is an attacker who did something
+      worth hiding -- and it degrades every later investigation.
+    when:
+      any_techniques: [T1070.003, T1070.004]
+
+  - id: lateral-movement
+    title: Lateral movement attempted
+    severity: high
+    description: >-
+      The session tried to reach another host. Scope the incident beyond this
+      sensor.
+    when:
+      any_tactics: [Lateral Movement]
+
+  - id: multi-stage-intrusion
+    title: Multi-stage intrusion
+    severity: high
+    description: >-
+      Four or more distinct ATT&CK tactics in one session. Depth of kill chain
+      is the signal here: a session that moves discovery -> execution ->
+      persistence -> impact is a campaign, not a scanner.
+    when:
+      min_distinct_tactics: 4
+
+  # ── medium ────────────────────────────────────────────────────────────────
+  - id: payload-staged
+    title: Remote file retrieved
+    severity: medium
+    description: >-
+      Something was downloaded (T1105) but no shell execution was observed in
+      the same session. Staged-but-not-run, or the run was missed -- treat the
+      retrieved URL as a live IOC either way.
+    when:
+      any_techniques: [T1105]
+
+  - id: obfuscated-payload
+    title: Obfuscated or encoded payload
+    severity: medium
+    description: >-
+      Base64/encoded content or a decode step (T1027 / T1140). Obfuscation is
+      deliberate evasion, so the true action is hidden from simple log review.
+    when:
+      any_techniques: [T1027, T1140]
+
+  - id: remote-command-execution
+    title: Shell execution observed
+    severity: medium
+    description: >-
+      The session executed shell commands beyond passive enumeration.
+    when:
+      any_tactics: [Execution]
+
+  # ── low ───────────────────────────────────────────────────────────────────
+  - id: host-reconnaissance
+    title: Host reconnaissance
+    severity: low
+    description: >-
+      Enumeration only -- system, user, network or file discovery, with no
+      execution, persistence or impact seen. Typical of mass scanners
+      fingerprinting the box before deciding whether to return.
+    when:
+      any_tactics: [Discovery, Reconnaissance]
+
+  # ── info ──────────────────────────────────────────────────────────────────
+  - id: automated-tooling
+    title: Automated, not hands-on-keyboard
+    severity: info
+    description: >-
+      Sustained command rate far above human typing speed, so this is a script
+      or botnet replaying a fixed sequence. Context rather than severity: it
+      tells the analyst to expect an identical session from other IPs, and
+      that there is no live operator to contain.
+    when:
+      min_commands_per_minute: 60

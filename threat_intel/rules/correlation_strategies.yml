@@ -1,0 +1,90 @@
+# correlation_strategies.yml — how the correlation engine may relate observations.
+#
+# A strategy declares ONE key to group by and the EXACT wording used to report
+# the result. The engine has no knowledge of what any key means; it groups
+# records by the key and reports what it observed.
+#
+# THE ENGINE REPORTS EVIDENCE, NEVER CONCLUSIONS.
+# "These sessions share an identical observed command sequence" is a fact the
+# engine can stand behind. "These sessions ran the same script" is an
+# interpretation — plausible, often right, and not something a correlation
+# layer is entitled to assert. Deciding what a relationship MEANS belongs to
+# detection and to the analyst; deciding that it EXISTS belongs here.
+#
+# `statement` is therefore the only wording a UI may render for a relationship.
+# It describes what was observed, never what it implies.
+#
+# Nothing here is tuned to any dataset. Thresholds, cluster sizes and key
+# choices are deliberately absent: the current capture is evidence that a
+# mechanism CAN fire, never a definition of what should be looked for. A
+# different sensor, or next week's traffic, will produce different groupings
+# including none at all, and that is a correct outcome rather than a failure.
+#
+# The two streams are never joined. The `auth` table carries no session_id, so
+# any session<->login link would be an invented (src_ip, time) guess; strategies
+# declare which stream they read and stay inside it.
+
+strategies:
+
+  - id: same_sequence
+    stream: sessions
+    key: command_sequence
+    match: exact
+    enabled: true
+    statement: >-
+      these sessions share an identical observed command sequence
+    # Objectively established : the ordered command text is byte-identical.
+    # Investigative hypothesis: shared tooling, automation, a common script.
+    #                           NOT asserted by this layer.
+    # `match: exact` is the only mode implemented. Normalised matching (folding
+    # whitespace, argument order, or paths) would require deciding what counts
+    # as "the same" command, which is a judgement, not an observation.
+
+  - id: shared_indicator
+    stream: indicators
+    key: indicator_value
+    match: exact
+    enabled: true
+    statement: >-
+      these sessions reference the same observed indicator value
+    # Objectively established : the same IOC (url / ip / domain / hash) appears
+    #                           in the commands or responses of each session.
+    # Investigative hypothesis: shared infrastructure, or a common operator.
+    #                           NOT asserted by this layer.
+
+  - id: same_source_address
+    stream: sessions
+    key: src_ip
+    match: exact
+    enabled: true
+    statement: >-
+      these sessions originate from the same recorded source address
+    # Objectively established : the sensor recorded the same src_ip value.
+    # Investigative hypothesis: the same host, or the same actor. An address is
+    #                           not an identity -- NAT collapses many hosts into
+    #                           one, rotation splits one actor across many, and
+    #                           an imported corpus may store a pseudonymised
+    #                           token rather than a routable address.
+
+  # Considered and deliberately not enabled for v1. Left declared so the
+  # reasoning is recorded rather than rediscovered later.
+  - id: shared_credential
+    stream: auth
+    key: credential_pair
+    match: exact
+    enabled: false
+    statement: >-
+      these login attempts submitted the same credential pair
+    # Real, but near-universal: common pairs come from public wordlists, so the
+    # relationship holds between unrelated actors and carries little
+    # discriminating power on its own.
+
+  - id: temporal_proximity
+    stream: sessions
+    key: time_bucket
+    match: exact
+    enabled: false
+    statement: >-
+      these sessions occurred within the same time window
+    # Trivially satisfiable: at a large enough window everything correlates
+    # with everything. Would need a window size, which is a judgement.

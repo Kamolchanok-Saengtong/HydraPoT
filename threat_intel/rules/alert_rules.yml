@@ -1,0 +1,102 @@
+# alert_rules.yml — which detections become ALERTS, and where they are sent.
+#
+#   Detection  answers : is this worth an analyst's attention?   (a view)
+#   Alerting   answers : does a human have to ACT on it?         (a worklist)
+#
+# Those are not the same question, and collapsing them is how a SOC ends up
+# with an alert queue nobody reads. The investigation page can afford to show
+# fifteen things; an alert queue that shows fifteen things every refresh trains
+# the analyst to ignore it. So alerting is deliberately NARROWER than detection
+# and every rule here has to justify interrupting someone.
+#
+# AN ALERT IS A COMMITMENT.
+# Raising one creates a durable record with a lifecycle: it stays until a
+# person acknowledges or closes it. Alerts are never auto-closed and never
+# silently dropped, because "it went away on its own" is indistinguishable from
+# "we lost it".
+#
+# NO NEW JUDGEMENT IS INVENTED HERE.
+# Alert rules combine facts the layers below already established -- the
+# severity level from threat_intel/severity.py, the counts from correlation,
+# the detection rule that surfaced it. This file adds no score and no new
+# notion of "bad"; it only sets the bar for interrupting a human.
+#
+# Supported conditions (see alerting.py). All conditions in a `when` must
+# hold (AND):
+#   min_severity         str    at or above this level on severity.py's ladder
+#                               (info < low < medium < high < critical).
+#                               UNRATED never satisfies this -- see below.
+#   severity_in          [str]  exactly these levels; use "unrated" to match
+#                               relationships the behaviour ruleset could not read
+#   detection_rule_in    [str]  only detections surfaced by these rules
+#   link_type_in         [str]  only these correlation strategies
+#   min_members          int    the relationship spans at least N observations
+#   min_distinct_sources int    ... from at least N distinct source addresses
+#   min_distinct_scopes  int    ... seen on at least N sensors
+#
+# UNRATED IS NOT A SEVERITY.
+# A relationship with no shared command sequence (an indicator or source-address
+# link) has no behaviour for the severity ruleset to read. `min_severity` will
+# never match it, because treating "we could not tell" as "at least medium"
+# would fill the queue with the cases we understand least. To alert on them
+# deliberately, name them with `severity_in: [unrated]`.
+#
+# notify: which sinks deliver the alert. Empty or absent = recorded in the
+# alert queue but never sent anywhere, which is a perfectly good rule.
+# Configured sinks live in alert_sinks.yml; a sink named here that is disabled
+# there is skipped, and the alert stays unrouted so it is retried rather than
+# counted as delivered.
+
+rules:
+
+  - id: critical-behaviour
+    title: Critical behaviour observed
+    description: >-
+      The shared sequence rated critical -- the severity ruleset saw a
+      completed loader, destructive impact, or account takeover. This is the
+      one case where a single occurrence justifies waking someone, regardless
+      of how many sessions it spans.
+    when:
+      min_severity: critical
+    notify: [file, channels]
+
+  - id: high-behaviour-across-sources
+    title: Serious behaviour repeating across independent sources
+    description: >-
+      High-or-worse behaviour holding across more than one source address. A
+      single host repeating itself is one incident; the same serious sequence
+      arriving from several addresses that do not otherwise have to agree
+      means shared tooling or shared infrastructure, and the scope is wider
+      than one attacker.
+    when:
+      min_severity: high
+      min_distinct_sources: 2
+    notify: [file, channels]
+
+  - id: behaviour-across-sensors
+    title: Behaviour seen on more than one sensor
+    description: >-
+      The same relationship appears on multiple honeypot instances, so it is
+      not specific to one deployment's exposure and findings from one sensor
+      apply to the others. Medium and above only -- cross-sensor noise is
+      still noise.
+    when:
+      min_severity: medium
+      min_distinct_scopes: 2
+    notify: [file]
+
+  # Declared and deliberately NOT notifying. Recorded in the alert queue so it
+  # can be worked, but it does not interrupt anyone: indicator links are the
+  # least understood findings the pipeline produces (no behaviour to rate), and
+  # sending them outward before that is settled would be noise with a siren on.
+  - id: widespread-indicator
+    title: One indicator across many sessions
+    description: >-
+      A single indicator value appears across a large number of sessions.
+      Worth an analyst's time -- it is usually shared infrastructure -- but it
+      carries no rated behaviour, so it is queued rather than pushed.
+    when:
+      severity_in: [unrated]
+      link_type_in: [shared_indicator]
+      min_members: 25
+    notify: []

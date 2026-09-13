@@ -1,0 +1,168 @@
+# detection_rules.yml — which correlation relationships the SOC UI surfaces.
+#
+#   Correlation answers : do these observations share a value?   (fact)
+#   Detection answers   : is that worth an analyst's attention?  (policy)
+#   Severity answers    : how bad is it?                         (not here)
+#
+# Correlation cannot decide what deserves attention without smuggling judgement
+# into a factual layer, and severity cannot rank what was never surfaced. This
+# file is the seam between them, and it holds POLICY -- opinions that are meant
+# to be argued with, edited, and version-controlled, which is exactly why they
+# live in YAML instead of in code.
+#
+# DETECTION NEVER DELETES EVIDENCE.
+# A relationship that no rule surfaces is still returned, in the `suppressed`
+# or `unmatched` bucket, with the reason it was not surfaced. Detection changes
+# what is IN FRONT OF the analyst, never what is available to them. A filter
+# that silently discards findings is indistinguishable from a bug.
+#
+# NO RISK SCORES.
+# No rule produces a number, a weight, or a composite. Surfaced relationships
+# are ordered by the position of the rule that surfaced them IN THIS FILE --
+# an ordering a human wrote down on purpose and can re-argue by moving a rule,
+# not one computed from the data. Reading order is not a danger ranking.
+#
+# DOES NOT USE FI, AT ALL.
+# FI is HydraPoT's routing/interaction metric -- it decides which agent answers
+# a command. It says nothing about attacker intent and is not an input here,
+# not as a rank and not as a filter.
+#
+# NOT TUNED TO ANY DATASET.
+# The conditions below read only STRUCTURAL facts about a relationship (how
+# many members, how many distinct sources, how many sensors). None of them
+# name a command, an IP, a payload or a technique seen in any capture, so a
+# rule keeps meaning the same thing on a sensor that has never seen HydraPoT's
+# current traffic. The thresholds are stated policy defaults, not measurements.
+#
+# Supported conditions (see detection.py). All conditions in a `when` must
+# hold (AND):
+#   link_type_in         [str]  restrict the rule to these correlation strategies
+#   min_members          int    relationship holds across at least N observations
+#   max_members          int    ... and at most N
+#   min_distinct_sources int    spans at least N distinct source addresses
+#   max_distinct_sources int    ... and at most N
+#   min_distinct_scopes  int    observed on at least N distinct sensors
+#
+# Conditions on WHAT IS SHARED, read from correlation's `evidence` block. Only
+# strategies that publish evidence have these (today: command sequences), and
+# every one of them FAILS when evidence is absent -- including the max_*
+# conditions, so a sequence rule can never accidentally judge an indicator or
+# address relationship. Tactics and techniques come from the MITRE/Sigma layer
+# below, so a rule can match on attacker behaviour without naming a command:
+#   min_sequence_length     int   the shared sequence is at least N commands
+#   min_distinct_commands   int   ... containing at least N DIFFERENT commands
+#   max_distinct_commands   int   ... and at most N
+#   min_distinct_tactics    int   the sequence spans at least N ATT&CK tactics
+#   max_distinct_tactics    int   ... and at most N
+#   min_distinct_techniques int   at least N distinct technique IDs
+#   any_tactics             [str] the sequence touched ANY of these tactics
+#   any_techniques          [str] the sequence used ANY of these technique IDs
+#
+# action: surface (default) | suppress
+# A suppress rule that matches wins over any surface rule, so suppression is
+# always explicit and always traceable to one named rule.
+
+rules:
+
+  # ── suppress ──────────────────────────────────────────────────────────────
+  # Evaluated first purely for readability; order does not affect precedence.
+
+  - id: restates-source-grouping
+    title: Adds nothing beyond the source grouping
+    action: suppress
+    description: >-
+      A same_source_address relationship says these sessions came from one
+      address -- which is the grouping the aggregation layer already presents
+      as a first-class view. Surfacing it again as a detection would fill the
+      queue with restatements of something the analyst is already looking at.
+      Kept in full as evidence: it is how a surfaced relationship gets its
+      source context.
+    when:
+      link_type_in: [same_source_address]
+
+  - id: trivial-shared-sequence
+    title: Shared sequence is one command doing one thing
+    action: suppress
+    description: >-
+      Every member ran the same single command, AND that command maps to at
+      most one ATT&CK tactic. "Several sessions each ran `ls`" is ordinary
+      background scanning, not a link worth an analyst's time.
+      BOTH conditions are required, and the second is not decoration. A command
+      row in this pipeline can hold an ENTIRE CHAINED SCRIPT -- `cd /tmp || cd
+      /var/run; wget http://.../njs.sh; chmod +x njs.sh; sh njs.sh; tftp ...;
+      history -c` is one row -- so counting commands alone cannot tell a
+      repeated `ls` from a full loader: both score distinct_commands = 1. The
+      MITRE footprint separates them. That loader spans Execution, Command and
+      Control, Stealth and Defense Impairment; `ls` stays inside one tactic.
+      Requiring a single tactic as well lets the loader through and keeps the
+      noise out. Measured on the current corpus, the tactic condition alone
+      rescued a 22-member loader relationship this rule would otherwise have
+      hidden.
+      Names no command and no technique, so it suppresses `ls ls ls`,
+      `whoami whoami`, and whatever next year's scanners repeat, without anyone
+      maintaining a list.
+    when:
+      link_type_in: [same_sequence]
+      max_distinct_commands: 1
+      max_distinct_tactics: 1
+
+  # ── surface ───────────────────────────────────────────────────────────────
+
+  # The mirror of trivial-shared-sequence: that rule uses a narrow MITRE
+  # footprint to recognise noise, this one uses a broad footprint to recognise
+  # substance. Both read the same evidence and neither names a command.
+  #
+  # Policy default of 3 tactics: a stated opinion about when a shared sequence
+  # has a shape rather than a single reflex, not a number measured from any
+  # capture.
+  #
+  # NOT a severity rule, despite the resemblance to session_severity.yml's
+  # multi-stage-intrusion. That one asks how bad ONE SESSION was, from that
+  # session's own MITRE chain. This one asks whether a RELATIONSHIP BETWEEN
+  # sessions deserves the analyst's attention. Different subject, different
+  # layer -- and this rule still emits no severity.
+  - id: multi-tactic-shared-sequence
+    title: Shared sequence spans several tactics
+    description: >-
+      The sequence every member ran crosses three or more ATT&CK tactics, so
+      the thing these sessions have in common is a multi-stage procedure rather
+      than a single repeated action. Whether it is a botnet loader, a hands-on
+      operator, or a red-team script is the analyst's call; that the same
+      multi-stage procedure recurred is the finding.
+    when:
+      link_type_in: [same_sequence]
+      min_distinct_tactics: 3
+
+  - id: cross-source-repetition
+    title: Same behaviour from independent sources
+    description: >-
+      The relationship holds across more than one source address, so it cannot
+      be explained by a single host repeating itself. Something is shared
+      between hosts that do not otherwise have to agree -- tooling, a script,
+      or infrastructure. Worth an analyst deciding which.
+    when:
+      min_distinct_sources: 2
+
+  - id: cross-sensor-repetition
+    title: Same behaviour on more than one sensor
+    description: >-
+      The relationship spans multiple honeypot instances. Whatever produced it
+      is not specific to one deployment's exposure, so findings from one sensor
+      are likely to apply to the others.
+    when:
+      min_distinct_scopes: 2
+
+  # Policy default, deliberately conservative, and the one threshold here most
+  # worth re-arguing: 25 is a stated opinion about how much repetition stops
+  # being background noise, not a number measured from any capture. Lower it to
+  # see more, raise it to see less.
+  - id: high-multiplicity
+    title: Unusually repeated relationship
+    description: >-
+      The relationship holds across a large number of observations. High
+      repetition alone proves nothing about intent -- an automated scanner and
+      a deliberate campaign both repeat -- but it does mean one explanation
+      accounts for a large share of what the sensor recorded, which is worth
+      knowing before triaging the rest.
+    when:
+      min_members: 25

@@ -1,0 +1,72 @@
+# alert_sinks.yml — where routed alerts are delivered.
+#
+# Separate from alert_rules.yml on purpose: a rule says WHICH alerts matter,
+# a sink says WHERE they go. Those change for completely different reasons --
+# tuning what deserves an alert should never require editing a webhook URL,
+# and moving a collector should never risk changing detection policy.
+#
+# EVERY NETWORK SINK SHIPS DISABLED.
+# An alert carries attacker infrastructure, source addresses and command text.
+# Sending that somewhere is a disclosure, and it must be a deliberate act by
+# whoever runs the sensor -- never something that starts happening because a
+# default was left on. `file` is the only sink enabled out of the box, because
+# it writes locally and leaves the data exactly where it already was.
+#
+# A sink named by a rule but disabled here is skipped, and the alert keeps
+# routed_at = NULL so it is retried once the sink is turned on, rather than
+# being marked delivered.
+
+sinks:
+
+  - name: file
+    type: jsonl
+    enabled: true
+    # One JSON object per line, appended. Chosen as the default because it is
+    # the format every SIEM, log shipper and grep already reads, and it needs
+    # no network, no credentials and no daemon.
+    path: data/logs/alerts.jsonl
+
+  - name: channels
+    type: channels
+    enabled: false
+    # OFF. Nothing is pushed anywhere until you turn this on.
+    #
+    # Delegates to threat_intel/alert_channels.py, which reads
+    # threat_intel/alerts.yml for Slack / Discord / Telegram / webhook / email.
+    # An alert carries attacker infrastructure, source addresses and command
+    # text, so sending it off the host is a disclosure and has to be a
+    # deliberate act -- never something that starts happening because a default
+    # was left on.
+    #
+    # TO ENABLE, both switches must be set. Belt and braces on purpose:
+    #   1. enabled: true here                    (turn the sink on)
+    #   2. a channel enabled in alerts.yml       (say where it goes)
+    # With this false, the sink is skipped and the alert simply stays unrouted,
+    # so nothing is lost -- it delivers on the next sweep once you enable it.
+    #
+    # WHICH findings reach it is decided by the `notify:` list on each rule in
+    # alert_rules.yml, never by a threshold here. That is the point of making
+    # the notifier a sink: one routing policy, one file.
+
+  - name: webhook
+    type: webhook
+    enabled: false
+    # POST one JSON alert per request. Works with Slack/Teams/Discord incoming
+    # webhooks and any HTTP collector.
+    url: "https://example.invalid/hydrapot-alerts"
+    timeout_sec: 5
+    # Sent as-is. Put a token here rather than in the URL when the receiver
+    # supports it -- URLs end up in logs, headers usually do not.
+    headers: {}
+
+  - name: syslog
+    type: syslog
+    enabled: false
+    # For Wazuh / QRadar / Graylog / rsyslog. Distinct from the event-level
+    # forwarder in plugins/export/syslog.yml: that ships raw honeypot events,
+    # this ships correlated alerts. Pointing both at one collector is fine and
+    # is how you get both streams.
+    host: "your-siem-host.example.com"
+    port: 514
+    protocol: udp
+    facility: 13          # log_audit, the usual choice for security events
