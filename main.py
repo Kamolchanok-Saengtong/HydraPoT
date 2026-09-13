@@ -27,17 +27,58 @@ config   = None
 ondevice = None
 cloud = None
 
-# Multi-channel alerting (threat_intel/alerts.yml) — loaded once, lazily. False
+# Multi-channel push notification (threat_intel/alerts.yml) — loaded once,
+# lazily. Distinct from threat_intel/alert_records.py, which owns the alert
+# RECORD lifecycle (new/acknowledged/closed); this one only delivers. False
 # is a sentinel meaning "tried and failed to load, don't retry". Dispatch is
 # gated on there being at least one enabled channel, so this is a zero-cost
 # no-op for anyone who hasn't configured alerts.
 _alert_manager = None
 
+# How often the headless sensor re-runs the analysis and delivers what it
+# raises. Minutes, not seconds: correlation needs a WINDOW of sessions to find
+# anything, so running it per command would burn CPU to discover nothing. The
+# dashboard triggers the same pipeline whenever it renders, so an operator with
+# a browser open sees findings sooner than this.
+ALERT_SWEEP_SEC = 300
+_sweeper_started = False
+
+
+def _start_alert_sweeper(plugins=None):
+    """Periodically run correlation -> detection -> severity -> alerts.
+
+    Daemon thread: a slow Slack POST or an unreachable collector must never
+    block an attacker's session response, and the sweep must not keep the
+    process alive at shutdown. Failures are logged and the loop continues --
+    losing one sweep is recoverable, dying is not.
+    """
+    global _sweeper_started
+    if _sweeper_started:
+        return
+    _sweeper_started = True
+
+    def _loop():
+        import time as _t
+        from threat_intel import alert_records
+        while True:
+            _t.sleep(ALERT_SWEEP_SEC)
+            try:
+                inst = getattr(getattr(config, "honeypot", None),
+                               "instance_name", "default")
+                out = alert_records.sweep(instance=inst, plugins=plugins)
+                if out["new"]:
+                    print(f"[alert] {len(out['new'])} new finding(s) raised")
+            except Exception as e:
+                print(f"[alert] sweep failed: {e}")
+
+    threading.Thread(target=_loop, name="hp-alert-sweep", daemon=True).start()
+
+
 def _get_alert_manager():
     global _alert_manager
     if _alert_manager is None:
         try:
-            from threat_intel.alerting import AlertManager
+            from threat_intel.alert_channels import AlertManager
             _alert_manager = AlertManager()
         except Exception as e:
             print(f"[alert] alerting unavailable: {e}")
@@ -1000,12 +1041,17 @@ def make_command_handler(cowrie: CowrieAgent, src_ip: str = "?", public_ip: str 
         if plugins:
             plugins.export_event(event)
 
-        # real-time alerting — fire on a daemon thread so a slow Slack/webhook
-        # POST never blocks the attacker's session response. Only spawns a
-        # thread when alerts are actually configured (enabled channels present).
-        am = _get_alert_manager()
-        if am and am._enabled_channels():
-            threading.Thread(target=am.alert, args=(dict(event),), daemon=True).start()
+        # NO per-command notification here any more. This used to fire
+        # AlertManager.alert() on every command with FI >= min_fi, which paged
+        # on HydraPoT's ROUTING metric: a loud `rm` of a file the attacker
+        # created themselves (FI 4) woke someone, while a multi-session loader
+        # whose commands were each FI 1 did not.
+        #
+        # Notifications now come from the analysis instead. correlation ->
+        # detection -> severity -> alert_records.raise_alerts(), and the
+        # `channels` sink in alert_rules.yml decides which findings are worth
+        # interrupting a human for. One routing policy, in the same file as
+        # every other routing decision.
 
         return ("", "") if streamed else (output, "")
 
@@ -1685,6 +1731,15 @@ def main():
                   f"commands will be degraded, but the attacker is not disconnected.")
             print("=" * 72)
         return c
+
+    # Headless analysis loop. Started only when at least one notification
+    # channel is configured, so a sensor nobody is watching does not burn CPU
+    # correlating for an audience that does not exist.
+    _am = _get_alert_manager()
+    if _am and _am._enabled_channels():
+        _start_alert_sweeper(plugins)
+        print(f"[HydraPot] alert sweep every {ALERT_SWEEP_SEC}s -> "
+              f"{', '.join(_am._enabled_channels())}")
 
     try:
         start_server(
