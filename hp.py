@@ -144,17 +144,24 @@ def _serve_dashboard(host, port, debug):
         pass
     # Werkzeug logs one line per HTTP request, and Dash fires several per
     # interval tick — so an idle dashboard scrolls the terminal forever with
-    # "GET /_dash-update-component 200". Only surface real problems.
+    # "GET /_dash-update-component 200". Only surface real problems. uvicorn
+    # has the same chattiness at its own "access" logger.
     import logging
     logging.getLogger("werkzeug").setLevel(logging.ERROR)
+    logging.getLogger("uvicorn.access").setLevel(logging.ERROR)
 
-    from dashboard import app as dash_app
-    # threaded=True: Flask's dev server is single-request-at-a-time by
-    # default. The Threat Intel "Generate Intelligence" button runs a real
-    # ~11s regex extraction (build_ioc_snapshot over all sessions) — without
-    # threading, THAT ONE request blocks the entire dashboard (every tab,
-    # every page, the auto-refresh interval) until it finishes.
-    dash_app.run(host=host, port=port, debug=debug, threaded=True)
+    # FastAPI (api_server.py) is now what actually listens on the socket --
+    # Dash/Flask is mounted underneath it, completely unchanged (still the
+    # same dash_app.server, still every existing callback as-is). This is
+    # what gives the dashboard real /api/* REST endpoints and a real
+    # /ws/events WebSocket alongside the same Dash UI.
+    #
+    # uvicorn's own thread pool is what a2wsgi dispatches the mounted Flask
+    # app onto, same role threaded=True played for Flask's own dev server
+    # before this change (the Threat Intel "Generate Intelligence" button's
+    # ~11s regex extraction must not block every other request).
+    import uvicorn
+    uvicorn.run("api_server:api", host=host, port=port, reload=debug)
 
 
 def _is_loopback(host: str) -> bool:
