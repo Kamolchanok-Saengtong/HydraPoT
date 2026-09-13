@@ -104,6 +104,51 @@ CREATE INDEX IF NOT EXISTS ix_impactful_ts      ON impactful(timestamp);
 -- credentials in the same second, and those really are distinct events. So
 -- dedupe for the one-off JSON import is done by the importer, not by a UNIQUE
 -- index that would silently discard real repeats at runtime.
+
+-- Alerts: a detection an analyst is expected to ACT on, with state that
+-- outlives a page render. Everything upstream is recomputed from scratch on
+-- every window load; this table is the one place the pipeline remembers
+-- something a human did.
+--
+-- alert_key is the natural key and must stay stable across recomputation, or
+-- acknowledging an alert would be undone by the next refresh. It is
+-- rule_id|link_type|link_value, and every part is derived rather than
+-- generated: link_value is the sha1 of a command sequence, or "type:value" for
+-- an indicator, or the source address -- the same relationship produces the
+-- same key tomorrow. An AUTOINCREMENT id would NOT be stable, which is why the
+-- unique index is on (instance, alert_key) and writes are upserts.
+--
+-- The counted fields are a SNAPSHOT for triage, refreshed on each upsert. They
+-- are not the source of truth; correlation is, and re-deriving from it is
+-- always correct. Analyst state (state/acknowledged_*/note) is the opposite:
+-- it exists nowhere else and is never overwritten by a refresh.
+CREATE TABLE IF NOT EXISTS alerts (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    instance         TEXT NOT NULL DEFAULT 'default',
+    alert_key        TEXT NOT NULL,
+    alert_rule       TEXT,      -- which alert rule promoted it
+    detection_rule   TEXT,      -- the detection rule that surfaced it
+    link_type        TEXT,      -- the correlation strategy
+    link_value       TEXT,
+    title            TEXT,
+    severity         TEXT,      -- NULL = unrated, never coerced to a level
+    member_count     INTEGER,
+    distinct_sources INTEGER,
+    first_seen       TEXT,      -- of the ACTIVITY, from the relationship
+    last_seen        TEXT,
+    created_at       TEXT,      -- of the ALERT RECORD; a different question
+    updated_at       TEXT,
+    state            TEXT NOT NULL DEFAULT 'new',   -- new|acknowledged|closed
+    acknowledged_by  TEXT,
+    acknowledged_at  TEXT,
+    closed_at        TEXT,
+    note             TEXT,
+    routed_at        TEXT       -- last successful delivery, NULL = never sent
+);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_alerts_natural ON alerts(instance, alert_key);
+CREATE INDEX IF NOT EXISTS ix_alerts_state    ON alerts(state);
+CREATE INDEX IF NOT EXISTS ix_alerts_severity ON alerts(severity);
+CREATE INDEX IF NOT EXISTS ix_alerts_updated  ON alerts(updated_at);
 """
 
 
@@ -150,12 +195,19 @@ def insert_command(entry: dict, path: str = DB_PATH):
         )
 
 
-def query_all(path: str = DB_PATH) -> list:
-    """Every command, oldest first. Used for the full-dataset dashboard views."""
+def query_all(path: str = DB_PATH, columns: tuple = None) -> list:
+    """Every command, oldest first. Used for full-dataset scans.
+
+    `columns` lets a caller that doesn't need `response` (51.8 MB of a 92 MB
+    table, see SUMMARY_COLUMNS below) skip it — same reasoning, applied to
+    callers that need SELECT * elsewhere, e.g. aggregator.py's per-session /
+    per-time-window scans, which read `technique_id`/`tactic` too so
+    SUMMARY_COLUMNS alone isn't enough for them."""
+    cols = ",".join(columns) if columns else "*"
     try:
         with connect(path) as conn:
             return [dict(r) for r in conn.execute(
-                "SELECT * FROM sessions ORDER BY timestamp")]
+                f"SELECT {cols} FROM sessions ORDER BY timestamp")]
     except sqlite3.Error:
         return []
 
@@ -190,6 +242,83 @@ def query_all_df(path: str = DB_PATH, include_response: bool = False):
         return pd.DataFrame(rows, columns=list(cols))
     except Exception:
         return pd.DataFrame()
+
+
+def query_range(start: str, end: str, instance: str = None,
+                columns: tuple = None, path: str = DB_PATH) -> list:
+    """Commands with `start` <= timestamp <= `end`, oldest first.
+
+    `start`/`end` are "YYYY-MM-DD HH:MM:SS" strings — the same format the
+    writer stores, so this is a plain indexed string comparison (see
+    ix_sessions_timestamp / ix_sessions_inst_ts) rather than a per-row date
+    parse. Windowed views must use this instead of filtering query_all() in
+    Python: a 15-minute window otherwise pays the cost of loading every row
+    in the database to throw almost all of them away.
+
+    `columns` behaves as in query_all()."""
+    cols = ",".join(columns) if columns else "*"
+    try:
+        with connect(path) as conn:
+            if instance and instance != "all":
+                cur = conn.execute(
+                    f"SELECT {cols} FROM sessions "
+                    "WHERE timestamp >= ? AND timestamp <= ? AND instance = ? "
+                    "ORDER BY timestamp", (start, end, instance))
+            else:
+                cur = conn.execute(
+                    f"SELECT {cols} FROM sessions "
+                    "WHERE timestamp >= ? AND timestamp <= ? "
+                    "ORDER BY timestamp", (start, end))
+            return [dict(r) for r in cur]
+    except sqlite3.Error:
+        return []
+
+
+def query_auth_range(start: str, end: str, instance: str = None,
+                     path: str = DB_PATH) -> list:
+    """Auth events within a time range, oldest first — the auth-table twin of
+    query_range(). Separate from query_auth() so its existing callers keep
+    their current signature."""
+    try:
+        with connect(path) as conn:
+            if instance and instance != "all":
+                cur = conn.execute(
+                    "SELECT * FROM auth "
+                    "WHERE timestamp >= ? AND timestamp <= ? AND instance = ? "
+                    "ORDER BY timestamp", (start, end, instance))
+            else:
+                cur = conn.execute(
+                    "SELECT * FROM auth WHERE timestamp >= ? AND timestamp <= ? "
+                    "ORDER BY timestamp", (start, end))
+            return [dict(r) for r in cur]
+    except sqlite3.Error:
+        return []
+
+
+def time_bounds(instance: str = None, path: str = DB_PATH) -> tuple:
+    """(earliest, latest) timestamp across sessions AND auth, or (None, None).
+
+    Used to default an overview's reference time to the newest event that
+    actually exists rather than to `now` — this database spans 2019 to today,
+    so anchoring presets on the wall clock renders an empty page on any
+    historical capture."""
+    lo = hi = None
+    try:
+        with connect(path) as conn:
+            for table in ("sessions", "auth"):
+                q = f"SELECT MIN(timestamp), MAX(timestamp) FROM {table}"
+                args = ()
+                if instance and instance != "all":
+                    q += " WHERE instance = ?"
+                    args = (instance,)
+                a, b = conn.execute(q, args).fetchone()
+                if a and (lo is None or a < lo):
+                    lo = a
+                if b and (hi is None or b > hi):
+                    hi = b
+    except sqlite3.Error:
+        return (None, None)
+    return (lo, hi)
 
 
 def query_session(session_id: str, instance: str = None, path: str = DB_PATH) -> list:
@@ -353,8 +482,8 @@ def count_impactful(session_id: str = None, path: str = DB_PATH) -> int:
 def migrate_impactful_from_json(imp_glob: str = None, path: str = DB_PATH) -> dict:
     """One-off import of the production impactful logs.
 
-    Deliberately scoped to data/logs/impactful* — NSC keeps its own JSON logs
-    (NSC/results/_direct_fi.json and friends) and must not be touched."""
+    Deliberately scoped to data/logs/impactful* — the experiment sandbox keeps its own JSON logs
+    (experiment_data/results/_direct_fi.json and friends) and must not be touched."""
     if imp_glob is None:
         imp_glob = os.path.join(_HERE, "data", "logs", "impactful*", "*.json")
 
@@ -408,7 +537,7 @@ MAX_BROWSE_ROWS = 500      # hard cap on rows returned to the browser at once
 # fail.
 #
 # DISABLED BY DEFAULT, and deliberately so. This database holds more than live
-# traffic: the NSC experiment runs and the CyberLab capture live in the same
+# traffic: the experiment-sandbox runs and the CyberLab capture live in the same
 # tables. CyberLab is from 2019, so a naive "delete anything older than 90
 # days" would destroy the only real attacker corpus on the box before it
 # touched a single row of noise. Retention must be switched on knowingly, and
@@ -713,6 +842,166 @@ def stats(path: str = DB_PATH) -> dict:
             "SELECT instance, COUNT(*) n FROM sessions GROUP BY instance ORDER BY n DESC")}
         sess = conn.execute("SELECT COUNT(DISTINCT session_id) FROM sessions").fetchone()[0]
     return {"rows": total, "sessions": sess, "per_instance": per}
+
+
+# ── alerts ───────────────────────────────────────────────────────────────────
+# The alert record is a JOIN of two things with different lifetimes:
+#   * facts, recomputed from correlation every refresh
+#   * analyst state, which exists only here and must survive every refresh
+# Every function below exists to keep that line from being crossed.
+
+ALERT_STATES = ("new", "acknowledged", "closed")
+
+
+def upsert_alert(alert: dict, path: str = DB_PATH) -> str:
+    """Insert a new alert, or refresh the FACTS of one already known.
+
+    -> "inserted" | "updated"
+
+    The ON CONFLICT clause deliberately updates only the counted/snapshot
+    columns. state, acknowledged_by, acknowledged_at, closed_at, note and
+    routed_at are NOT in the update list: re-running the pipeline must never
+    un-acknowledge an alert a human has already worked, and a re-render happens
+    every few minutes. That omission is the whole point of this function.
+    """
+    now = _now_iso()
+    inst = alert.get("instance") or "default"
+    with connect(path) as conn:
+        # Asked BEFORE the write, not inferred after it. Comparing created_at
+        # to "now" looked equivalent and was wrong: timestamps here have
+        # one-second resolution, so two upserts in the same second made an
+        # update indistinguishable from an insert -- and routing, which fires
+        # on new alerts, would have re-sent an alert on every refresh.
+        existed = conn.execute(
+            "SELECT 1 FROM alerts WHERE instance=? AND alert_key=?",
+            (inst, alert["alert_key"])).fetchone() is not None
+        conn.execute(
+            """
+            INSERT INTO alerts (instance, alert_key, alert_rule, detection_rule,
+                                link_type, link_value, title, severity,
+                                member_count, distinct_sources, first_seen,
+                                last_seen, created_at, updated_at, state)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,'new')
+            ON CONFLICT(instance, alert_key) DO UPDATE SET
+                alert_rule       = excluded.alert_rule,
+                detection_rule   = excluded.detection_rule,
+                title            = excluded.title,
+                severity         = excluded.severity,
+                member_count     = excluded.member_count,
+                distinct_sources = excluded.distinct_sources,
+                -- COALESCE guards: SQLite's scalar MIN/MAX return NULL if
+                -- ANY argument is NULL, so min(NULL, '2019-08-05') is NULL --
+                -- a refresh would erase a timestamp it was meant to widen.
+                first_seen       = MIN(COALESCE(alerts.first_seen, excluded.first_seen),
+                                       COALESCE(excluded.first_seen, alerts.first_seen)),
+                last_seen        = MAX(COALESCE(alerts.last_seen, excluded.last_seen),
+                                       COALESCE(excluded.last_seen, alerts.last_seen)),
+                updated_at       = excluded.updated_at
+            """,
+            (inst, alert["alert_key"], alert.get("alert_rule"),
+             alert.get("detection_rule"), alert.get("link_type"),
+             alert.get("link_value"), alert.get("title"), alert.get("severity"),
+             alert.get("member_count"), alert.get("distinct_sources"),
+             alert.get("first_seen"), alert.get("last_seen"), now, now))
+    return "updated" if existed else "inserted"
+
+
+def set_alert_state(alert_key: str, state: str, instance: str = "default",
+                    by: str = None, note: str = None,
+                    path: str = DB_PATH) -> bool:
+    """Move an alert through its lifecycle. -> True if a row changed.
+
+    Timestamps are written for the transition that actually happened rather
+    than blanket-stamped: acknowledging sets acknowledged_*, closing sets
+    closed_at, and reopening (back to "new") CLEARS both, so a reopened alert
+    does not carry a stale "closed 3 days ago" beside an open state.
+    """
+    if state not in ALERT_STATES:
+        raise ValueError(f"state must be one of {list(ALERT_STATES)}, got {state!r}")
+    now = _now_iso()
+    sets = ["state = ?", "updated_at = ?"]
+    args = [state, now]
+    if state == "acknowledged":
+        sets += ["acknowledged_by = ?", "acknowledged_at = ?"]
+        args += [by, now]
+    elif state == "closed":
+        sets.append("closed_at = ?")
+        args.append(now)
+    else:                       # reopened
+        sets += ["acknowledged_by = NULL", "acknowledged_at = NULL",
+                 "closed_at = NULL"]
+    if note is not None:
+        sets.append("note = ?")
+        args.append(note)
+    args += [instance, alert_key]
+    with connect(path) as conn:
+        cur = conn.execute(
+            f"UPDATE alerts SET {', '.join(sets)} "
+            f"WHERE instance = ? AND alert_key = ?", args)
+        return cur.rowcount > 0
+
+
+def mark_alert_routed(alert_key: str, instance: str = "default",
+                      path: str = DB_PATH) -> bool:
+    """Stamp a successful delivery. Only ever set AFTER a sink reports success,
+    so a failed send leaves routed_at NULL and the alert is retried rather than
+    silently dropped."""
+    with connect(path) as conn:
+        cur = conn.execute(
+            "UPDATE alerts SET routed_at = ? WHERE instance = ? AND alert_key = ?",
+            (_now_iso(), instance, alert_key))
+        return cur.rowcount > 0
+
+
+def query_alerts(state=None, severity=None, instance=None, unrouted_only=False,
+                 limit: int = 500, path: str = DB_PATH) -> list:
+    """Alerts, newest activity first. Every filter is optional."""
+    where, args = [], []
+    if state:
+        where.append("state = ?")
+        args.append(state)
+    if severity:
+        where.append("severity = ?")
+        args.append(severity)
+    if instance and instance != "all":
+        where.append("instance = ?")
+        args.append(instance)
+    if unrouted_only:
+        where.append("routed_at IS NULL")
+    sql = "SELECT * FROM alerts"
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    # COALESCE so an alert whose activity has no timestamp still sorts by when
+    # the record was made, instead of sinking below everything.
+    sql += " ORDER BY COALESCE(last_seen, updated_at) DESC LIMIT ?"
+    args.append(limit)
+    with connect(path) as conn:
+        return [dict(r) for r in conn.execute(sql, args)]
+
+
+def get_alert(alert_key: str, instance: str = "default", path: str = DB_PATH):
+    with connect(path) as conn:
+        row = conn.execute("SELECT * FROM alerts WHERE instance=? AND alert_key=?",
+                           (instance, alert_key)).fetchone()
+        return dict(row) if row else None
+
+
+def alert_counts(instance=None, path: str = DB_PATH) -> dict:
+    """{state: n} for the UI's triage filters, counted in SQL rather than by
+    pulling every row back and len()-ing it in Python."""
+    sql = "SELECT state, COUNT(*) n FROM alerts"
+    args = []
+    if instance and instance != "all":
+        sql += " WHERE instance = ?"
+        args.append(instance)
+    sql += " GROUP BY state"
+    with connect(path) as conn:
+        return {r["state"]: r["n"] for r in conn.execute(sql, args)}
+
+
+def _now_iso() -> str:
+    from datetime import datetime
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
 if __name__ == "__main__":
