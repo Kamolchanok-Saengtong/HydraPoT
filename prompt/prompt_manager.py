@@ -63,18 +63,38 @@ def _load_template(name: str) -> str:
 class PromptManager:
     def __init__(self, fi_manager, system_state: dict,
              hostname: str = "svr04", os_name: str = "Debian GNU/Linux",
-             builtins=None, sync_state: bool = True):
+             builtins=None, sync_state: bool = True,
+             kernel: str = "", arch: str = ""):
         self.fi_manager   = fi_manager
         self.system_state = system_state
         self.hostname     = hostname
         self.os_name      = os_name
+        # Kernel/arch used to be literal text inside system_setting.txt, so the
+        # prompt claimed a kernel that had nothing to do with config.yaml or
+        # with what `uname` answers. Three places describing one machine.
+        self.kernel       = kernel
+        self.arch         = arch
 
         # load templates once at init
         self._base_prompt_tpl    = _load_template("base_prompt.txt")
         self._system_setting_tpl = _load_template("system_setting.txt")
         self._user_prompt_tpl    = _load_template("user_prompt.txt")
-        self.builtins     = builtins or set()  
+        self.builtins     = builtins or set()
         self.sync_state   = sync_state
+
+    def _render_users(self) -> str:
+        """The account list for the prompt, from SYSTEM_STATE.
+
+        The template previously carried a hand-written list, then a
+        `{rendered_from_config.system_state.users}` placeholder that nothing
+        supplied — str.format() raised KeyError and every prompt build died
+        with "bash: error: 'rendered_from_config'". Rendering it here is what
+        that placeholder was reaching for.
+        """
+        users = (self.system_state or {}).get("users") or {}
+        if not users:
+            return "root (uid=0)"
+        return ", ".join(f"{name} (uid={u.get('uid', 0)})" for name, u in users.items())
 
     def build_prompt(self, cmd: str) -> tuple[str, str]:
         """
@@ -89,6 +109,9 @@ class PromptManager:
         system_setting = self._system_setting_tpl.format(
             hostname = self.hostname,
             os_name  = self.os_name,
+            kernel   = self.kernel,
+            arch     = self.arch,
+            users    = self._render_users(),
         )
         system_prompt = f"{base_prompt}\n\n{system_setting}"
         user_prompt   = self._build_user_prompt(cmd)
@@ -105,6 +128,9 @@ class PromptManager:
         system_setting = self._system_setting_tpl.format(
             hostname = self.hostname,
             os_name  = self.os_name,
+            kernel   = self.kernel,
+            arch     = self.arch,
+            users    = self._render_users(),
         )
         obfuscation_note = (
             "\nIMPORTANT: The attacker may use obfuscated commands (base64, hex, "

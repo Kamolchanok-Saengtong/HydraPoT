@@ -149,7 +149,7 @@ class FILogManager:
         """store: where impactful events are recorded.
 
           "json"   — one file per session (the original behaviour). This is the
-                     DEFAULT on purpose: the NSC experiment harness builds its
+                     DEFAULT on purpose: the experiment harness builds its
                      own FILogManager and must keep writing its own JSON, so
                      production opting in explicitly is what keeps the two
                      apart.
@@ -220,7 +220,7 @@ class FILogManager:
                 print(f"[FILogManager] SQLite write error: {e}")
             return
 
-        # JSON mode (NSC / default). Kept exactly as it was: read the array,
+        # JSON mode (experiment sandbox / default). Kept exactly as it was: read the array,
         # append, write it back. That is O(n^2) over a session — one session
         # here rewrote ~118 MB across 844 events — which is precisely why
         # production moved to "sqlite".
