@@ -15,6 +15,61 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 CONFIG_PATH = "config.yaml"
+_HERE = os.path.dirname(os.path.abspath(__file__))
+ENV_PATH = os.path.join(_HERE, ".env")
+
+
+def load_dotenv(path: str = None, override: bool = False) -> dict:
+    """Read KEY=VALUE lines from .env into the environment.
+
+    Hand-rolled rather than adding python-dotenv: this is fifteen lines, the
+    dependency is not installed, and every other secret in HydraPoT already
+    resolves through os.environ (see alert_channels.py, agent_manager). One
+    convention, no new package.
+
+    A REAL environment variable always wins. `export PSU_API_KEY=...` in a
+    shell, a systemd unit, or a container secret must not be silently replaced
+    by a stale line in a checked-out file -- that is the failure mode where you
+    rotate a key and nothing changes. Pass override=True only if you mean it.
+
+    Format: KEY=VALUE per line. `#` starts a comment, blank lines are skipped,
+    and surrounding quotes are stripped so both KEY=value and KEY="value" work.
+    Returns what it actually set, so a caller can report it without echoing
+    secrets.
+    """
+    path = path or ENV_PATH
+    applied = {}
+    try:
+        with open(path, encoding="utf-8") as fh:
+            lines = fh.readlines()
+    except FileNotFoundError:
+        return applied              # no .env is normal, not an error
+    except Exception as e:
+        print(f"[config] cannot read {path}: {e}")
+        return applied
+
+    for raw in lines:
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        # `export FOO=bar` so the same file can be sourced by a shell
+        if key.startswith("export "):
+            key = key[len("export "):].strip()
+        value = value.strip().strip('"').strip("'")
+        if not key:
+            continue
+        if key in os.environ and not override:
+            continue                # a real env var wins
+        os.environ[key] = value
+        applied[key] = value
+    return applied
+
+
+# Loaded at import so every consumer -- CloudAgent, the analyst, the CLI --
+# sees the same environment without each one remembering to call it.
+load_dotenv()
 
 
 # ─── Typed config sections ────────────────────────────────────────────────────
@@ -90,6 +145,31 @@ class CloudCfg:
     max_tokens: int = 512
 
 @dataclass
+class AIAssistantCfg:
+    """The AI Security Analyst.
+
+    Deliberately NOT under `agents`. Those are honeypot agents: they answer an
+    attacker's commands and impersonate a shell. This one reads HydraPoT's own
+    findings through the REST API and answers YOU. Different audience,
+    different trust boundary, usually a different (stronger) model -- and you
+    will often want one enabled while the other is off, which a shared block
+    makes impossible.
+    """
+    enabled: bool = False
+    provider: str = "openai"
+    model: str = "openai/gpt-5.6-luna"
+    api_key_env: str = "AI_API_KEY"     # the NAME; the value stays in the env
+    base_url: Optional[str] = "https://ai.psu.blue/v1"
+    temperature: float = 0.2            # analysis, not creative writing
+    max_tokens: int = 4096
+    # The assistant reaches HydraPoT only through the read-only v1 API -- never
+    # the database. That is what keeps its answers traceable to evidence
+    # instead of to a query it wrote itself.
+    api_base: str = "http://127.0.0.1:8050/api/v1"
+    max_tool_calls: int = 12            # stops a runaway tool loop
+
+
+@dataclass
 class AgentsCfg:
     cowrie: CowrieCfg = field(default_factory=CowrieCfg)
     on_device: OnDeviceCfg = field(default_factory=OnDeviceCfg)
@@ -128,6 +208,8 @@ class LoggingCfg:
 class Config:
     honeypot: HoneypotCfg = field(default_factory=HoneypotCfg)
     agents: AgentsCfg = field(default_factory=AgentsCfg)
+    # Separate from `agents` on purpose -- see AIAssistantCfg.
+    ai_assistant: AIAssistantCfg = field(default_factory=AIAssistantCfg)
     routing: RoutingCfg = field(default_factory=RoutingCfg)
     logging: LoggingCfg = field(default_factory=LoggingCfg)
     static_commands: list = field(default_factory=lambda: [...])
@@ -139,6 +221,17 @@ class Config:
     cost_model: dict = field(default_factory=lambda: {
         "gpu_avg_watt": 112.89,
         "cloud_usd_per_cmd": 0.0301 / 67,
+    })
+    # See config.yaml's aggregation section for what each key means.
+    aggregation: dict = field(default_factory=lambda: {
+        "window_minutes": 5,
+        "session_inactivity_minutes": 15,
+        "timeline_target_buckets": 48,
+        "categories": {
+            "privilege_escalation": {"tactics": ["Privilege Escalation"]},
+            "download": {"technique_ids": ["T1105"]},
+            "file_operations": {"technique_ids": ["T1083", "T1070.004", "T1005"]},
+        },
     })
     power_tariff: dict = field(default_factory=lambda: {
         "tiers": [
@@ -298,6 +391,7 @@ def load_config(path: str = CONFIG_PATH) -> Config:
     system_state  = raw.get("system_state")
     power_tariff  = raw.get("power_tariff")
     cost_model    = raw.get("cost_model")
+    aggregation   = raw.get("aggregation")
 
     # handle the field defaults properly
     if static_cmds is None:
@@ -308,6 +402,9 @@ def load_config(path: str = CONFIG_PATH) -> Config:
     # values must not silently drop the other back to nothing.
     _default_cost = Config().cost_model
     cost_model = {**_default_cost, **(cost_model or {})}
+
+    _default_agg = Config().aggregation
+    aggregation = {**_default_agg, **(aggregation or {})}
 
     # system_state: merge PER-KEY with the defaults rather than replacing the
     # whole dict. Previously any config.yaml that defined system_state at all
@@ -324,6 +421,36 @@ def load_config(path: str = CONFIG_PATH) -> Config:
         merged.update(system_state)
         system_state = merged
 
+    # ── AI Security Analyst ──────────────────────────────────────────────
+    _ai = raw.get("ai_assistant") or {}
+    ai_assistant = AIAssistantCfg(**{k: v for k, v in _ai.items()
+                                     if k in AIAssistantCfg.__dataclass_fields__})
+    if os.environ.get("AI_BASE_URL"):
+        ai_assistant.base_url = os.environ["AI_BASE_URL"]
+    if os.environ.get("AI_MODEL"):
+        ai_assistant.model = os.environ["AI_MODEL"]
+    # Enabled by the KEY BEING PRESENT rather than by a separate flag: a
+    # deployment with no key cannot run the assistant, and making someone set
+    # two things to turn one thing on is how features end up mysteriously off.
+    if os.environ.get(ai_assistant.api_key_env):
+        ai_assistant.enabled = True
+
+    # Environment overrides for the LLM endpoint. config.yaml is the default;
+    # .env / a real env var is how you point at a different endpoint or model
+    # WITHOUT editing a tracked file -- which matters because config.yaml is
+    # committed and an endpoint can be deployment-specific.
+    #
+    # The api KEY is never read here: config carries only the NAME of the
+    # variable (api_key_env), and the value is resolved at the point of use, so
+    # a secret never lands in a Config object that might get logged or dumped.
+    # CLOUD_AGENT_*, not AI_*: AI_* now belongs to the analyst, and one
+    # variable quietly reconfiguring the wrong model would be very hard to
+    # notice -- the honeypot would still answer, just as the wrong thing.
+    if os.environ.get("CLOUD_AGENT_BASE_URL"):
+        agents.cloud.base_url = os.environ["CLOUD_AGENT_BASE_URL"]
+    if os.environ.get("CLOUD_AGENT_MODEL"):
+        agents.cloud.model = os.environ["CLOUD_AGENT_MODEL"]
+
     return Config(
         honeypot=honeypot,
         agents=agents,
@@ -333,6 +460,8 @@ def load_config(path: str = CONFIG_PATH) -> Config:
         system_state=system_state,
         power_tariff=power_tariff,
         cost_model=cost_model,
+        aggregation=aggregation,
+        ai_assistant=ai_assistant,
     )
 
 
