@@ -11,6 +11,7 @@ Every number below comes from load_all()/load_auth_log(). Where the reference
 showed a metric this system cannot source, the panel keeps its place and
 states what is unavailable rather than inventing a value.
 """
+import math
 from datetime import datetime, timedelta
 
 import pandas as pd
@@ -280,7 +281,7 @@ def _hydrapot_intel(df, sav):
                             "gap": "9px", "marginTop": "12px"}, children=[
         html.Div(className="hp-stat", children=[
             html.Div("CLOUD CALLS AVOIDED", className="hp-stat-l"),
-            html.Div(f"{sav['cloud_avoided_pct']:.1f}%", className="hp-stat-v",
+            html.Div(_pct(sav['cloud_avoided_pct']), className="hp-stat-v",
                      style={"color": SUCCESS})]),
         html.Div(className="hp-stat", children=[
             html.Div("EST. CLOUD COST SAVED", className="hp-stat-l"),
@@ -440,6 +441,29 @@ def _origin_map(df, big=False):
 # Anything whose detail already has a home (MITRE page, Threat Intel page,
 # Live page) is summarised here and linked to, never duplicated.
 # ══════════════════════════════════════════════════════════════════════════
+
+def _pct(value) -> str:
+    """Percentage that never rounds UP into a claim it did not earn.
+
+    `f"{99.9641:.1f}%"` renders "100.0%", which told the operator that 100% of
+    cloud calls were avoided when one was not. A dashboard that rounds a near
+    miss into a perfect score is worse than one that shows an awkward number:
+    the awkward number is true, and the perfect one quietly is not.
+
+    So it FLOORS to one decimal and only ever prints 100% when the value is
+    actually 100. Below 0.1% it says "<0.1%" for the same reason -- "0.0%" and
+    "nothing happened" are different claims.
+    """
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return "—"
+    if v >= 100:
+        return "100%"
+    if 0 < v < 0.1:
+        return "<0.1%"
+    return f"{math.floor(v * 10) / 10:.1f}%"
+
 
 def _fmt_dur(s):
     if s is None:
@@ -767,12 +791,14 @@ def build_summary_page(sensor_filter="all", rng="ALL", criterion="techniques"):
                     html.Div("Cloud Cost Saved (est.)", className="kpi-mini-l"),
                     html.Div(f"${sav['cloud_saved_usd']:.2f}", className="kpi-mini-v",
                              style={"color": SUCCESS}),
-                    html.Div(f"{sav['cloud_avoided_pct']:.1f}% avoided", className="kpi-s")]),
+                    html.Div(f"{_pct(sav['cloud_avoided_pct'])} avoided",
+                             className="kpi-s")]),
                 html.Div(className="kpi-mini energy", children=[
                     html.Div("Energy Cost Saved (est.)", className="kpi-mini-l"),
                     html.Div(f"{sav['energy_saved_thb']:.2f} ฿", className="kpi-mini-v",
                              style={"color": Y_700}),
-                    html.Div(f"{sav['energy_avoided_pct']:.1f}% avoided", className="kpi-s")]),
+                    html.Div(f"{_pct(sav['energy_avoided_pct'])} avoided",
+                             className="kpi-s")]),
             ]),
         ]),
     ])
