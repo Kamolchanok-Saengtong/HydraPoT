@@ -1,0 +1,45 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# HydraPoT SIEM Export — Syslog (JSON or CEF)
+# ═══════════════════════════════════════════════════════════════════════════════
+# Forward honeypot events via syslog to any SIEM that accepts syslog input
+# (Wazuh, QRadar, ArcSight, Graylog, rsyslog, etc.)
+#
+# Supports:
+#   - UDP or TCP transport
+#   - JSON or CEF (Common Event Format) output
+#
+# Setup:
+#   1. Set enabled: true below
+#   2. Point host/port to your syslog collector
+#   3. Restart HydraPoT
+
+name: Syslog/CEF Export
+enabled: false
+type: syslog
+
+connection:
+  host: "your-siem-host.example.com"
+  port: 514
+  protocol: "udp"
+  format: "cef"
+
+settings:
+  batch_size: 5
+  flush_interval_sec: 15
+
+filters:
+  # NO min_fi HERE, DELIBERATELY.
+  #
+  # FI is HydraPoT's ROUTING metric — it decides which agent answers a command,
+  # not how dangerous that command is. A loud `rm` of a file the attacker
+  # created themselves is FI 4 and harmless; a quiet credential read is FI 1.
+  # Setting min_fi on a threat-intelligence export would therefore drop the
+  # quiet, dangerous events and keep the loud, harmless ones — FI deciding what
+  # a SIEM is allowed to see, which is the same mistake as FI deciding
+  # severity, just one layer further out.
+  #
+  # The exporter still SUPPORTS min_fi (threat_intel/exporters.py) and it
+  # defaults to 0, so leaving it unset means "export everything". If you need
+  # to cut volume, cut it on something that is actually about the event —
+  # agents, or include_auth below — never on FI.
+  include_auth: true

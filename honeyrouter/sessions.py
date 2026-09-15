@@ -1,7 +1,25 @@
 """
 honeyrouter/sessions.py — loads real episodes for the RL HoneyRouter to
-train on, from the fidelity_full109_final Part C execution records
-(cowrie.jsonl / on_device.jsonl / cloud.jsonl).
+train on, from the Part C execution records.
+
+THE THREE ARMS DO NOT ALL LIVE IN ONE DIRECTORY. cowrie and on_device come
+from fidelity_full109_final; cloud comes from fidelity_cloud_new_20260728_131019,
+a later re-run. fidelity_full109_final also contains a cloud.jsonl, and it is
+the WRONG one: the judge scored the re-run, not that copy.
+
+Verified by matching responses (session_id, position_in_session) against each
+judge file:
+
+    cowrie      full109_final/cowrie.jsonl          judge match 100%
+    on_device   full109_final/on_device.jsonl       judge match 100%
+    cloud       cloud_new_.../cloud.jsonl           judge match 100%
+    cloud       full109_final/cloud.jsonl           judge match  64%   <- wrong file
+
+That last line is why the paths are explicit here rather than derived from one
+base directory. Pairing one execution's latency and cost with a DIFFERENT
+execution's fidelity score produces a row that never happened -- and the two
+cloud runs differ materially (11346s/$0.655 vs 9934s/$0.778), so the mistake
+is not cosmetic.
 
 Verified lockstep across all three files: same 2179 rows, same session_ids,
 same (session_id, position_in_session, cmd) order in every file -- so per
@@ -22,11 +40,44 @@ import json
 import os
 import random
 
-BASE_DIR = os.path.join(
+_RESULTS = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..",
-    "experiment_data", "PartC", "results", "fidelity_full109_final")
+    "experiment_data", "PartC", "results")
+
+# Kept for callers that want the judge/honeyrouter files, which all live here.
+BASE_DIR = os.path.join(_RESULTS, "fidelity_full109_final")
 
 AGENTS = ("cowrie", "on_device", "cloud")
+
+# Execution record per arm. Explicit paths, NOT f"{agent}.jsonl" under one
+# directory -- see the module docstring for why the cloud arm is elsewhere.
+ARM_FILES = {
+    "cowrie": os.path.join(BASE_DIR, "cowrie.jsonl"),
+    "on_device": os.path.join(BASE_DIR, "on_device.jsonl"),
+    "cloud": os.path.join(_RESULTS, "fidelity_cloud_new_20260728_131019",
+                          "cloud.jsonl"),
+}
+
+# THE RULE-BASED ROUTER WAS ALSO RECORDED, TWICE, AND THE TWO RUNS ARE NOT THE
+# SAME ROUTER:
+#
+#   full109_final/honeyrouter.jsonl       2026-07-14  cow 79.2  on 17.7  clo  3.1
+#   honeyrouter_replay_latest/hr.jsonl    2026-07-28  cow 68.8  on  7.0  clo 24.1
+#
+# The 07-28 run is the baseline, because it is the one that PAIRS WITH THE
+# CLOUD ARM ABOVE -- same day, and its cloud rows are lookups of that exact
+# file: cloud token totals match to the token (3,198,344). Using the 07-14
+# decisions against the 07-28 cloud arm is the same file-pairing mistake the
+# docstring above warns about, one layer up.
+ROUTER_FILE = os.path.join(_RESULTS, "honeyrouter_replay_latest",
+                           "honeyrouter.jsonl")
+
+# ...but the 07-28 run is a lookup replay and records NO timing at all
+# (inference_ms is 0 on every one of its 2179 rows), so the only measured
+# end-to-end latency for a rule-based router comes from the 07-14 run. It is
+# reported as what it is -- a different run, with a different routing mix --
+# and never summed into the 07-28 row.
+ROUTER_MEASURED_FILE = os.path.join(BASE_DIR, "honeyrouter.jsonl")
 
 # One judge run per agent (different judge model per arm -- whatever was
 # actually used to score that arm's real responses, see results dir).
@@ -55,7 +106,7 @@ def load_sessions(base_dir: str = BASE_DIR) -> dict:
     ordered by position_in_session within each session."""
     arms = {}
     for agent in AGENTS:
-        with open(os.path.join(base_dir, f"{agent}.jsonl"), encoding="utf-8") as f:
+        with open(ARM_FILES[agent], encoding="utf-8") as f:
             arms[agent] = [json.loads(line) for line in f]
     judge_maps = _load_judge_scores(base_dir)
 
@@ -74,6 +125,13 @@ def load_sessions(base_dir: str = BASE_DIR) -> dict:
                     "latency_s": arms[agent][i]["inference_ms"] / 1000.0,
                     "cost_usd": arms[agent][i]["cost"] or 0.0,
                     "judge_score": judge_maps[agent].get((sid, pos)) or 0.0,
+                    # Cowrie is not a model and records no tokens -- 0, not
+                    # missing. on_device burns real tokens but is never billed;
+                    # only cloud tokens cost money, which is why the two are
+                    # reported separately downstream.
+                    "prompt_tokens": arms[agent][i].get("prompt_tokens") or 0,
+                    "completion_tokens": arms[agent][i].get("completion_tokens") or 0,
+                    "total_tokens": arms[agent][i].get("total_tokens") or 0,
                 }
                 for agent in AGENTS
             },
