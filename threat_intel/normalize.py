@@ -2,7 +2,8 @@
 threat_intel/normalize.py — ONE canonical security-event representation.
 
 HydraPoT's interoperability layer. Before this, normalization happened in
-exactly one place -- SyslogExporter._to_cef() -- so Splunk and Elasticsearch
+exactly one place -- SyslogExporter._to_cef() (now threat_intel/exporters.py)
+-- so Splunk and Elasticsearch
 received the raw internal dict and every new exporter would have invented its
 own mapping. Now there is a single canonical form and exporters translate FROM
 it.
@@ -55,6 +56,12 @@ from datetime import datetime
 # renumbered when Security Finding was deprecated. Bump this only alongside a
 # re-read of the schema.
 OCSF_VERSION = "1.3.0"
+
+# Pinned separately from OCSF_VERSION -- different schema, different release
+# cycle, and nothing keeps the two in step. Emitted as `ecs.version` on every
+# ECS document because ECS requires it, and tooling that auto-detects "is this
+# ECS?" looks for it before anything else.
+ECS_VERSION = "8.11.0"
 
 # class_uid -> (category_uid, category_name)
 CLASS_AUTHENTICATION = 3002       # category 3, Identity & Access Management
@@ -452,6 +459,24 @@ _ECS_DATASET = {CLASS_AUTHENTICATION: "auth",
                 CLASS_PROCESS_ACTIVITY: "command",
                 CLASS_DETECTION_FINDING: "finding"}
 
+# ECS treats event.category and event.type as a PAIR -- category says what the
+# event is about, type says what happened to it, and Elastic's own dashboards
+# and rule logic filter on both. Emitting category alone (which this module did
+# until now) leaves every document half-classified.
+#
+# Values are from the ECS allowed-value list for event.type, chosen to match
+# what normalize_*() already decided rather than to look impressive:
+#
+#   Process Activity   a command was launched                  -> start
+#   Authentication     activity_id 1 (Logon) is a session start -> start
+#                      activity_id 0 (Unknown -- a bare TCP probe, which
+#                      normalize_auth deliberately refuses to inflate into a
+#                      logon) is not a session start            -> info
+#   Detection Finding  an assessment, not a state change        -> info
+_ECS_TYPE_AUTH = {AUTH_LOGON: ["start"], AUTH_UNKNOWN: ["info"]}
+_ECS_TYPE = {CLASS_PROCESS_ACTIVITY: ["start"],
+             CLASS_DETECTION_FINDING: ["info"]}
+
 
 def to_ecs(ocsf: dict) -> dict:
     """Canonical OCSF -> Elastic Common Schema.
@@ -469,6 +494,13 @@ def to_ecs(ocsf: dict) -> dict:
     elif cls == CLASS_PROCESS_ACTIVITY:
         category = ["process"]
 
+    # Read from activity_id for Authentication, because a logon and a bare TCP
+    # connect arrive as the same class and only activity_id tells them apart.
+    if cls == CLASS_AUTHENTICATION:
+        etype = _ECS_TYPE_AUTH.get(ocsf.get("activity_id"))
+    else:
+        etype = _ECS_TYPE.get(cls)
+
     hp = (ocsf.get("unmapped") or {}).get("hydrapot") or {}
     ts = ocsf.get("time")
     attacks = ocsf.get("attacks") or []
@@ -477,9 +509,11 @@ def to_ecs(ocsf: dict) -> dict:
     out = {
         "@timestamp": (datetime.utcfromtimestamp(ts / 1000).isoformat() + "Z"
                        if ts else None),
+        "ecs": {"version": ECS_VERSION},
         "event": _prune({
             "kind": kind,
             "category": category or None,
+            "type": etype,
             "module": "hydrapot",
             "dataset": f"hydrapot.{dataset}",
             # ECS event.severity is a 0-100 scale, so it is RE-SCALED from

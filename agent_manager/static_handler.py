@@ -558,7 +558,11 @@ def run_tail_follow(cmd: str, write_fn: Callable[[str], None] = print,
 # ─────────────────────────────────────────────────────────────────────────────
 def run_editor(cmd: str, write_fn: Callable[[str], None] = print) -> str:
     base = cmd.strip().split()[0]
-    msg  = f"-bash: {base}: command not found"
+    # `bash:`, not `-bash:`. The dash is what a LOGIN shell prints (argv[0] is
+    # "-bash"); every other path here -- main.py's own guard and all five
+    # examples in base_prompt.txt -- says "bash:". Two spellings of one error in
+    # one session is something an attacker can fingerprint.
+    msg  = f"bash: {base}: command not found"
     write_fn(msg + "\r\n")
     return msg
 

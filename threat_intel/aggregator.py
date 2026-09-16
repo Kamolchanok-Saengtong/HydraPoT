@@ -2,7 +2,7 @@
 threat_intel/aggregator.py — Event Aggregator.
 
 Turns many individual collected events into security-relevant summaries.
-Batching (see plugins/plugin_loader.py's SIEMExporter) just groups events for
+Batching (see threat_intel/exporters.py's SIEMExporter) just groups events for
 network efficiency; this computes actual statistics over them.
 
     Collection (main.py -> storage.py) -> Aggregator (this file) -> Alert/Export/Dashboard

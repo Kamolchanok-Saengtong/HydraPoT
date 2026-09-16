@@ -22,7 +22,36 @@ import urllib.error
 from datetime import datetime, timezone
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_MMDB = os.path.join(_HERE, "geoip.mmdb")
+
+# data/, not the repo root. This is a ~130 MB file fetched at runtime and
+# gitignored -- runtime state, exactly like data/hp_run.log and the SSH host
+# key that already live there. It is deliberately NOT shipped in the package:
+# a 130 MB wheel for a file that is rebuilt monthly from an upstream URL would
+# be absurd, and `pip install -e .` never copies it anywhere.
+DATA_DIR = os.path.join(_HERE, "data")
+DEFAULT_MMDB = os.path.join(DATA_DIR, "geoip.mmdb")
+
+# Where it used to live. Kept only so an existing checkout does not re-download
+# 90 MB after the move -- see _migrate_legacy().
+_LEGACY_MMDB = os.path.join(_HERE, "geoip.mmdb")
+
+
+def _migrate_legacy(path: str) -> bool:
+    """Move a pre-existing root-level geoip.mmdb into data/ once.
+
+    Same filesystem, so os.replace is atomic and instant -- the alternative is
+    making every existing user re-download ~90 MB for a file they already have.
+    Only fires for the default path: a caller that passed an explicit path
+    means it.
+    """
+    if path != DEFAULT_MMDB or not os.path.exists(_LEGACY_MMDB):
+        return False
+    try:
+        os.makedirs(DATA_DIR, exist_ok=True)
+        os.replace(_LEGACY_MMDB, DEFAULT_MMDB)
+        return True
+    except OSError:
+        return False
 DBIP_URL = "https://download.db-ip.com/free/dbip-city-lite-{ym}.mmdb.gz"
 
 ATTRIBUTION = "IP geolocation by DB-IP (https://db-ip.com) — City Lite, CC BY 4.0."
@@ -49,6 +78,12 @@ def update_geoip(path: str = DEFAULT_MMDB, quiet: bool = False) -> bool:
     """(Re)download the latest DB-IP City Lite database to `path`. Returns True
     on success. Writes atomically (temp file + rename) so a failed/partial
     download never corrupts an existing good file."""
+    # The target directory is data/ now, which a fresh checkout may not have --
+    # and the temp files below are written next to `path`, so this must happen
+    # before the first open(), not after.
+    parent = os.path.dirname(os.path.abspath(path))
+    if parent:
+        os.makedirs(parent, exist_ok=True)
     def log(msg):
         if not quiet:
             print(msg, flush=True)
@@ -94,6 +129,10 @@ def ensure_geoip(path: str = DEFAULT_MMDB, quiet: bool = False) -> bool:
     """Download the DB-IP database only if it's missing. Safe to call on every
     dashboard start — a no-op once the file exists. Never raises."""
     if os.path.exists(path):
+        return True
+    if _migrate_legacy(path):
+        if not quiet:
+            print(f"[geoip] moved existing database -> {path}", flush=True)
         return True
     try:
         return update_geoip(path, quiet=quiet)

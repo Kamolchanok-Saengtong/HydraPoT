@@ -1,0 +1,58 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# HydraPoT SIEM Export — Elasticsearch (ECS)
+# ═══════════════════════════════════════════════════════════════════════════════
+# Forward honeypot events to Elasticsearch as ECS (Elastic Common Schema)
+# documents, so Kibana's own dashboards and detection rules can read them.
+#
+# Exports all three kinds of HydraPoT telemetry:
+#   - commands   (OCSF Process Activity 1007  -> event.category: process)
+#   - logins     (OCSF Authentication   3002  -> event.category: authentication)
+#   - findings   (OCSF Detection Finding 2004 -> event.kind: alert)
+#
+# Setup:
+#   1. Export the credentials in your shell/systemd unit — NOT in this file:
+#        export ELASTIC_USERNAME=hydrapot
+#        export ELASTIC_PASSWORD=...
+#   2. Point hosts at your cluster
+#   3. Set enabled: true below
+#   4. Restart HydraPoT
+#
+# In Kibana the documents land in the index named by index_pattern below. They
+# are visible in Discover immediately; to see them in the Security app, add
+# that pattern to Advanced Settings -> securitySolution:defaultIndex.
+
+name: Elasticsearch Export
+enabled: false
+type: elasticsearch
+
+connection:
+  hosts:
+    - "https://your-elastic-host.example.com:9200"
+  # NAMES of environment variables, not the secrets themselves. The exporter
+  # resolves them at send time; nothing credential-shaped belongs in this file.
+  username_env: "ELASTIC_USERNAME"
+  password_env: "ELASTIC_PASSWORD"
+  verify_ssl: true
+
+settings:
+  # {date} is replaced with YYYY.MM.DD at send time.
+  index_pattern: "hydrapot-{date}"
+  batch_size: 10
+  flush_interval_sec: 30
+
+filters:
+  # NO min_fi HERE, DELIBERATELY.
+  #
+  # FI is HydraPoT's ROUTING metric — it decides which agent answers a command,
+  # not how dangerous that command is. A loud `rm` of a file the attacker
+  # created themselves is FI 4 and harmless; a quiet credential read is FI 1.
+  # Setting min_fi on a threat-intelligence export would therefore drop the
+  # quiet, dangerous events and keep the loud, harmless ones — FI deciding what
+  # a SIEM is allowed to see, which is the same mistake as FI deciding
+  # severity, just one layer further out.
+  #
+  # The exporter still SUPPORTS min_fi (threat_intel/exporters.py) and it
+  # defaults to 0, so leaving it unset means "export everything". If you need
+  # to cut volume, cut it on something that is actually about the event —
+  # agents, or include_auth below — never on FI.
+  include_auth: true

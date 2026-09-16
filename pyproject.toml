@@ -58,21 +58,66 @@ requires      = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 # ─── Tell setuptools where the modules live ─────────────────────────────────
-# Your code sits at the project root (no package folder), so we list the
-# top-level .py files explicitly. Add new files here as you create them.
+# Code sits at the project root (no src/ layout), so top-level .py files are
+# listed explicitly. Anything NOT listed here is missing after `pip install`,
+# with no error until something imports it — that is how `dashboard` stayed
+# listed after the file was deleted (which broke the install outright) while
+# storage/geoip_fetch/api_server were never listed at all, so `hp geoip` would
+# have failed on a real install.
 [tool.setuptools]
 py-modules = [
-    "hp",
-    "main",
-    "setup_wizard",
+    "hp",                 # the `hp` CLI entry point
+    "main",               # honeypot responder
+    "setup_wizard",       # hp init
     "config_loader",
-    "dashboard",
     "ssh_server",
     "router",
+    "storage",            # SQLite layer — imported by nearly everything
+    "api_server",         # FastAPI + Dash host
+    "geoip_fetch",        # hp geoip
+    "cost_model",
+    "power_cost",
+    "replay",
 ]
-packages = [
-    "agent_manager",
-    "prompt",
-    "plugins",
-    "threat_intel",
+# Found rather than listed: these have __init__.py and gain sub-packages
+# regularly (api/v1, api/services, SIEM/pages), and a hand-written list silently
+# drops a new one. Excludes keep test/experiment trees out of the wheel.
+[tool.setuptools.packages.find]
+include = ["agent_manager*", "prompt*", "plugins*", "threat_intel*",
+           "SIEM*", "api*", "guardrail*", "shell*"]
+exclude = ["tests*", "threat_intel.tests*", "experiment_data*", "archive_code*",
+           "evaluation*", "honeypot_new*", "dataset*", "models*", "var*"]
+# A real package is a directory with __init__.py. Left at the pyproject default
+# (true) this becomes find_namespace and every data directory turns into an
+# importable package -- plugins.cowrie.honeyfs.etc, threat_intel.rules.upstream
+# and so on. Harmless to import, but it splits the package-data globs below:
+# "rules/**/*.yml" is matched relative to the package that OWNS the file, so
+# once threat_intel.rules is its own package the glob on threat_intel no longer
+# reaches it and the rules silently stop shipping.
+namespaces = false
+
+# ─── Non-Python files the code reads at runtime ─────────────────────────────
+# Without this the package installs and then fails at runtime: no detection
+# rules, no MITRE catalog, no Cowrie filesystem.
+#
+# Two things are deliberately NOT here:
+#   threat_intel/enterprise-attack.json  46 MB, and BUILD-time only — it is
+#       parsed by mitre_mapper.build_catalog() to produce mitre_catalog.json
+#       (20 KB), which is what runtime actually reads.
+#   data/geoip.mmdb                      ~130 MB, downloaded on demand by
+#       geoip_fetch.py into data/. Runtime state, not package content.
+[tool.setuptools.package-data]
+# The LLM's own prompt templates. prompt_manager.py reads these at startup, so
+# without them the responder cannot build a single prompt.
+prompt = ["templates/*.txt"]
+threat_intel = [
+    "rules/**/*.yml", "rules/**/*.yaml",
+    "export/*.yml",
+    "mitre_catalog.json",
+    "alerts.yml",
+]
+plugins = [
+    "rules/*.yml", "rules/*.yaml",
+    "static/*.py",
+    "cowrie/**/*",
 ]

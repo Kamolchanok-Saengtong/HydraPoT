@@ -63,7 +63,7 @@ sinks:
     type: syslog
     enabled: false
     # For Wazuh / QRadar / Graylog / rsyslog. Distinct from the event-level
-    # forwarder in plugins/export/syslog.yml: that ships raw honeypot events,
+    # forwarder in threat_intel/export/syslog.yml: that ships raw honeypot events,
     # this ships correlated alerts. Pointing both at one collector is fine and
     # is how you get both streams.
     host: "your-siem-host.example.com"

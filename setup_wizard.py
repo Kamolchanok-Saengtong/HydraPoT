@@ -1100,11 +1100,13 @@ def review_and_edit(config: dict) -> dict:
                 if rule_files:
                     names = [f.replace(".yaml", "").replace(".yml", "").replace("_", " ") for f in rule_files]
                     _print(f"  📦 Plugins: {len(rule_files)} rule(s) loaded ({', '.join(names)})", style="dim")
-            export_dir = "plugins/export"
+            # Same directory the loader reads, imported rather than retyped —
+            # a second copy of this path is how the two drift apart.
+            from plugins.plugin_loader import EXPORT_CONFIG_DIR as export_dir
             if os.path.isdir(export_dir):
                 export_files = [f for f in os.listdir(export_dir) if f.endswith((".yaml", ".yml"))]
                 if export_files:
-                    _print(f"  📤 Exporters: {len(export_files)} configured (edit in plugins/export/)", style="dim")
+                    _print(f"  📤 Exporters: {len(export_files)} configured (edit in threat_intel/export/)", style="dim")
 
             _print("  Type a number to edit, or 's' to save and continue.\n", style="dim")
         else:
