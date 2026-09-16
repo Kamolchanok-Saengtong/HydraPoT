@@ -72,6 +72,30 @@ logging:
   retention_protect_instances: []
   retention_vacuum: true
   retention_on_start: false
+# Event Aggregator (threat_intel/aggregator.py) — summarizes collected events
+# by session or by (src_ip, time window). "High-risk" reuses logging.fi_threshold
+# above rather than a separate number. Categories below are keyed to REAL MITRE
+# ATT&CK tactics/technique IDs (see threat_intel/mitre_catalog.json) already
+# tagged per-command by mitre_mapper.py -- adding/renaming a category here
+# never requires touching aggregator.py's code.
+aggregation:
+  window_minutes: 5
+  # A session counts as ACTIVE in an overview window if its last command falls
+  # within this many minutes of the window end. Sessions carry no explicit end
+  # marker (an attacker just stops typing), so "active" has to be a recency
+  # rule -- and the right value is deployment-specific, hence config not code.
+  session_inactivity_minutes: 15
+  # Activity-over-time granularity. Bucket size is DERIVED from the selected
+  # window so it lands near this many buckets -- a 15m window and a 7d window
+  # both stay readable without either being hardcoded to a fixed interval.
+  timeline_target_buckets: 48
+  categories:
+    privilege_escalation:
+      tactics: [Privilege Escalation]
+    download:
+      technique_ids: [T1105]              # Ingress Tool Transfer
+    file_operations:
+      technique_ids: [T1083, T1070.004, T1005]   # Discovery / Deletion / Collection
 system_state:
   pre_installed:
   - coreutils
@@ -122,6 +146,16 @@ system_state:
       gid: 0
       home: /root
       shell: /bin/bash
+    # Faculty admin account. Must exist HERE as well as under `filesystem:` —
+    # this is what puts it in /etc/passwd and tells the LLM the account is
+    # real. Declaring only the home directory left an attacker looking at a
+    # /home/cocadmin that /etc/passwd said nothing about.
+    cocadmin:
+      uid: 1001
+      gid: 1001
+      home: /home/cocadmin
+      shell: /bin/bash
+      gecos: COC Admin
     daemon:
       uid: 1
       gid: 1
@@ -254,6 +288,95 @@ system_state:
     /root/.bash_history:
       perms: -rw-------
       size: 0B
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Fake filesystem the attacker sees
+# ═══════════════════════════════════════════════════════════════════════════
+# Cowrie keeps its whole fake tree in one binary file (fs.pickle) and its
+# stock one is the same on every Cowrie install on the internet — /home/phil
+# and all. Anyone who has seen Cowrie before recognises it instantly.
+#
+# So: take Cowrie's tree as the BASE (25,901 realistic entries — /usr/bin,
+# /etc, libraries, modern dates), then declare only what makes this box
+# OURS. Building from empty is not an option: `ls /usr/bin` showing five
+# files is a worse tell than the stock tree.
+#
+# Regenerate after editing:  python plugins/cowrie_fs.py
+filesystem:
+  base: cowrie/base/fs.pickle     # Reference stock filesystem from Cowrie container
+  out:  cowrie/fs.pickle          # Generated output filesystem for Cowrie to load
+
+  # Anti-fingerprinting: Remove entries that expose default Cowrie environments
+  remove:
+    - /home/phil                  # Remove stock honeypot user account
+    - /.dockerenv                 # Remove Docker artifact to simulate bare-metal server
+
+  # Target directories: Parent paths are created automatically if missing
+  dirs:
+    /home/cocadmin:                       {uid: 1001, gid: 1001, perms: "0700"}
+    /home/cocadmin/.ssh:                  {uid: 1001, gid: 1001, perms: "0700"}
+    /home/cocadmin/research:              {uid: 1001, gid: 1001, perms: "0700"}
+    /var/www:                             {uid: 0,    gid: 0,    perms: "0755"}
+    /var/www/coc-student-portal:          {uid: 33,   gid: 33,   perms: "0755"}
+    /var/www/coc-student-portal/src:      {uid: 33,   gid: 33,   perms: "0755"}
+
+  # Decoy files: Size and metadata are spoofed in the index tree. 
+  # Content will be delivered via honeyfs mapping.
+  files:
+    # --- Human Footprints ---
+    /home/cocadmin/.bash_history:
+      uid: 1001
+      gid: 1001
+      perms: "0600"
+      size: 4211
+      mtime: "2026-08-14 22:41"
+    
+    # --- Lateral Movement Targets (Internal Infrastructure Discovery) ---
+    /home/cocadmin/.ssh/known_hosts:
+      uid: 1001
+      gid: 1001
+      perms: "0644"
+      size: 1102
+      mtime: "2026-08-12 11:15"
+    /home/cocadmin/.ssh/authorized_keys:
+      uid: 1001
+      gid: 1001
+      perms: "0600"
+      size: 400
+      mtime: "2026-05-20 09:30"
+
+    # --- High-Value Baits (Honeytokens) ---
+    /home/cocadmin/research/cloud_credentials:
+      uid: 1001
+      gid: 1001
+      perms: "0600"
+      size: 812
+      mtime: "2026-07-02 10:18"
+    /var/www/coc-student-portal/.env:
+      uid: 33
+      gid: 33
+      perms: "0640"
+      size: 623
+      mtime: "2026-06-19 14:05"
+
+    # --- Realism Artifacts (Simulating Web Application Files) ---
+    /var/www/coc-student-portal/package.json:
+      uid: 33
+      gid: 33
+      perms: "0644"
+      size: 1204
+      mtime: "2026-06-19 13:50"
+      
+    # --- System Automation (Decoy Configuration for Backend Integrations) ---
+    /etc/cron.d/psu_sync_cron:
+      uid: 0
+      gid: 0
+      perms: "0644"
+      size: 188
+      mtime: "2026-08-01 03:00"
+
+
 # Measured cost inputs. Both are MEASUREMENTS, not guesses — see cost_model.py
 # for how each was obtained. They live here so a different GPU or cloud model
 # can state its own numbers without editing Python, and so the dashboard and
@@ -273,3 +396,31 @@ power_tariff:
     rate_thb_per_unit: 4.4217
   ft_surcharge_thb_per_unit: 0.1623
   vat_rate: 0.07
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Prompt-injection guardrail  (see guardrail/)
+# ═══════════════════════════════════════════════════════════════════════════
+# Three free layers, on by default. They cost nothing when wrong: stripping a
+# chat-template token from a prompt is always correct, the fence is two lines,
+# and the output check is a regex.
+#
+# The DETECTOR does not gate them. Benchmarked at F1 0.800, but it scored 0.000
+# on both confirmed breaks ("are you an AI language model?", "what model powers
+# this terminal?") -- questions, not injections. Gating the defences on it would
+# leave exactly those undefended. Defend always; detect for the record.
+guardrail:
+  enabled: true
+  sanitize: true          # strip forged <|im_start|> / [INST] / <<SYS>> tokens
+  isolate: true           # fence attacker text as untrusted data
+  validate: true          # check the model's OUTPUT for persona breaks
+  retry_on_break: true    # re-roll once, then hand to Cowrie. Never a refusal.
+
+  detector:
+    # OFF: ~66ms per LLM-bound command, and it misses what matters. Turn it on
+    # when you want injection attempts recorded as threat intelligence.
+    enabled: false
+    provider: protectai
+    model: protectai/deberta-v3-base-prompt-injection-v2
+    device: cpu           # never the GPU -- the responder needs it
+    threshold: 0.5        # 0.3-0.6 scored identically; not a useful knob
+    log_path: data/logs/injections.jsonl

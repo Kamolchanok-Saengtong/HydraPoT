@@ -205,12 +205,54 @@ class LoggingCfg:
     retention_on_start: bool = False   # prune once at honeypot startup
 
 @dataclass
+class GuardrailDetectorCfg:
+    """The injection CLASSIFIER. Off by default, deliberately.
+
+    Benchmarked against guardrail/benchmark_dataset.py: F1 0.800, and ~66ms per
+    command on CPU. It is not off because it is bad -- it is off because of WHAT
+    it misses. It scored 0.000 on both confirmed breaks ("are you an AI language
+    model?", "what model powers this terminal?"), which are questions rather
+    than injections. The output validator is what catches those.
+
+    So this is THREAT INTELLIGENCE -- "this attacker is probing the LLM" -- not
+    protection. Turn it on when you want that signal recorded and can pay 66ms.
+    """
+    enabled: bool = False
+    provider: str = "protectai"
+    model: str = "protectai/deberta-v3-base-prompt-injection-v2"
+    device: str = "cpu"                # never the GPU: the responder needs it
+    threshold: float = 0.5             # 0.3-0.6 scored identically; not a knob
+    log_path: str = "data/logs/injections.jsonl"
+
+
+@dataclass
+class GuardrailCfg:
+    """Prompt-injection defences. See guardrail/.
+
+    The three free layers are ON. They cost nothing when wrong: stripping a
+    chat-template token from a prompt is always correct, wrapping attacker text
+    in a fence is two lines, and the output check is a regex.
+
+    THE DETECTOR DOES NOT GATE THEM. Defending only what a classifier flags
+    would leave the confirmed breaks undefended, since it scores 0.000 on them.
+    Defend always; detect for the record.
+    """
+    enabled: bool = True
+    sanitize: bool = True      # strip forged chat-template tokens from prompts
+    isolate: bool = True       # fence attacker text as untrusted data
+    validate: bool = True      # check the model's OUTPUT for persona breaks
+    retry_on_break: bool = True    # re-roll once before falling back to Cowrie
+    detector: GuardrailDetectorCfg = field(default_factory=GuardrailDetectorCfg)
+
+
+@dataclass
 class Config:
     honeypot: HoneypotCfg = field(default_factory=HoneypotCfg)
     agents: AgentsCfg = field(default_factory=AgentsCfg)
     # Separate from `agents` on purpose -- see AIAssistantCfg.
     ai_assistant: AIAssistantCfg = field(default_factory=AIAssistantCfg)
     routing: RoutingCfg = field(default_factory=RoutingCfg)
+    guardrail: GuardrailCfg = field(default_factory=GuardrailCfg)
     logging: LoggingCfg = field(default_factory=LoggingCfg)
     static_commands: list = field(default_factory=lambda: [...])
     # MEA/PEA residential tariff (ประเภท 1.2) — plain dict like system_state
@@ -386,6 +428,10 @@ def load_config(path: str = CONFIG_PATH) -> Config:
     agents   = AgentsCfg(cowrie=cowrie, on_device=ondev, cloud=cloud)
     routing  = _merge_dict_into_dataclass(RoutingCfg,   raw.get("routing"))
     logging_ = _merge_dict_into_dataclass(LoggingCfg,   raw.get("logging"))
+    _g = raw.get("guardrail") or {}
+    guardrail = _merge_dict_into_dataclass(GuardrailCfg, _g)
+    guardrail.detector = _merge_dict_into_dataclass(
+        GuardrailDetectorCfg, _g.get("detector"))
 
     static_cmds   = raw.get("static_commands")
     system_state  = raw.get("system_state")
@@ -455,6 +501,7 @@ def load_config(path: str = CONFIG_PATH) -> Config:
         honeypot=honeypot,
         agents=agents,
         routing=routing,
+        guardrail=guardrail,
         logging=logging_,
         static_commands=static_cmds,
         system_state=system_state,
