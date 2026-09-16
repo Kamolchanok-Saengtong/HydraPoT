@@ -5,10 +5,13 @@ import os
 
 from dash import html, Input, Output
 
-import storage
 from SIEM.server import app
 
-MMDB_PATH = os.path.join(os.path.dirname(os.path.abspath(storage.__file__)), "geoip.mmdb")
+# Imported, never re-derived. This used to build its own path next to
+# storage.py, so moving the database to data/ silently broke the map here while
+# `hp geoip` kept reporting success -- two copies of one path is how that
+# happens. geoip_fetch owns it; everyone else asks.
+from geoip_fetch import DEFAULT_MMDB as MMDB_PATH
 
 _geo_reader = None
 _geo_reader_loaded = False
