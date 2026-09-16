@@ -642,9 +642,11 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
             fi_manager.process(command=cmd, output="", agent="on_device",
                                session_id=SESSION_ID, fi=fi_score, method=fi_method)
             session.append({"cmd": cmd, "agent": "on_device", "response": ""})
-            # t_start, not a duration -- see the pinned test. Preserved
-            # verbatim; fixing it is a separate change.
-            telemetry.record(cmd, "on_device", "", fi_score, t_start)
+            # An elapsed time, not t_start. This branch used to pass t_start
+            # itself -- time.time(), so `passwd` logged a latency_ms of ~1.7e12
+            # while every other command logged a few hundred.
+            telemetry.record(cmd, "on_device", "",
+                             fi_score, (time.time() - t_start) * 1000)
             return "", ""
         
         if actual_base in INTERACTIVE and not cloud_routed:

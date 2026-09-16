@@ -63,21 +63,12 @@ class TestResolve(unittest.TestCase):
     def test_interior_and_trailing_slashes_collapse(self):
         self.assertEqual(fs().resolve("/tmp//x//"), "/tmp/x")
 
-    def test_a_leading_double_slash_makes_a_second_key_for_one_file(self):
-        """PINNED BUG, pre-existing.
-
-        POSIX leaves a LEADING "//" implementation-defined, and posixpath keeps
-        exactly two, so these are different dict keys for the same file:
-
-            resolve("/tmp/x")    -> /tmp/x
-            resolve("//tmp/x")   -> //tmp/x
-
-        Which breaks the one-key-per-file rule this module exists to enforce:
-        `touch //tmp/a` then `cat /tmp/a` looks like two unrelated files.
-        Obscure, but it is exactly the kind of inconsistency an attacker
-        probes for. Fix is one lstrip; separate change."""
-        self.assertEqual(fs().resolve("//tmp//x//"), "//tmp/x")
-        self.assertNotEqual(fs().resolve("//tmp/x"), fs().resolve("/tmp/x"))
+    def test_a_leading_double_slash_is_one_key_like_every_other_spelling(self):
+        """REGRESSION. posixpath.normpath KEEPS a leading "//" (POSIX leaves it
+        implementation-defined), so //tmp/x and /tmp/x were two keys for one
+        file -- `touch //tmp/a` then `cat /tmp/a` looked like two files."""
+        self.assertEqual(fs().resolve("//tmp//x//"), "/tmp/x")
+        self.assertEqual(fs().resolve("//tmp/x"), fs().resolve("/tmp/x"))
 
 
 class TestComputeCd(unittest.TestCase):
@@ -96,24 +87,22 @@ class TestComputeCd(unittest.TestCase):
         self.assertEqual(fs().compute_cd("cd /etc /var"),
                          (True, None, "bash: cd: too many arguments"))
 
-    def test_cd_dash_silently_goes_home(self):
-        """PINNED BUG, pre-existing -- verified identical before this module was
-        split out of main.py.
+    def test_cd_dash_returns_to_the_previous_directory(self):
+        """REGRESSION. `-` looks like a flag, so the flag filter removed it,
+        positional came back empty, target defaulted to "~" and the
+        `target == "-"` branch below could never run -- dead code. `cd /tmp;
+        cd -` landed in /root silently and the honeypot then disagreed with the
+        attacker about where they were.
 
-        compute_cd filters flags first:
+        Real `cd -` also PRINTS the directory it moved to, which is why it comes
+        back in the third slot on success: the one cd form that is not silent."""
+        f = fs(cwd="/root")
+        f.state["oldpwd"] = "/tmp"
+        self.assertEqual(f.compute_cd("cd -"), (True, "/tmp", "/tmp"))
 
-            positional = [a for a in args if not a.startswith("-")]
-
-        "-" starts with "-", so it is dropped, positional comes back empty and
-        target defaults to "~". The `if target == "-"` branch below it can
-        therefore never run -- it is dead code, and the docstring's
-        "(False, None, None) -> not handled here (e.g. `cd -`)" is not what
-        happens.
-
-        Real bash goes to $OLDPWD and prints it. Here `cd /tmp; cd -` lands in
-        /root silently, so an attacker who uses `cd -` is somewhere other than
-        where the honeypot thinks. Fix needs $OLDPWD tracking; separate change."""
-        self.assertEqual(fs().compute_cd("cd -"), (True, "/root", None))
+    def test_cd_dash_before_any_cd_is_the_real_bash_error(self):
+        self.assertEqual(fs().compute_cd("cd -"),
+                         (True, None, "bash: cd: OLDPWD not set"))
 
     def test_a_tracked_file_is_not_a_directory(self):
         f = fs(files={"/root/note.txt": {"perms": "-rw-r--r--"}})

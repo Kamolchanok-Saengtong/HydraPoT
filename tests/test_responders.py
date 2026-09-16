@@ -50,6 +50,14 @@ class TestCd(unittest.TestCase):
         self.assertEqual(r.cd("cd /tmp"), (True, None))
         self.assertEqual(st["cwd"], "/tmp")
 
+    def test_cd_dash_toggles_and_prints_where_it_went(self):
+        r, st = build()
+        r.cd("cd /tmp")
+        self.assertEqual(r.cd("cd -"), (True, "/root"))
+        self.assertEqual(st["cwd"], "/root")
+        self.assertEqual(r.cd("cd -"), (True, "/tmp"))
+        self.assertEqual(st["cwd"], "/tmp")
+
     def test_failure_is_the_real_bash_error(self):
         r, st = build()
         handled, err = r.cd("cd /nope")

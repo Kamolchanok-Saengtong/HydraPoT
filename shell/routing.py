@@ -24,6 +24,13 @@ import re
 _ALWAYS = frozenset({"systemctl", "service", "journalctl", "hostname",
                      "gcc", "g++", "make", "gdb", "strace", "ltrace"})
 
+# Tools whose version flag is lowercase -v. The shared pattern below is
+# `--version|-V`, which is right for coreutils but wrong for these -- and
+# widening the pattern is not the fix, because `-v` means INVERT for grep and
+# VERBOSE for rm, ssh and curl. Per-tool, not per-regex.
+_LOWERCASE_V = frozenset({"nginx", "php", "node", "npm", "redis-server",
+                          "redis-cli", "mysql", "mysqld"})
+
 # Interpreters: only interesting when the script they are given is one WE hold.
 _INTERPRETERS = frozenset({"bash", "sh", "python", "python3", "perl",
                            "node", "ruby", "php", "lua"})
@@ -46,7 +53,7 @@ class Routing:
         files = self.state.get("files", {})
 
         # A version query is answerable only for a tool that exists here.
-        if re.search(r'--version\b|-V\b', cmd):
+        if self.is_version_query(cmd, cmd_base):
             return self.sw.available(cmd_base)
 
         if cmd_base in _ALWAYS:
@@ -76,6 +83,13 @@ class Routing:
             return len(parts) > 1 and parts[-1] in files
 
         return False
+
+    @staticmethod
+    def is_version_query(cmd: str, cmd_base: str) -> bool:
+        """`--version`, `-V`, or `-v` for the tools that spell it that way."""
+        if re.search(r'--version\b|-V\b', cmd):
+            return True
+        return cmd_base in _LOWERCASE_V and re.search(r'(?<!\S)-v\b', cmd) is not None
 
     # ── helpers ─────────────────────────────────────────────────────────────
 

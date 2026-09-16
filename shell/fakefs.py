@@ -85,7 +85,13 @@ class FakeFS:
             s = home + s[1:]
         if not s.startswith("/"):
             s = posixpath.join(self.state["cwd"], s)
-        return posixpath.normpath(s)
+        resolved = posixpath.normpath(s)
+        # normpath KEEPS a leading "//" -- POSIX leaves it implementation-
+        # defined and posixpath preserves exactly two. That made //tmp/x and
+        # /tmp/x two keys for one file, breaking the one-key-per-file rule this
+        # method exists to enforce: `touch //tmp/a` then `cat /tmp/a` looked
+        # like two unrelated files.
+        return "/" + resolved.lstrip("/") if resolved.startswith("//") else resolved
 
     def directories(self) -> set:
         """Every path this session can `cd` into: the configured layout, every
@@ -105,14 +111,28 @@ class FakeFS:
              (False, None,  None)   not handled here (e.g. `cd -`)
         """
         args = cmd.split()[1:]
+
+        # `cd -` FIRST, before the flag filter. It looks like a flag, so
+        # filtering flags removed it, positional came back empty, target
+        # defaulted to "~" and the `target == "-"` branch further down could
+        # never run -- dead code. `cd /tmp; cd -` landed in /root silently, and
+        # the honeypot then disagreed with the attacker about where they were.
+        if args[:1] == ["-"]:
+            previous = self.state.get("oldpwd")
+            if not previous:
+                # Real bash before any cd: "OLDPWD not set", cwd unchanged.
+                return True, None, "bash: cd: OLDPWD not set"
+            # Real `cd -` PRINTS the directory it moved to. The caller shows
+            # this, which is why it comes back as the third element even on
+            # success -- the one cd form that is not silent.
+            return True, previous, previous
+
         # flags aside, real `cd` takes at most one positional argument
         positional = [a for a in args if not a.startswith("-")]
         if len(positional) > 1:
             return True, None, "bash: cd: too many arguments"
 
         target = positional[0] if positional else "~"
-        if target == "-":
-            return False, None, None      # previous-directory tracking: not implemented
 
         home = self.home()
         if target == "~":
