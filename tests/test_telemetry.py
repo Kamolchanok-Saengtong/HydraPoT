@@ -171,22 +171,17 @@ class TestJsonLinesStore(unittest.TestCase):
         self.assertTrue(any("LOST command" in m for m in logged))
 
 
-class TestKnownBug(unittest.TestCase):
+class TestLatencyIsADuration(unittest.TestCase):
 
-    def test_the_passwd_branch_logs_a_timestamp_as_latency(self):
-        """PINNED BUG, pre-existing, in main.py not here.
-
-        The interactive `passwd` branch calls
-
-            telemetry.record(cmd, "on_device", "", fi_score, t_start)
-
-        and t_start is time.time(), not a duration -- so that one command
-        records latency_ms of ~1.7e12 instead of a few hundred. Everything else
-        passes a real elapsed time. Nothing here can prevent it; record() is
-        given a number and rounds it. Pinned so the fix is deliberate."""
+    def test_latency_is_an_elapsed_time_not_a_clock_reading(self):
+        """REGRESSION, in shell/session.py. The interactive `passwd` branch
+        passed t_start -- time.time() itself -- so that one command logged a
+        latency_ms of ~1.7e12 while every other logged a few hundred."""
         t, rows, _, _ = tel()
-        t.record("passwd", "on_device", "", 0, 1_758_000_000.0)
-        self.assertEqual(rows[0]["latency_ms"], 1_758_000_000.0)
+        t.record("passwd", "on_device", "", 0, 2500.0)
+        self.assertEqual(rows[0]["latency_ms"], 2500.0)
+        self.assertLess(rows[0]["latency_ms"], 1e9,
+                        "a unix timestamp would be ~1.7e12")
 
 
 if __name__ == "__main__":

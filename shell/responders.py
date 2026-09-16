@@ -58,13 +58,18 @@ class Responders:
 
     # ── cd ──────────────────────────────────────────────────────────────────
 
+    def _move_to(self, path: str) -> None:
+        """Change directory, remembering where we came from so `cd -` works."""
+        self.state["oldpwd"] = self.state["cwd"]
+        self.state["cwd"] = path
+
     def cd(self, cmd: str):
         """-> (handled, error_or_None). Silence on success, like real cd."""
         handled, new_cwd, error = self.fs.compute_cd(cmd)
         if not handled:
             return False, None
         if new_cwd is not None:
-            self.state["cwd"] = new_cwd
+            self._move_to(new_cwd)
             return True, error
 
         # Before telling the attacker a directory does not exist, ask Cowrie --
@@ -74,7 +79,7 @@ class Responders:
         if error and error.endswith("No such file or directory") and self.probe:
             target = self.fs.last_resolved
             if target and self.probe(target):
-                self.state["cwd"] = target
+                self._move_to(target)
                 # Remember it, so the next cd here answers without asking again.
                 self.state["files"].setdefault(
                     target, {"perms": "drwxr-xr-x", "size": "4.0K"})

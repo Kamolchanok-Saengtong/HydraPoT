@@ -62,20 +62,23 @@ class TestVersionQueries(unittest.TestCase):
         st["installed"]["nginx"] = {"version": "1.0"}
         self.assertTrue(r.needs_llm("nginx --version", "nginx"))
 
-    def test_uppercase_dash_v_is_a_version_query_lowercase_is_not(self):
-        """PINNED, pre-existing. The pattern is `--version\\b|-V\\b`, so `-V`
-        counts and `-v` does not -- but `-v` is what real nginx, ssh and many
-        others use. Those fall through to ordinary routing instead of the
-        version path. Widening the pattern would also catch `grep -v`, so the
-        fix is per-tool, not a regex tweak."""
+    def test_lowercase_dash_v_counts_for_the_tools_that_spell_it_that_way(self):
+        """REGRESSION. The shared pattern is `--version|-V`, right for
+        coreutils but wrong for nginx, node and php, which use -v. Widening the
+        regex is NOT the fix: -v means invert for grep and verbose for rm, ssh
+        and curl. Per-tool."""
         r, st = routing()
         st["installed"]["nginx"] = {"version": "1.0"}
-        self.assertTrue(r.needs_llm("nginx -V", "nginx"))
-        self.assertTrue(r.needs_llm("nginx -v", "nginx"),
-                        "reaches the attacker-installed branch instead")
-        st["installed"].clear()
-        self.assertFalse(r.needs_llm("nginx -v", "nginx"),
-                         "uninstalled + lowercase -v = no version branch at all")
+        for form in ("nginx -v", "nginx -V", "nginx --version"):
+            with self.subTest(cmd=form):
+                self.assertTrue(r.needs_llm(form, "nginx"))
+
+    def test_dash_v_still_means_invert_or_verbose_everywhere_else(self):
+        r, _ = routing()
+        for cmd, base in (("grep -v x f", "grep"), ("rm -v f", "rm"),
+                          ("curl -v http://x", "curl"), ("ls -v", "ls")):
+            with self.subTest(cmd=cmd):
+                self.assertFalse(Routing.is_version_query(cmd, base))
 
 
 class TestAttackerInstalled(unittest.TestCase):

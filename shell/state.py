@@ -108,6 +108,8 @@ class StateTracker:
         if bare.split()[:1] == ["cd"]:
             handled, new_cwd, _err = self.fs.compute_cd(bare)
             if handled and new_cwd is not None:
+                # oldpwd, so `cd -` works no matter which agent answered.
+                self.state["oldpwd"] = self.state["cwd"]
                 self.state["cwd"] = new_cwd
             return
 
@@ -199,7 +201,12 @@ class StateTracker:
         m = re.match(r"^(wget|curl)\s+.*?(https?://\S+)", cmd)
         if m:
             url = m.group(2)
-            name = self.fs.resolve(url.rstrip("/").split("/")[-1] or "index.html")
+            # The PATH part, not the whole URL. rstrip("/") used to run on the
+            # full string, so the last segment was the HOSTNAME and always
+            # truthy -- `or "index.html"` could never fire, and
+            # `wget http://evil.com/` saved a file called evil.com.
+            path = url.split("://", 1)[-1].split("/", 1)[1] if "/" in url.split("://", 1)[-1] else ""
+            name = self.fs.resolve(path.rstrip("/").split("/")[-1] or "index.html")
             self.state["files"][name] = {
                 "content": f"[downloaded from {url}]", "source": url,
                 "perms": "-rw-r--r--", "size": "4.2K",
