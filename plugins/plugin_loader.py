@@ -2,13 +2,18 @@
 plugin_loader.py — HydraPoT plugin system.
 
 Loads three types of plugins at startup:
-  1. Custom FI rules     (plugins/rules/*.yaml)
+  1. Custom FI rules        (plugins/rules/*.yaml)
   2. Custom static handlers (plugins/static/*.py)
-  3. SIEM exporters      (plugins/export/*.yaml)
+  3. SIEM exporters         (threat_intel/export/*.yaml)
+
+The exporters are the odd one out and their CODE lives in
+threat_intel/exporters.py — see the note above PluginManager. Their CONFIGS
+moved with them, to threat_intel/export/, next to threat_intel/rules/. Only
+the first two are discovered under plugins/.
 
 Usage in main.py:
     from plugins.plugin_loader import PluginManager
-    plugins = PluginManager("plugins/")
+    plugins = PluginManager()
     plugins.load_all()
 
     # merge custom FI rules into fi_manager
@@ -23,12 +28,20 @@ Usage in main.py:
 
 import os
 import re
-import json
 import yaml
 import importlib.util
-import threading
-import time
-from datetime import datetime
+
+from threat_intel.exporters import EXPORTER_TYPES
+
+# Both directories are anchored to the repo root via THIS FILE, never the cwd.
+# A relative "plugins/" only resolves when HydraPoT is started from the repo
+# root; under systemd, from an installed entry point, or from a test runner the
+# scan silently finds nothing and every plugin is skipped with no error -- the
+# worst kind of failure, because the honeypot comes up looking healthy.
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+PLUGIN_DIR = os.path.join(_ROOT, "plugins")              # FI rules, static handlers
+EXPORT_CONFIG_DIR = os.path.join(_ROOT, "threat_intel", "export")   # SIEM exporters
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -104,318 +117,33 @@ class StaticHandlerPlugin:
 # ══════════════════════════════════════════════════════════════════════════════
 # 3. SIEM EXPORTERS
 # ══════════════════════════════════════════════════════════════════════════════
-
-class SIEMExporter:
-    """Base class for SIEM export plugins."""
-
-    def __init__(self, config: dict):
-        self.name     = config.get("name", "unknown")
-        self.enabled  = config.get("enabled", False)
-        self.type     = config.get("type", "")
-        self.filters  = config.get("filters", {})
-        self.settings = config.get("settings", {})
-        self.connection = config.get("connection", {})
-
-        self._buffer = []
-        self._lock   = threading.Lock()
-
-        self.batch_size     = self.settings.get("batch_size", 10)
-        self.flush_interval = self.settings.get("flush_interval_sec", 30)
-
-    def _normalize(self, event: dict) -> dict:
-        """Raw HydraPoT event -> canonical OCSF event.
-
-        Auth rows and command rows are different OCSF classes, so the shape of
-        the incoming dict decides which normalizer runs. An event that is
-        neither is passed through untouched rather than being forced into a
-        class it does not belong to.
-        """
-        from threat_intel import normalize as _n
-        if event.get("auth_type") or event.get("event") in (
-                "connection", "login.success", "login.failed", "auth"):
-            return _n.normalize_auth(event)
-        if "cmd" in event or "command" in event:
-            return _n.normalize_command(event)
-        return event
-
-    def should_export(self, event: dict) -> bool:
-        """Operational export filter — NOT a severity judgement.
-
-        min_fi is a legitimate volume control: "do not ship every `ls` to my
-        paid SIEM". It is kept, because deciding WHICH events are worth the
-        bandwidth is a different question from how dangerous they are. What was
-        removed is FI reaching the CEF severity column, where downstream tools
-        read it as a security rating (see normalize.to_cef).
-        """
-        min_fi = self.filters.get("min_fi", 0)
-        if event.get("fi", event.get("fi_score", 0)) < min_fi:
-            return False
-
-        allowed_agents = self.filters.get("agents")
-        if allowed_agents and event.get("agent", "unknown") not in allowed_agents:
-            return False
-
-        # auth events
-        if event.get("event") == "auth" and not self.filters.get("include_auth", True):
-            return False
-
-        return True
-
-    def emit(self, event: dict):
-        """Buffer an event and flush when batch is full.
-
-        NORMALIZES HERE, once, for every exporter. Previously each subclass
-        received the raw internal dict and decided for itself what to do with
-        it: syslog converted to CEF, Splunk and Elasticsearch shipped the raw
-        shape. That meant HydraPoT had no canonical representation and every
-        new exporter would invent another mapping.
-
-        Filtering still runs against the RAW event, because should_export()
-        filters on operational fields (min_fi, agents) that deliberately do not
-        exist at the top level of the normalized form.
-        """
-        if not self.enabled or not self.should_export(event):
-            return
-
-        with self._lock:
-            self._buffer.append(self._normalize(event))
-            if len(self._buffer) >= self.batch_size:
-                self._flush()
-
-    def flush(self):
-        """Force flush any remaining events."""
-        with self._lock:
-            if self._buffer:
-                self._flush()
-
-    def _flush(self):
-        """Override in subclasses to send events to the SIEM."""
-        events = self._buffer[:]
-        self._buffer.clear()
-        self._send(events)
-
-    def _send(self, events: list):
-        """Override in subclasses."""
-        raise NotImplementedError
-
-    def _resolve_env(self, key: str) -> str:
-        """Resolve an environment variable name to its value."""
-        return os.environ.get(key, "")
-
-    def __repr__(self):
-        status = "enabled" if self.enabled else "disabled"
-        return f"<SIEMExporter '{self.name}' type={self.type} {status}>"
-
-
-class SplunkHECExporter(SIEMExporter):
-    """Export events to Splunk via HTTP Event Collector."""
-
-    def _send(self, events: list):
-        import urllib.request
-        import urllib.error
-
-        url   = self.connection.get("url", "")
-        token = self._resolve_env(self.connection.get("token_env", ""))
-
-        if not url or not token:
-            print(f"[splunk] Missing URL or token for {self.name}")
-            return
-
-        index      = self.settings.get("index", "main")
-        sourcetype = self.settings.get("sourcetype", "hydrapot:session")
-        host       = self.settings.get("host", "honeypot")
-
-        for event in events:
-            # Splunk indexes arbitrary JSON and OCSF is a published schema, so
-            # the canonical event ships as-is -- no Splunk-specific mapping to
-            # maintain. `time` is OCSF epoch MILLISECONDS; HEC wants seconds.
-            from threat_intel.normalize import to_json
-            doc = to_json(event)
-            ocsf_ms = doc.get("time")
-            payload = json.dumps({
-                "index":      index,
-                "sourcetype": sourcetype,
-                "host":       host,
-                "time":       (ocsf_ms / 1000.0) if ocsf_ms else time.time(),
-                "event":      doc,
-            }, default=str).encode()
-
-            req = urllib.request.Request(url, data=payload, method="POST")
-            req.add_header("Authorization", f"Splunk {token}")
-            req.add_header("Content-Type", "application/json")
-
-            try:
-                verify = self.connection.get("verify_ssl", True)
-                if not verify:
-                    import ssl
-                    ctx = ssl.create_default_context()
-                    ctx.check_hostname = False
-                    ctx.verify_mode = ssl.CERT_NONE
-                    urllib.request.urlopen(req, context=ctx, timeout=5)
-                else:
-                    urllib.request.urlopen(req, timeout=5)
-            except Exception as e:
-                print(f"[splunk] Export failed: {e}")
-
-        print(f"[splunk] Exported {len(events)} events to {self.name}")
-
-
-class ElasticsearchExporter(SIEMExporter):
-    """Export events to Elasticsearch."""
-
-    def _send(self, events: list):
-        import urllib.request
-        import urllib.error
-
-        hosts    = self.connection.get("hosts", [])
-        username = self._resolve_env(self.connection.get("username_env", ""))
-        password = self._resolve_env(self.connection.get("password_env", ""))
-
-        if not hosts:
-            print(f"[elastic] No hosts configured for {self.name}")
-            return
-
-        host = hosts[0]
-        date_str = datetime.now().strftime("%Y.%m.%d")
-        index_pattern = self.settings.get("index_pattern", "hydrapot-{date}")
-        index = index_pattern.replace("{date}", date_str)
-
-        for event in events:
-            # ECS, because Elastic's own dashboards and detection rules are
-            # written against it. HydraPoT is NOT internally ECS -- this is a
-            # translation at the boundary, the same way syslog gets CEF.
-            from threat_intel.normalize import to_ecs
-            url = f"{host}/{index}/_doc"
-            payload = json.dumps(to_ecs(event), default=str).encode()
-
-            req = urllib.request.Request(url, data=payload, method="POST")
-            req.add_header("Content-Type", "application/json")
-
-            if username and password:
-                import base64
-                creds = base64.b64encode(f"{username}:{password}".encode()).decode()
-                req.add_header("Authorization", f"Basic {creds}")
-
-            try:
-                verify = self.connection.get("verify_ssl", True)
-                if not verify:
-                    import ssl
-                    ctx = ssl.create_default_context()
-                    ctx.check_hostname = False
-                    ctx.verify_mode = ssl.CERT_NONE
-                    urllib.request.urlopen(req, context=ctx, timeout=5)
-                else:
-                    urllib.request.urlopen(req, timeout=5)
-            except Exception as e:
-                print(f"[elastic] Export failed: {e}")
-
-        print(f"[elastic] Exported {len(events)} events to {index}")
-
-
-class SyslogExporter(SIEMExporter):
-    """Export events via syslog (UDP/TCP) in JSON or CEF format."""
-
-    def __init__(self, config: dict):
-        super().__init__(config)
-        self._socket = None
-
-    def _get_socket(self):
-        if self._socket:
-            return self._socket
-
-        import socket
-        host     = self.connection.get("host", "127.0.0.1")
-        port     = self.connection.get("port", 514)
-        protocol = self.connection.get("protocol", "udp")
-
-        if protocol == "tcp":
-            self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self._socket.connect((host, port))
-        else:
-            # No connect() and no stored destination: _send() passes the
-            # address to sendto() per datagram. This used to set
-            # `self._socket._dest = (host, port)`, which raises AttributeError
-            # -- socket objects use __slots__ -- so every UDP send failed
-            # inside the try/except and UDP syslog export never worked. The
-            # attribute was never read.
-            self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-
-        return self._socket
-
-    def _send(self, events: list):
-        import socket as sock_module
-
-        host     = self.connection.get("host", "127.0.0.1")
-        port     = self.connection.get("port", 514)
-        protocol = self.connection.get("protocol", "udp")
-        fmt      = self.connection.get("format", "json")
-
-        for event in events:
-            if fmt == "cef":
-                msg = self._to_cef(event)
-            else:
-                msg = json.dumps(event, default=str)
-
-            # syslog priority: facility=local0 (16), severity=warning (4)
-            priority = (16 * 8) + 4
-            syslog_msg = f"<{priority}>{datetime.now().strftime('%b %d %H:%M:%S')} honeypot hydrapot: {msg}"
-
-            try:
-                s = self._get_socket()
-                data = syslog_msg.encode("utf-8")
-                if protocol == "tcp":
-                    s.send(data + b"\n")
-                else:
-                    s.sendto(data, (host, port))
-            except Exception as e:
-                print(f"[syslog] Export failed: {e}")
-                self._socket = None
-
-        print(f"[syslog] Exported {len(events)} events via {protocol}://{host}:{port}")
-
-    def _to_cef(self, event: dict) -> str:
-        """Canonical OCSF event -> CEF.
-
-        The mapping itself lives in threat_intel/normalize.to_cef so the CEF
-        shape is testable without a socket, and so a second CEF consumer would
-        not fork it.
-
-        THE BUG THIS REPLACED: the old implementation did
-        `severity = {0:1, 1:3, 2:5, 3:7, 4:10}.get(fi, 1)` and used FI as both
-        the CEF signature id and the severity column. FI is HydraPoT's routing
-        metric -- it decides which agent answers a command -- so every SIEM
-        receiving this read a loud-but-harmless `rm` as severity 10 and a quiet
-        credential read as 3. Severity now comes from severity_id (which only
-        findings carry) and FI travels as a labelled custom field, cs3.
-        """
-        from threat_intel.normalize import to_cef
-        return to_cef(event)
+# The exporter classes live in threat_intel/exporters.py, because translating a
+# canonical event into what Splunk/Elasticsearch/syslog speak is threat-intel
+# work, not plugin plumbing. PluginManager below still owns them at runtime --
+# it discovers the configs, builds the objects and dispatches events -- because
+# it does the same for FI rules and static handlers and main.py drives all three
+# through one object.
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PLUGIN MANAGER
 # ══════════════════════════════════════════════════════════════════════════════
 
-EXPORTER_TYPES = {
-    "splunk_hec":    SplunkHECExporter,
-    "elasticsearch": ElasticsearchExporter,
-    "syslog":        SyslogExporter,
-}
-
-
 class PluginManager:
     """
     Discovers and loads all plugins from the plugins/ directory.
 
     Usage:
-        pm = PluginManager("plugins/")
+        pm = PluginManager()
         pm.load_all()
         pm.apply_fi_rules(fi_manager)
         pm.export_event({"cmd": "whoami", "fi_score": 0, ...})
     """
 
-    def __init__(self, plugin_dir: str = "plugins/"):
-        self.plugin_dir = plugin_dir
+    def __init__(self, plugin_dir: str = None):
+        # Defaults to the anchored PLUGIN_DIR. Callers may still pass a path
+        # (tests, a custom install) -- what they may not do is rely on the cwd.
+        self.plugin_dir = plugin_dir or PLUGIN_DIR
         self.fi_plugins      = []   # list of FIRulePlugin
         self.static_plugins  = []   # list of StaticHandlerPlugin
         self.exporters       = []   # list of SIEMExporter
@@ -456,7 +184,11 @@ class PluginManager:
                     print(f"[plugin] Failed to load {fname}: {e}")
 
     def _load_exporters(self):
-        export_dir = os.path.join(self.plugin_dir, "export")
+        # NOT under self.plugin_dir. Exporter configs live beside the rest of
+        # the threat-intel rules, and the path is derived from this file's
+        # location rather than the cwd so it resolves however HydraPoT is
+        # started (hp, systemd, a test runner).
+        export_dir = EXPORT_CONFIG_DIR
         if not os.path.isdir(export_dir):
             return
         for fname in sorted(os.listdir(export_dir)):
