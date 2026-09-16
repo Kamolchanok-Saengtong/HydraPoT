@@ -181,8 +181,22 @@ class FILogManager:
                 with open(impactful_path, "w") as f:
                     json.dump([], f)
 
-    def process(self, command: str, output: str, agent: str, session_id: str) -> dict:
-        fi, method = self.scorer.score(command)
+    def process(self, command: str, output: str, agent: str, session_id: str,
+                fi: int = None, method: str = None) -> dict:
+        """`fi` lets the caller pass a score it already computed.
+
+        main.py scores once per command and routes on that number. Re-scoring
+        `command` here produced a SECOND score from a different string --
+        main.py routes on the sudo-stripped form, this saw the raw one -- so the
+        impactful log could disagree with the row the SIEM got for the same
+        command. Scoring twice was also pure waste on the hot path.
+
+        Falls back to scoring itself when not given, so a caller that has no
+        score still works."""
+        if fi is None:
+            fi, method = self.scorer.score(command)
+        elif method is None:
+            method = "caller"
 
         event = {
             "session_id":   session_id,
