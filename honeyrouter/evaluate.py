@@ -278,6 +278,36 @@ def _measured_reference(sessions) -> dict | None:
     }
 
 
+def _times(value, baseline) -> str:
+    """Multiple of the baseline, not a percent change.
+
+    "-100%" and "+269%" are arithmetically right and unreadable: the first
+    means ZERO and the second means 3.7 TIMES. A multiple says both directly,
+    and zero gets a word rather than a number.
+    """
+    if not baseline:
+        return "—"
+    if value == 0:
+        return "free" if baseline > 0 else "0x"
+    ratio = value / baseline
+    mark = "✓" if ratio < 1 else ("✗" if ratio > 1 else " ")
+    return f"{ratio:.2f}x{mark}"
+
+
+def _points(value, baseline) -> str:
+    """Absolute difference, for a bounded scale.
+
+    The judge score is 0-5. A percentage on a bounded scale exaggerates: 5% of
+    3.77 is 0.19 points, which reads as a bigger move than it is.
+    """
+    if baseline is None:
+        return "—"
+    diff = value - baseline
+    if abs(diff) < 0.005:
+        return "  same"
+    return f"{diff:+.2f}{'✓' if diff > 0 else '✗'}"
+
+
 def _delta(value, baseline, lower_is_better=True) -> str:
     """TRUE percent change, with a marker for whether it is an improvement.
 
@@ -318,16 +348,26 @@ def report(results: dict, baseline: str = "Rule-based"):
 
     if baseline in results:
         base = results[baseline]
-        print(f"\nChange vs {baseline}   ✓ better · ✗ worse\n")
-        print(f"{'Policy':<17}{'Cost ↓':>14}{'Total time ↓':>16}{'Judge ↑':>14}")
-        print("─" * 61)
+        print(f"\nVersus {baseline}   ✓ better · ✗ worse\n")
+        head = (f"{'Policy':<17}{'Cost $':>9}{'x base':>9}"
+                f"{'Time s':>9}{'x base':>9}{'Judge':>8}{'vs base':>9}")
+        print(head)
+        print("─" * len(head))
         for name, r in results.items():
-            if name == baseline:
-                continue
+            marker = "  (baseline)" if name == baseline else ""
             print(f"{name:<17}"
-                  f"{_delta(r['token_cost_usd'], base['token_cost_usd']):>14}"
-                  f"{_delta(r['latency_total_s'], base['latency_total_s']):>16}"
-                  f"{_delta(r['judge_mean'], base['judge_mean'], False):>14}")
+                  f"{r['token_cost_usd']:>9.4f}"
+                  f"{_times(r['token_cost_usd'], base['token_cost_usd']):>9}"
+                  f"{r['latency_total_s']:>9.0f}"
+                  f"{_times(r['latency_total_s'], base['latency_total_s']):>9}"
+                  f"{r['judge_mean']:>8.2f}"
+                  f"{_points(r['judge_mean'], base['judge_mean']):>9}"
+                  f"{marker}")
+        print("\n  x base   multiple of the baseline. 0.5x = half. 2x = double.")
+        print("           'free' = exactly zero, which no percentage says clearly.")
+        print("  Judge    absolute points on the 0-5 scale, not a percentage:")
+        print("           a 5% change on a 3.77 mean is 0.19 points, and reading")
+        print("           it as a percentage makes small moves look large.")
 
     _token_table(results)
     _latency_caveat(results, baseline)
