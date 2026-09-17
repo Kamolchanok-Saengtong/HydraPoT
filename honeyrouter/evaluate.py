@@ -398,22 +398,25 @@ def _token_table(results, cloud_baseline="Pure Cloud"):
     base_tok = results[cloud_baseline]["cloud_tokens"]
     print(f"\nToken accounting — every token priced at the input rate "
           f"(${TOKEN_RATE_USD_PER_M:.2f} / 1M), the lowest plausible estimate:\n")
-    head = (f"{'Policy':<17}{'Cloud tokens':>14}{'billed $':>10}"
-            f"{'Local tokens':>14}{'if billed $':>12}{'Total $':>10}"
-            f"{'  Saving vs ' + cloud_baseline:>24}")
+    head = (f"{'Policy':<17}{'Cloud tokens':>14}{'YOUR BILL $':>13}"
+            f"{'Local tokens':>14}{'local compute $':>17}"
+            f"{'  Token saving vs ' + cloud_baseline:>30}")
     print(head)
     print("─" * len(head))
     for name, r in results.items():
         saving = (100.0 * (base_tok - r["cloud_tokens"]) / base_tok
                   if base_tok else 0.0)
-        total = r["token_cost_usd"] + r["local_token_cost_usd"]
-        print(f"{name:<17}{r['cloud_tokens']:>14,}{r['token_cost_usd']:>10.4f}"
-              f"{r['local_tokens']:>14,}{r['local_token_cost_usd']:>12.4f}"
-              f"{total:>10.4f}{saving:>23.1f}%")
-    print("\n  billed $     cloud tokens only -- the actual invoice.")
-    print("  if billed $  on-device tokens at the SAME rate. Not a bill: it is "
-          "the size of\n               the compute pushed onto local hardware, "
-          "which an API invoice never shows.")
+        print(f"{name:<17}{r['cloud_tokens']:>14,}{r['token_cost_usd']:>13.4f}"
+              f"{r['local_tokens']:>14,}{r['local_token_cost_usd']:>17.4f}"
+              f"{saving:>29.1f}%")
+    print("\n  YOUR BILL $      what a provider actually charges. Cloud tokens only.")
+    print("  local compute $  NOT A BILL, and never added to the one above. It is"
+          "\n                   on-device tokens priced at the same rate, purely to"
+          "\n                   show how much work was pushed onto your own GPU --"
+          "\n                   something an API invoice can never reveal. Nobody"
+          "\n                   sends you this. A policy that looks free because it"
+          "\n                   runs everything locally is not free, it moved the"
+          "\n                   cost somewhere the invoice does not look.")
     print("  Saving       cloud tokens only, per the definition: "
           "(baseline - policy) / baseline.")
     print("\n  Cowrie reports no tokens at all -- it is a rule-based emulator, "
