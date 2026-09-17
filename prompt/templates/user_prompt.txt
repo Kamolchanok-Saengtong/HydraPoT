@@ -3,5 +3,4 @@ Current date: {current_date}
 === System State Register (SRi) ===
 {sri_text}
 
-=== Current Attacker Command (Qi) ===
 {cmd}

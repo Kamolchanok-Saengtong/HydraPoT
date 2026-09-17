@@ -85,6 +85,8 @@ class PromptManager:
         # Prompt-injection defences. See guardrail/ and the note on _guard().
         # None = off, which is what every existing caller gets by default.
         self.guardrail    = guardrail
+        # Tokens _guard() stripped from the most recent prompt. See _guard.
+        self.last_removed = []
 
     # ── attacker text entering a prompt ─────────────────────────────────────
     # EVERY path that puts attacker-controlled text into a prompt goes through
@@ -128,7 +130,11 @@ class PromptManager:
             return text
         if getattr(g, "sanitize", False):
             from guardrail.sanitizer import Sanitizer
-            text = Sanitizer().sanitize(text).text
+            result = Sanitizer().sanitize(text)
+            # Published so the detector can record WHICH tokens were forged
+            # without sanitising the same command a second time.
+            self.last_removed = result.removed
+            text = result.text
         if defuse and getattr(g, "isolate", False):
             for marker in self._SRI_MARKERS:
                 # Zero-width-ish break: still readable as the bytes the attacker

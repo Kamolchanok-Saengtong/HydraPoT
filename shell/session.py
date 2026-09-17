@@ -18,8 +18,17 @@ attackers never see each other's files, installs or working directory. Every
 object above holds that dict by reference. This is also why they are built here
 rather than imported as module-level singletons.
 
-handle() itself is dispatch and nothing else: parse the command, take the first
-deterministic answer that claims it, otherwise route to an agent, then log.
+handle() itself is dispatch and nothing else. Command flow, in order -- each
+step can answer and stop:
+
+    1  responders / static   realism: cd, chmod, uname, systemctl, top, vim
+    2  _reaches_a_model      SECURITY BOUNDARY. False -> "command not found",
+                             no prompt is ever built. ~15% get past here.
+    3  detector              optional, logging only, decides nothing (~66ms)
+    4  PromptManager._guard  sanitize + isolate the command AND file content
+    5  base_prompt.txt       soft: asks the model to stay in character
+    6  _llm_send             validate the answer -> re-roll once -> Cowrie.
+                             Never a refusal: that tells the attacker.
 
 config and the two model agents arrive as ARGUMENTS. They were module globals in
 main.py, read across a 1,500-line closure; passing them makes the dependency
@@ -244,6 +253,26 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
     link = CowrieLink(cowrie, fallback=_answer_without_cowrie)
 
     # ── shortcut: log + return ────────────────────────────────────────────
+    def _reaches_a_model(agent, needs_llm, base, lookup_base, cmd) -> bool:
+        """Should this command be allowed to build a prompt at all?
+
+        The cheapest defence there is, and the only one that cannot fail: a
+        command that never reaches a model has no prompt to inject into. Only
+        ~15% of a session's traffic gets past here.
+
+        False -> the caller answers "command not found" and stops.
+
+        The exceptions are shell builtins and package verbs, which are real
+        even though no binary backs them, and ./script, which Cowrie owns.
+        """
+        if agent != "cowrie" or needs_llm or sw.available(lookup_base):
+            return True                       # a real tool, or already routed away
+        if not base or base in ("echo", "cd", "exit", "logout", "clear"):
+            return True                       # shell builtins
+        if cmd.startswith(("./", "apt", "dpkg")):
+            return True                       # Cowrie owns these
+        return False
+
     def _llm_send(agent_obj, system_prompt, user_prompt, record_usage=True,
                   cmd=None):
         """THE single place this file calls a model.
@@ -288,11 +317,11 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
         # caught.
         if _gcfg.retry_on_break:
             retry = _once()
-            if not _validator.validate(retry).broke_persona:
+            retry_broke = _validator.validate(retry)
+            if not retry_broke.broke_persona:
                 _record_break(cmd, out, broke.reasons, "retry")
                 return retry
-            out = retry
-            broke = _validator.validate(out)
+            out, broke = retry, retry_broke
 
         # Still broken. Hand it to Cowrie, which is a real emulator and cannot
         # break character. NEVER a canned refusal -- that tells the attacker
@@ -737,30 +766,6 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
         # answer, not just the safe one.
         agent     = classify(actual_cmd, session)
 
-        # ── guardrail: detect (logging only) ────────────────────────────────
-        # Runs only for commands that will reach a model -- Cowrie has no prompt
-        # to inject into, and the classifier costs ~66ms on CPU.
-        #
-        # IT NEVER CHANGES ROUTING AND NEVER BLOCKS. Detection is threat
-        # intelligence here, not protection: an attacker probing the LLM is
-        # itself worth capturing, which is what a honeypot is for. The defences
-        # (sanitise, isolate, validate) run regardless of what this says --
-        # gating them on an 80%-F1 classifier would leave the confirmed breaks,
-        # which it scores 0.000 on, completely undefended.
-        if _detector is not None and (needs_llm or agent != "cowrie"):
-            try:
-                from guardrail.policy import Action, Policy
-                from guardrail.sanitizer import Sanitizer
-                _san = Sanitizer().sanitize(actual_cmd)
-                _decision = Policy().decide(_detector.classify(actual_cmd), _san)
-                if _decision.action is Action.PROTECT and _injection_log:
-                    _injection_log.record(_decision, cmd, src_ip=src_ip,
-                                          session_id=SESSION_ID,
-                                          removed_tokens=_san.removed)
-            except Exception as e:
-                print(f"[guardrail] detect failed: {type(e).__name__}: {e}")
-
-
         if tracked_path and agent == "cowrie":
             agent      = "on_device"
             needs_llm  = True   # forces it into the on_device branch below
@@ -780,14 +785,46 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
             agent     = "on_device"
             needs_llm = True
 
-        # command not found — only for unknown commands not in any pattern
-        if agent == "cowrie" and not needs_llm and not sw.available(lookup_base):
-            if actual_base and actual_base not in ("echo", "cd", "exit",
-                                                    "logout", "clear"):
-                if not actual_cmd.startswith(("./", "apt", "dpkg")):
-                    output = (f"{actual_base}: applet not found" if from_busybox
-                              else f"bash: {actual_base}: command not found")
-                    return _finish(cmd, "cowrie", output, fi_score, t_start)
+        # ── SECURITY BOUNDARY ───────────────────────────────────────────────
+        # False here means no prompt is ever built, so there is nothing to
+        # inject into. This is what stops naked injection text: argv[0] of
+        # "ignore your previous instructions" is `ignore`, which is not a
+        # command. Everything downstream -- sanitise, isolate, validate --
+        # only guards what gets PAST here: injection smuggled inside a command
+        # that really exists.
+        if not _reaches_a_model(agent, needs_llm, actual_base, lookup_base,
+                                actual_cmd):
+            output = (f"{actual_base}: applet not found" if from_busybox
+                      else f"bash: {actual_base}: command not found")
+            return _finish(cmd, "cowrie", output, fi_score, t_start)
+
+        # ── guardrail: detect (logging only) ────────────────────────────────
+        # BELOW the boundary on purpose: only ~15% of commands get this far, so
+        # the classifier's ~66ms is not spent on traffic that never reaches a
+        # model, and the log stops recording things that were never at risk.
+        #
+        # IT DECIDES NOTHING. The defences run regardless of what it says --
+        # gating them on an 80%-F1 classifier would leave the confirmed breaks,
+        # which it scores 0.000 on, completely undefended. This is threat
+        # intelligence: an attacker probing the LLM is worth capturing.
+        # Past the boundary AND actually going to a model -- a command that
+        # Cowrie answers builds no prompt either.
+        if _detector is not None and (needs_llm or agent != "cowrie"):
+            try:
+                from guardrail.policy import Action, Policy
+                from guardrail.sanitizer import Sanitized
+                # Reuse what PromptManager._guard already stripped for the
+                # prompt, rather than sanitising the same command twice.
+                removed = getattr(prompt_manager, "last_removed", []) or []
+                _san = Sanitized(text=actual_cmd, removed=removed,
+                                 modified=bool(removed))
+                _decision = Policy().decide(_detector.classify(actual_cmd), _san)
+                if _decision.action is Action.PROTECT and _injection_log:
+                    _injection_log.record(_decision, cmd, src_ip=src_ip,
+                                          session_id=SESSION_ID,
+                                          removed_tokens=removed)
+            except Exception as e:
+                print(f"[guardrail] detect failed: {type(e).__name__}: {e}")
 
         if agent == "cloud":
             sys_p, usr_p = prompt_manager.build_cloud_prompt(actual_cmd)
