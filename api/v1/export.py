@@ -1,8 +1,12 @@
 """
 api/v1/export.py — the normalized export route.
 
-One endpoint for every OCSF class and every wire format. See
-api/services/export.py for why this is not one route per class.
+One endpoint for every class and every wire format. Named /export, not /ocsf:
+OCSF is the canonical shape INSIDE, but this route also serves CEF and ECS, and
+naming it after one of the four formats it emits made the other three look like
+they were somewhere else.
+
+See api/services/export.py for why this is not one route per class.
 """
 from fastapi import APIRouter, HTTPException, Query
 
@@ -12,7 +16,7 @@ from api.v1.params import SINCE, INSTANCE, LIMIT, OFFSET
 router = APIRouter()
 
 
-@router.get("/ocsf", summary="Normalized security telemetry", tags=["export"])
+@router.get("/export", summary="Normalized security telemetry", tags=["export"])
 def ocsf(cls: str = Query("finding", alias="class",
                           description="process | auth | finding"),
          format: str = Query("ocsf", description="ocsf | json | cef | ecs"),

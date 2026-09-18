@@ -1,35 +1,52 @@
+"""
+honeyrouter/reward.py — what the RL router is trained to maximise.
+
+TWO TERMS ONLY: cost and fidelity.
+
+    reward = W_JUDGE * judge' - W_COST * cost'
+
+FI and latency were dropped deliberately, and for different reasons:
+
+  FI      is HydraPoT's ROUTING metric, not a goal. It describes a command
+          (how much interaction it implies), not how well the router did.
+          Rewarding it taught the agent to prefer commands with a certain FI
+          band, which is not a decision the router should be making.
+
+  LATENCY correlates almost perfectly with cost here -- the cloud arm is both
+          the slowest and the only one billed -- so the term added weight
+          without adding information, and made the trade-off harder to read.
+          A router that is cheap is already fast in this dataset.
+
+What remains is the real trade-off: a convincing answer costs money.
+
+NORMALISED, so the weights mean something. Raw cost is ~1e-4 dollars and the
+judge score is 1-5, so multiplying both by weights that sum to 1 let the cost
+term contribute 0.00006 against the judge's 0.9 -- a weight of 0.50 that was
+15,000x too small to matter. Dividing each by its own p99 reference puts them
+on the same scale first, and the weights then express real priorities.
+
+They do not have to sum to 1. Only their RATIO matters.
+"""
 
 # Scale references, from the Part C distribution (p99 across all three arms).
-FI_MAX = 4.0            # FI is a 0-4 band by definition
 JUDGE_MAX = 5.0         # LLM-as-judge is 1-5; 0 means "no score"
 COST_REF = 0.00083      # $/command, p99
-LATENCY_REF = 17.42     # seconds, p99
 
-# Weights now express real priorities, because the terms they multiply are
-# comparable. They do not have to sum to 1 -- what matters is their ratio.
-W_FI = 0.05
 W_COST = 0.45
-W_LATENCY = 0.45
 W_JUDGE = 0.05
 
 
-def compute_reward(fi_score: float, cost: float, latency: float,
-                   judge_score: float) -> float:
-    """reward = w_fi*fi' + w_judge*judge' - w_cost*cost' - w_latency*latency'
+def compute_reward(cost: float, judge_score: float, **_ignored) -> float:
+    """reward = w_judge*judge' - w_cost*cost',  where x' is x over its reference.
 
-    where x' is x divided by its reference (see module docstring).
+    cost:         $ actually charged for the picked agent's response
+    judge_score:  0-5, LLM-as-judge fidelity of that agent's REAL response --
+                  higher = more convincing = rewarded
 
-    fi_score:    0-4, command complexity/impact
-    cost:        $ actually charged for the picked agent's response
-    latency:     seconds the picked agent actually took
-    judge_score: 0-5, LLM-as-judge fidelity of the picked agent's real
-                 response -- higher = more convincing = rewarded
+    Both are real measurements of the arm the agent chose, not estimates.
 
-    All four are REAL measurements of the arm the agent chose, not estimates.
+    **_ignored accepts fi_score and latency from older callers without using
+    them, so a stale call site cannot silently pass a value that does nothing
+    while looking like it does.
     """
-    fi = fi_score / FI_MAX
-    judge = judge_score / JUDGE_MAX
-    cost_n = cost / COST_REF
-    latency_n = latency / LATENCY_REF
-
-    return (W_FI * fi) + (W_JUDGE * judge) - (W_COST * cost_n) - (W_LATENCY * latency_n)
+    return (W_JUDGE * (judge_score / JUDGE_MAX)) - (W_COST * (cost / COST_REF))

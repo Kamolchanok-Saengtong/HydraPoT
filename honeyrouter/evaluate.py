@@ -470,9 +470,10 @@ def _latency_caveat(results, baseline="Rule-based"):
 def sweep(grid=None, timesteps=10_000, out_dir=None):
     """Retrain at several reward weightings and table the trade-off.
 
-    Only W_COST and W_LATENCY move. W_FI and W_JUDGE stay fixed because the
-    ratio is what matters -- scaling all four changes nothing, and varying
-    four axes to explore two is how a sweep becomes unreadable.
+    Only W_COST moves. W_JUDGE stays fixed because the RATIO is what matters
+    -- scaling both changes nothing. The reward has two terms now (FI and
+    latency were dropped, see reward.py), so this is a single axis: how much
+    is a convincing answer worth in dollars.
 
     Each config trains a FRESH model to its own path, so the sweep never
     overwrites the model in out/. compute_reward() reads its weights as module
@@ -484,54 +485,52 @@ def sweep(grid=None, timesteps=10_000, out_dir=None):
     from honeyrouter import reward as R
     from honeyrouter.environment import HoneyRouterEnv
 
-    grid = grid or [(c, l) for c in (0.10, 0.25, 0.50) for l in (0.10, 0.25, 0.40)]
+    grid = grid or [0.10, 0.25, 0.45, 0.70, 1.00]
     out_dir = out_dir or tempfile.mkdtemp(prefix="hr_sweep_")
     sessions = load_sessions()
 
     # Baselines never change -- compute once rather than per config.
     base = run_policy(rule_based(), sessions)
-    original = (R.W_COST, R.W_LATENCY)
+    original = R.W_COST
 
     rows = []
-    for w_cost, w_lat in grid:
-        R.W_COST, R.W_LATENCY = w_cost, w_lat
-        path = os.path.join(out_dir, f"dqn_c{w_cost}_l{w_lat}")
+    for w_cost in grid:
+        R.W_COST = w_cost
+        path = os.path.join(out_dir, f"dqn_c{w_cost}")
         model = _DQN("MlpPolicy", HoneyRouterEnv(), verbose=0)
         model.learn(total_timesteps=timesteps)
         model.save(path)
         r = run_policy(rl_policy(path), sessions)
-        rows.append((w_cost, w_lat, r))
-        print(f"  trained W_COST={w_cost} W_LATENCY={w_lat} -> "
-              f"${r['cost_usd']:.4f}  {r['latency_total_s']:.0f}s  "
+        rows.append((w_cost, r))
+        print(f"  trained W_COST={w_cost} (W_JUDGE={R.W_JUDGE}) -> "
+              f"${r['token_cost_usd']:.4f}  {r['latency_total_s']:.0f}s  "
               f"judge {r['judge_mean']:.2f}")
 
-    R.W_COST, R.W_LATENCY = original
+    R.W_COST = original
     return rows, base
 
 
 def report_sweep(rows, base):
     print(f"\nReward-weight sweep — RL HoneyRouter vs Rule-based baseline "
-          f"(${base['cost_usd']:.4f}, {base['latency_total_s']:.0f}s, "
+          f"(${base['token_cost_usd']:.4f}, {base['latency_total_s']:.0f}s, "
           f"judge {base['judge_mean']:.2f})\n")
-    head = (f"{'W_COST':>7}{'W_LAT':>7}{'Cost $':>10}{'Time s':>9}{'Judge':>7}"
-            f"{'  vs base: cost':>16}{'time':>9}{'judge':>8}   routing mix")
+    head = (f"{'W_COST':>7}{'Cost $':>10}{'x base':>9}{'Time s':>9}"
+            f"{'Judge':>7}{'vs base':>9}   routing mix")
     print(head)
     print("─" * len(head))
-    for w_cost, w_lat, r in rows:
-        mix = " ".join(f"{a[:3]}{100*r['picks'].get(a,0)/r['commands']:.0f}"
+    for w_cost, r in rows:
+        mix = " ".join(f"{a[:3]}{100 * r['picks'].get(a, 0) / r['commands']:.0f}"
                        for a in AGENTS)
-        print(f"{w_cost:>7}{w_lat:>7}{r['cost_usd']:>10.4f}"
+        print(f"{w_cost:>7}{r['token_cost_usd']:>10.4f}"
+              f"{_times(r['token_cost_usd'], base['token_cost_usd']):>9}"
               f"{r['latency_total_s']:>9.0f}{r['judge_mean']:>7.2f}"
-              f"{_delta(r['cost_usd'], base['cost_usd']):>16}"
-              f"{_delta(r['latency_total_s'], base['latency_total_s']):>9}"
-              f"{_delta(r['judge_mean'], base['judge_mean'], False):>8}   {mix}")
-    print("\nrouting mix = cow/on_/clo as % of commands.")
-    print("A config is only interesting if it beats the baseline on something "
-          "without\nlosing badly elsewhere -- there is no single best row, "
-          "which is the point.\n")
+              f"{_points(r['judge_mean'], base['judge_mean']):>9}   {mix}")
+    print("\n  W_COST is what one dollar of cloud spend is worth against one")
+    print("  point of fidelity. W_JUDGE is fixed -- only the RATIO matters.")
+    print("  routing mix = cow/on_/clo as % of commands.")
+    print("  There is no single best row. A config is interesting when it beats")
+    print("  the baseline on one axis without collapsing the other.")
 
-
-# ── single-model view (unchanged behaviour) ─────────────────────────────────
 
 def evaluate(model_path: str = MODEL_PATH, n_episodes: int = 20):
     """Mean episode reward and the DQN's action distribution.

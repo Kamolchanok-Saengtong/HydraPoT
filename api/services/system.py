@@ -92,7 +92,7 @@ def capabilities() -> dict:
         # was told a capability existed and found nothing to call.
         "export_formats": sorted(export.FORMATS),
         "export_classes": sorted(export.CLASSES),
-        "export_endpoint": "/api/v1/ocsf",
+        "export_endpoint": "/api/v1/export",
         "ocsf_version": normalize.OCSF_VERSION,
         # Which sinks are ENABLED, so an integrator can see whether anything is
         # being forwarded. Never the destinations -- those are credentials.
