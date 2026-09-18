@@ -56,6 +56,43 @@ from shell.telemetry import Telemetry
 from shell.routing import Routing
 
 
+def parse_command(cmd: str):
+    """Raw input -> (actual_cmd, actual_base, lookup_base, from_busybox). PURE.
+
+    Two rewrites, both so everything downstream judges the SAME string:
+
+      sudo     stripped. The attacker is already root, so `sudo X` IS `X`
+               (base_prompt.txt rule 2b). Routing once read the raw form while
+               every other check read the stripped one, and the prefix alone
+               decided the answerer.
+
+      busybox  `busybox X args` and `/bin/busybox X args` ARE `X args`. Doing
+               it here rather than asking a model to reason "busybox wraps X
+               transparently" was necessary: busybox was 77% of FI4 losses in a
+               109-session comparison, and `busybox rm -rf x` drew a DIFFERENT
+               wrong answer run-to-run on identical input. Only rewrites when an
+               applet name follows -- bare `busybox` prints its own banner.
+
+    from_busybox survives the rewrite because the ERROR MESSAGE does not: an
+    unknown applet is "X: applet not found", never bash's "command not found"
+    (rule 3). Without the flag the rewrite erased the only evidence of how the
+    command was invoked.
+    """
+    text = cmd.strip()
+    actual_cmd = text[5:].strip() if text.startswith("sudo ") else text
+    actual_base = actual_cmd.split()[0] if actual_cmd else ""
+    lookup_base = os.path.basename(actual_base)     # full path -> bare name
+
+    from_busybox = False
+    if lookup_base == "busybox":
+        parts = actual_cmd.split()
+        if len(parts) > 1:
+            actual_cmd, actual_base = " ".join(parts[1:]), parts[1]
+            lookup_base = os.path.basename(actual_base)
+            from_busybox = True
+    return actual_cmd, actual_base, lookup_base, from_busybox
+
+
 def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
                          src_ip: str = "?", public_ip: str = "?",
                          plugins=None, sri_max_events: int = 10, sync_state: bool = True,
@@ -404,6 +441,88 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
 
     # ── main dispatch ─────────────────────────────────────────────────────
 
+    def _deterministic_answer(actual_cmd, actual_base, cloud_routed,
+                              force_agent, cmd, fi_score, t_start):
+        """Commands answered from our own state, never by a model.
+
+        -> the finished response, or None to keep going.
+
+        Every one is here because a MODEL got it wrong in a way it could
+        not take back -- shell/responders.py lists the four observed
+        cases. Each is logged as the agent it DISPLACED, so the routing
+        statistics stay honest about what these took away from cowrie.
+
+        force_agent=="cowrie" is the measurement arm: it must reach the
+        real container, so none of this applies to it.
+        """
+        if force_agent == "cowrie":
+            return None
+
+        if actual_base == "cd":
+            handled, cd_error = responders.cd(actual_cmd)
+            if handled:
+                # Keep the REAL Cowrie shell in step with SYSTEM_STATE['cwd'].
+                # Cowrie holds one persistent SSH shell with its own working
+                # directory, but this branch answers `cd` itself and never
+                # forwards it — so the container stayed wherever it started
+                # while our tracked cwd moved. Any later cowrie-routed
+                # command then ran in the WRONG directory (e.g. `cd /tmp`
+                # then `ls` listed /root), which an attacker spots instantly.
+                # Send the RESOLVED absolute path so relative forms (`..`,
+                # `~`, symlinked paths) land in the same place on both sides.
+                if cd_error is None:
+                    try:
+                        cowrie.send(f"cd {SYSTEM_STATE['cwd']}")
+                    except Exception:
+                        pass   # sync is best-effort: never break the session
+                return _finish(cmd, "cowrie", cd_error or "", fi_score, t_start)
+
+        if actual_base == "chmod" and not cloud_routed:
+            handled, chmod_error = responders.chmod(actual_cmd)
+            if handled:
+                # Only forward a chmod we actually accepted. Forwarding one
+                # we answered with "No such file" would create the file's
+                # permissions on a file we just said does not exist.
+                if chmod_error is None:
+                    link.sync(actual_cmd)
+                return _finish(cmd, "cowrie", chmod_error or "", fi_score, t_start)
+
+        # unset always succeeds silently in real bash, regardless of
+        # whether the variable existed. No existence-check ambiguity at
+        # all (unlike cd/chmod), so this is the simplest of the three:
+        # "unset" was simply missing from BUILTIN_TOOLS, so the model
+        # had no signal it's always available and guessed "command not
+        # found" (or worse, treated the variable name as the command).
+        if actual_base == "unset":
+            return _finish(cmd, "cowrie", "", fi_score, t_start)
+
+        # uname — identity comes from config.yaml, not from whichever
+        # backend happens to answer. Logged as "cowrie" like cd/chmod/
+        # unset above: this is the agent the command WOULD have reached,
+        # so the routing statistics stay honest about what was displaced.
+        if actual_base == "uname":
+            handled, uname_out = responders.uname(actual_cmd)
+            if handled:
+                return _finish(cmd, "cowrie", uname_out, fi_score, t_start)
+
+        # systemctl/service — resolved deterministically, UNCONDITIONALLY
+        # (unlike chmod, not gated by `not cloud_routed`). This isn't about
+        # single-response quality (where cloud is measurably better) — it's
+        # about STATE CONSISTENCY across many turns: neither on_device nor
+        # cloud gets a "services" section injected into their prompt today,
+        # so an LLM answering `systemctl status X` has no way to know a
+        # prior `stop X` ever happened. Routing this to any agent, cloud
+        # included, would keep answering "active (running)" forever
+        # regardless of history — an inconsistency an attacker can trivially
+        # probe (stop a service, immediately check status). Only a single
+        # shared, deterministic source of truth (SYSTEM_STATE["services"])
+        # closes that gap.
+        if actual_base in ("systemctl", "service"):
+            output = responders.systemctl(actual_cmd)
+            tracker.record(cmd, output)
+            return _finish(cmd, "on_device", output, fi_score, t_start)
+        return None
+
     def handle(cmd: str, write_fn, read_fn, force_agent: str | None = None):
         if cmd.strip() == "fi status":
             fi_manager.status()
@@ -414,47 +533,7 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
         streamed = False
         handle.last_usage = None
 
-        actual_cmd  = cmd.strip()[5:].strip() if cmd.strip().startswith("sudo ") else cmd.strip()
-        actual_base = actual_cmd.split()[0] if actual_cmd else ""
-        lookup_base = os.path.basename(actual_base)   # strip path for tool-availability checks
-
-        # busybox is a real multi-call binary — `busybox X args`/`/bin/busybox
-        # X args` IS `X args`, byte-for-byte, whether invoked bare or by full
-        # path (os.path.basename already collapses both to "busybox" above).
-        # Rewriting here (rather than relying on the LLM to reason "busybox
-        # wraps X transparently") turned out necessary: found via a real
-        # 109-session on_device-vs-Cowrie comparison where busybox was 77% of
-        # FI4 losses — a CRITICAL prompt note fixed the "command not found"
-        # hallucination for e.g. chmod, but for `busybox rm -rf x` the model
-        # kept giving a DIFFERENT wrong answer ("invalid option -- 'f'") that
-        # varied run-to-run on the identical input (GPU float non-determinism
-        # at a decision boundary, not something prompt wording can pin down).
-        # Stripping the wrapper here means the applet reuses whatever
-        # handling the bare command already gets — deterministic and, for
-        # rm/chmod/etc., already correct. Only rewrites when an applet name
-        # actually follows; bare `busybox`/`/bin/busybox` (prints its own
-        # usage banner in real life) is left alone, unaffected by this.
-        # `from_busybox` survives the rewrite because the error message does not:
-        # busybox is a dispatcher, so an unknown applet is "X: applet not found",
-        # never bash's "command not found" (base_prompt.txt rule 3). Without the
-        # flag the rewrite erased the only evidence of how the command was
-        # invoked, and every unknown applet answered as bash.
-        from_busybox = False
-        if lookup_base == "busybox":
-            _bb_parts = actual_cmd.split()
-            if len(_bb_parts) > 1:
-                actual_cmd  = " ".join(_bb_parts[1:])
-                actual_base = _bb_parts[1]
-                lookup_base = os.path.basename(actual_base)
-                from_busybox = True
-
-        # actual_cmd, for the same reason routing uses it below: FI_RULES has a
-        # `^(sudo|su\s)` elevation rule, so scoring the raw string gave every
-        # `sudo X` the elevation band no matter what X was. That number is the
-        # routing input (_routes_to_cloud reads it), so FI and classify() have
-        # to read the same string or they decide from different commands.
-        # _routes_to_cloud already used actual_cmd for _is_cloud and fi_score
-        # for the band -- two different strings inside one function.
+        actual_cmd, actual_base, lookup_base, from_busybox = parse_command(cmd)
         fi_score, fi_method = fi_manager.scorer.score(actual_cmd)
         # _finish() is a SIBLING closure, not nested in handle(), so it cannot
         # see this local. Published the way handle.last_usage already is.
@@ -537,70 +616,10 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
 
         cloud_routed = _routes_to_cloud()
 
-        if force_agent != "cowrie":
-            if actual_base == "cd":
-                handled, cd_error = responders.cd(actual_cmd)
-                if handled:
-                    # Keep the REAL Cowrie shell in step with SYSTEM_STATE['cwd'].
-                    # Cowrie holds one persistent SSH shell with its own working
-                    # directory, but this branch answers `cd` itself and never
-                    # forwards it — so the container stayed wherever it started
-                    # while our tracked cwd moved. Any later cowrie-routed
-                    # command then ran in the WRONG directory (e.g. `cd /tmp`
-                    # then `ls` listed /root), which an attacker spots instantly.
-                    # Send the RESOLVED absolute path so relative forms (`..`,
-                    # `~`, symlinked paths) land in the same place on both sides.
-                    if cd_error is None:
-                        try:
-                            cowrie.send(f"cd {SYSTEM_STATE['cwd']}")
-                        except Exception:
-                            pass   # sync is best-effort: never break the session
-                    return _finish(cmd, "cowrie", cd_error or "", fi_score, t_start)
-
-            if actual_base == "chmod" and not cloud_routed:
-                handled, chmod_error = responders.chmod(actual_cmd)
-                if handled:
-                    # Only forward a chmod we actually accepted. Forwarding one
-                    # we answered with "No such file" would create the file's
-                    # permissions on a file we just said does not exist.
-                    if chmod_error is None:
-                        link.sync(actual_cmd)
-                    return _finish(cmd, "cowrie", chmod_error or "", fi_score, t_start)
-
-            # unset always succeeds silently in real bash, regardless of
-            # whether the variable existed. No existence-check ambiguity at
-            # all (unlike cd/chmod), so this is the simplest of the three:
-            # "unset" was simply missing from BUILTIN_TOOLS, so the model
-            # had no signal it's always available and guessed "command not
-            # found" (or worse, treated the variable name as the command).
-            if actual_base == "unset":
-                return _finish(cmd, "cowrie", "", fi_score, t_start)
-
-            # uname — identity comes from config.yaml, not from whichever
-            # backend happens to answer. Logged as "cowrie" like cd/chmod/
-            # unset above: this is the agent the command WOULD have reached,
-            # so the routing statistics stay honest about what was displaced.
-            if actual_base == "uname":
-                handled, uname_out = responders.uname(actual_cmd)
-                if handled:
-                    return _finish(cmd, "cowrie", uname_out, fi_score, t_start)
-
-            # systemctl/service — resolved deterministically, UNCONDITIONALLY
-            # (unlike chmod, not gated by `not cloud_routed`). This isn't about
-            # single-response quality (where cloud is measurably better) — it's
-            # about STATE CONSISTENCY across many turns: neither on_device nor
-            # cloud gets a "services" section injected into their prompt today,
-            # so an LLM answering `systemctl status X` has no way to know a
-            # prior `stop X` ever happened. Routing this to any agent, cloud
-            # included, would keep answering "active (running)" forever
-            # regardless of history — an inconsistency an attacker can trivially
-            # probe (stop a service, immediately check status). Only a single
-            # shared, deterministic source of truth (SYSTEM_STATE["services"])
-            # closes that gap.
-            if actual_base in ("systemctl", "service"):
-                output = responders.systemctl(actual_cmd)
-                tracker.record(cmd, output)
-                return _finish(cmd, "on_device", output, fi_score, t_start)
+        answered = _deterministic_answer(actual_cmd, actual_base, cloud_routed,
+                                         force_agent, cmd, fi_score, t_start)
+        if answered is not None:
+            return answered
 
         # ── evaluation-only forced routing ───────────────────────────────────
         # force_agent is only set by the eval framework (run_partB.py).
