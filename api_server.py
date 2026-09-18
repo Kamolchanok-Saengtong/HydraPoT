@@ -82,14 +82,15 @@ async def hydrapot_docs():
 #   /api/windows          -> /api/v1/overview  (window + timeline)
 #   /api/feed             -> /ws/events, the live push path that replaced it
 #
-# OCSF export used to sit here too, as /api/ocsf/events and /api/ocsf/findings.
-# Moved to /api/v1/ocsf -- ONE route, `?class=` picking which records and
-# `?format=` picking the wire format. Two routes covered two of the three
-# classes normalize.py produces; Authentication (3002) had none, because adding
-# a class meant adding a route. It is a filter, not a resource.
+# Normalized export used to sit here too, as /api/ocsf/events and
+# /api/ocsf/findings. Moved to /api/v1/export -- ONE route, `?class=` picking
+# which records and `?format=` picking the wire format. Two routes covered two
+# of the three classes normalize.py produces; Authentication (3002) had none,
+# because adding a class meant adding a route. It is a filter, not a resource.
 #
-# That also makes /api/v1/capabilities honest: it advertises json/ocsf/cef/ecs,
-# and now a v1 route actually serves all four.
+# Named /export rather than /ocsf: OCSF is the canonical shape inside, but the
+# route also emits CEF and ECS, and naming it after one of its four formats
+# made the other three look like they lived somewhere else.
 
 # ── WebSocket ────────────────────────────────────────────────────────────
 # main.py (the live honeypot) and this process share only the SQLite DB --
@@ -140,8 +141,11 @@ _RETIRED = {
     "/api/sessions":  "/api/v1/sessions",
     "/api/windows":   "/api/v1/overview",
     "/api/feed":      "/ws/events",
-    "/api/ocsf/events":   "/api/v1/ocsf?class=process",
-    "/api/ocsf/findings": "/api/v1/ocsf?class=finding",
+    "/api/ocsf/events":   "/api/v1/export?class=process",
+    "/api/ocsf/findings": "/api/v1/export?class=finding",
+    # Renamed: it serves CEF and ECS too, so naming it after one format
+    # pointed the other three somewhere that did not exist.
+    "/api/v1/ocsf":       "/api/v1/export",
 }
 
 

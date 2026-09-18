@@ -442,7 +442,7 @@ class TestNormalizedExport(unittest.TestCase):
         for cls in self.CLASSES:
             for fmt in self.FORMATS:
                 with self.subTest(cls=cls, fmt=fmt):
-                    r = get("/ocsf", **{"class": cls}, format=fmt, since="all", limit=1)
+                    r = get("/export", **{"class": cls}, format=fmt, since="all", limit=1)
                     self.assertEqual(r.status_code, 200)
                     self.assertEqual(r.json()["class"], cls)
                     self.assertEqual(r.json()["format"], fmt)
@@ -450,7 +450,7 @@ class TestNormalizedExport(unittest.TestCase):
     def test_auth_is_exportable(self):
         """normalize_auth() existed and was tested long before anything served
         it. This is the route that finally does."""
-        items = get("/ocsf", **{"class": "auth"}, since="all", limit=1).json()["items"]
+        items = get("/export", **{"class": "auth"}, since="all", limit=1).json()["items"]
         if not items:
             self.skipTest("no auth rows")
         self.assertEqual(items[0]["class_uid"], 3002)
@@ -459,13 +459,13 @@ class TestNormalizedExport(unittest.TestCase):
         expected = {"process": 1007, "auth": 3002, "finding": 2004}
         for cls, uid in expected.items():
             with self.subTest(cls=cls):
-                items = get("/ocsf", **{"class": cls}, since="all", limit=1).json()["items"]
+                items = get("/export", **{"class": cls}, since="all", limit=1).json()["items"]
                 if not items:
                     self.skipTest(f"no {cls} rows")
                 self.assertEqual(items[0]["class_uid"], uid)
 
     def test_cef_is_a_wire_string_not_an_object(self):
-        items = get("/ocsf", **{"class": "finding"}, format="cef",
+        items = get("/export", **{"class": "finding"}, format="cef",
                     since="all", limit=1).json()["items"]
         if not items:
             self.skipTest("no findings")
@@ -475,14 +475,14 @@ class TestNormalizedExport(unittest.TestCase):
     def test_unknown_class_or_format_is_refused_by_name(self):
         for q in ({"class": "bogus"}, {"format": "bogus"}):
             with self.subTest(**q):
-                r = get("/ocsf", **q)
+                r = get("/export", **q)
                 self.assertEqual(r.status_code, 422)
 
     def test_raw_telemetry_severity_is_unknown_never_fi(self):
         """FI is the routing metric. Nothing has assessed a raw command, so the
         honest severity is 0 (Unknown) -- not a number derived from FI."""
         for cls in ("process", "auth"):
-            items = get("/ocsf", **{"class": cls}, since="all", limit=3).json()["items"]
+            items = get("/export", **{"class": cls}, since="all", limit=3).json()["items"]
             for ev in items:
                 with self.subTest(cls=cls):
                     self.assertEqual(ev["severity_id"], 0)
@@ -497,7 +497,7 @@ class TestNormalizedExport(unittest.TestCase):
         for fmt in caps["export_formats"]:
             with self.subTest(fmt=fmt):
                 self.assertEqual(
-                    get("/ocsf", format=fmt, since="all", limit=1).status_code, 200)
+                    get("/export", format=fmt, since="all", limit=1).status_code, 200)
 
     def test_the_old_unversioned_routes_are_gone_and_say_where_to_go(self):
         for old, new in (("/api/ocsf/events", "class=process"),
