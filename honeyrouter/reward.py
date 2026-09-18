@@ -32,8 +32,18 @@ They do not have to sum to 1. Only their RATIO matters.
 JUDGE_MAX = 5.0         # LLM-as-judge is 1-5; 0 means "no score"
 COST_REF = 0.00083      # $/command, p99
 
+# EQUAL, so the trade-off is a real one. They were 0.45 / 0.05, which sounds
+# like "cost matters more" and is actually 9:1 -- the p99 cost penalty was 0.45
+# against a best-case fidelity bonus of 0.05, so a PERFECT answer could never
+# pay for a cloud call. That does not train a router, it trains "never use
+# cloud", which Pure Cowrie already does for free.
+#
+# At 0.45 / 0.45 one full point of fidelity is worth one p99 cloud call, and
+# the agent has an actual decision to make. Raise W_COST to make it stingier,
+# raise W_JUDGE to make it care more about being convincing -- only the RATIO
+# matters, so moving either is the same axis.
 W_COST = 0.45
-W_JUDGE = 0.05
+W_JUDGE = 0.45
 
 
 def compute_reward(cost: float, judge_score: float, **_ignored) -> float:
