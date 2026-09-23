@@ -5,7 +5,7 @@ api/services — HydraPoT's application layer, one module per domain.
     system           health, capabilities
     findings         detections, correlations, alerts
     sessions         session context, related activity
-    intel            MITRE, IOCs, categories
+    intel            MITRE and IOCs
     investigations   coherent packages per subject
     export           normalized telemetry -- OCSF / CEF / ECS
 
@@ -20,7 +20,7 @@ from api.services.findings import (list_detections, get_detection,
                                    get_alert, detection_evidence)
 from api.services.sessions import list_sessions, get_session, related_sessions
 from api.services.intel import (mitre_activity, mitre_technique, list_iocs,
-                                get_ioc, categories)
+                                get_ioc)
 from api.services.investigations import (investigate_session, investigate_alert,
                                          investigate_ip, investigate_ioc)
 from api.services.export import ocsf
@@ -31,7 +31,7 @@ __all__ = [
     "list_detections", "get_detection", "get_correlation", "list_alerts",
     "alert_counts", "get_alert", "detection_evidence",
     "list_sessions", "get_session", "related_sessions",
-    "mitre_activity", "mitre_technique", "list_iocs", "get_ioc", "categories",
+    "mitre_activity", "mitre_technique", "list_iocs", "get_ioc",
     "investigate_session", "investigate_alert", "investigate_ip",
     "investigate_ioc", "ocsf",
 ]

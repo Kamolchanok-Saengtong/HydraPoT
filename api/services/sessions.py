@@ -56,7 +56,10 @@ def list_sessions(since=None, instance=None, src_ip=None, technique=None,
 
 def _sessions_at_or_above_fi(min_fi, since=None, instance=None) -> set:
     win = overview(since, instance)["window"]
-    rows = storage.query_range(win["start"], win["end"], instance=_inst(instance))
+    # Harmless today -- this set only ever narrows an already-filtered list --
+    # but reading the raw table here is how the next caller drifts.
+    rows = storage.real_rows(
+        storage.query_range(win["start"], win["end"], instance=_inst(instance)))
     return {r.get("session_id") for r in rows
             if (r.get("fi_score") or 0) >= min_fi}
 

@@ -35,9 +35,15 @@ def _window(since, instance):
 
 
 def _process(since, instance):
-    """Commands -> Process Activity (1007)."""
+    """Commands -> Process Activity (1007).
+
+    Harness traffic excluded. This endpoint hands telemetry to somebody else's
+    SIEM, so exporting our own replay runs would assert we observed attacks we
+    staged -- 83% of the rows in a full window.
+    """
     start, end = _window(since, instance)
-    rows = storage.query_range(start, end, instance=_inst(instance))
+    rows = storage.real_rows(
+        storage.query_range(start, end, instance=_inst(instance)))
     return [normalize.normalize_command(r) for r in rows]
 
 
@@ -49,7 +55,8 @@ def _auth(since, instance):
     Passwords are not emitted -- see normalize_auth.
     """
     start, end = _window(since, instance)
-    rows = storage.query_auth_range(start, end, instance=_inst(instance))
+    rows = storage.real_rows(
+        storage.query_auth_range(start, end, instance=_inst(instance)))
     return [normalize.normalize_auth(r) for r in rows]
 
 

@@ -17,6 +17,7 @@ alerting.
 
 import hashlib
 import time
+from datetime import timedelta
 
 import storage
 from threat_intel.alert_records import alert_key
@@ -37,6 +38,40 @@ def resolve_since(since: str = None) -> str:
     s = str(since).strip().lower()
     return {"15m": "15m", "1h": "1h", "24h": "24h", "7d": "7d",
             "all": "ALL"}.get(s, "ALL")
+
+
+def window_filter(rows, since, *keys):
+    """Keep the rows whose timestamp falls inside `since`.
+
+    For tables the aggregation layer does not window for us. The alert queue is
+    its own table -- alerts persist until they are closed, they are not a slice
+    of the command stream -- so `?since=` on /alerts has to be applied here.
+
+    Same anchor as resolve_since: measured back from the newest row that
+    EXISTS, not from now(). `keys` are tried in order, so a row is dated by the
+    first timestamp it actually has -- matching how storage.query_alerts sorts.
+    A row with none of them is dropped from a bounded window, because there is
+    no honest way to say it belongs in one.
+    """
+    preset = resolve_since(since)
+    if preset == "ALL":
+        return list(rows)
+
+    from threat_intel.aggregator import PRESETS, _parse_ts
+
+    def when(row):
+        for key in keys:
+            parsed = _parse_ts(row.get(key))
+            if parsed:
+                return parsed
+        return None
+
+    dated = [(row, when(row)) for row in rows]
+    newest = max((ts for _, ts in dated if ts), default=None)
+    if newest is None:
+        return list(rows)       # nothing is dated; a window would empty it
+    cutoff = newest - timedelta(minutes=PRESETS[preset])
+    return [row for row, ts in dated if ts and ts >= cutoff]
 
 
 def page(items, limit=50, offset=0):
@@ -90,14 +125,19 @@ def iocs(since=None, instance=None) -> list:
         return hit[0]
 
     win = overview(since, instance)["window"]
-    rows = storage.query_range(win["start"], win["end"], instance=_inst(instance))
+    # Harness traffic dropped, the same way load_detections() drops it. Without
+    # this the two disagreed about what exists: 83% of the rows in this window
+    # are replay runs, and they contributed 72 of 101 indicators -- real-world
+    # domains, but ones this honeypot never saw. We replayed them.
+    rows = storage.real_rows(
+        storage.query_range(win["start"], win["end"], instance=_inst(instance)))
     # BOTH streams, matching what aggregate_overview() counts. Passing only
     # session rows made /threats/iocs list 99 indicators while /overview
     # reported 12,291 for the same window -- the auth stream is where
     # credential indicators come from, and omitting it is not a privacy
     # control, just an inconsistency.
-    auth = storage.query_auth_range(win["start"], win["end"],
-                                    instance=_inst(instance))
+    auth = storage.real_rows(storage.query_auth_range(
+        win["start"], win["end"], instance=_inst(instance)))
     recs = [r for r in build_iocs(rows, auth).records()
             if r.get("type") != "credential"]
     _ioc_cache[key] = (recs, now)
