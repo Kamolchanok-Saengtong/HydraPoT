@@ -26,6 +26,8 @@ double-insert.
 
 import json
 import os
+import functools
+import ipaddress
 from datetime import datetime, timedelta
 import sqlite3
 import glob
@@ -149,6 +151,33 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_alerts_natural ON alerts(instance, alert_ke
 CREATE INDEX IF NOT EXISTS ix_alerts_state    ON alerts(state);
 CREATE INDEX IF NOT EXISTS ix_alerts_severity ON alerts(severity);
 CREATE INDEX IF NOT EXISTS ix_alerts_updated  ON alerts(updated_at);
+
+-- Runtime facts the API cannot observe for itself. `hp start` (the SSH
+-- honeypot and its sweeper) and `hp dashboard` (uvicorn) are SEPARATE
+-- PROCESSES sharing only this file, so a module-global counter in one is
+-- invisible to the other. These two tables are that channel.
+--
+-- A heartbeat, not a status: the writer records when it last ran, and the
+-- reader decides whether that is too long ago. A sweeper that died three
+-- hours back then reads as stale rather than silently missing.
+CREATE TABLE IF NOT EXISTS runtime_health (
+    instance   TEXT NOT NULL DEFAULT 'default',
+    component  TEXT NOT NULL,
+    updated_at TEXT,
+    ok         INTEGER,
+    detail     TEXT,
+    PRIMARY KEY (instance, component)
+);
+
+-- Counters for things that happen too often to log one row each, bucketed by
+-- hour so "the last hour" is one SELECT and the history is kept for free.
+CREATE TABLE IF NOT EXISTS runtime_counters (
+    instance TEXT NOT NULL DEFAULT 'default',
+    name     TEXT NOT NULL,
+    hour     TEXT NOT NULL,          -- 'YYYY-MM-DD HH'
+    n        INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (instance, name, hour)
+);
 """
 
 
@@ -842,6 +871,188 @@ def stats(path: str = DB_PATH) -> dict:
             "SELECT instance, COUNT(*) n FROM sessions GROUP BY instance ORDER BY n DESC")}
         sess = conn.execute("SELECT COUNT(DISTINCT session_id) FROM sessions").fetchone()[0]
     return {"rows": total, "sessions": sess, "per_instance": per}
+
+
+# ── what counts as real attacker traffic ────────────────────────────────────
+# The DB holds real honeypot traffic and experiment-sandbox runs in the SAME
+# tables. Harnesses put a run label in src_ip ("hrreplay_27765", "eval_sync_on")
+# where real traffic has an IP, so the label is what separates them.
+#
+# THIS LIVES HERE, not in SIEM/data.py where it started, because it is not a
+# presentation rule. Every layer that reads rows needs the same answer, and the
+# ones that did not have it were shipping 83% harness traffic: /export sent
+# replayed corpus to external SIEMs as observed telemetry, and /threats/iocs
+# reported 72 indicators this honeypot never saw. storage.py is the one module
+# all of them already import, and it pulls in no pandas.
+#
+# Presentation-only in effect: nothing is deleted, the sandbox's own scripts
+# still read every row.
+
+EXPERIMENT_SRC_PREFIXES = (
+    "eval", "parta_", "partb_", "partc_", "hrreplay_", "bench",
+    "ml4net", "quickcheck", "cloudcheck", "sanity", "smoke", "replay",
+)
+
+# Harness rows whose src_ip is a bare token rather than a prefixed label
+# ("t", "x", "t1", "test"). Matched by SHAPE, not a growing list of literals: a
+# real source is either a dotted IP or CyberLab's 16-char hashed identifier, so
+# anything non-numeric and shorter than 6 characters is a label somebody typed.
+# The public resolvers appear as test TARGETS; none of them ever opens an SSH
+# connection to a honeypot.
+HARNESS_TOKEN_MAXLEN = 5
+EXPERIMENT_SRC_EXACT = {"localhost", "-", "", "8.8.8.8", "8.8.4.4",
+                        "1.1.1.1", "9.9.9.9"}
+
+# NOTE: "cyberlab" is deliberately NOT a prefix. The CyberLab Cowrie capture is
+# imported as real sensor traffic (instance="CyberLab", src_ip = the dataset's
+# hashed attacker id), so filtering on that string would hide the only genuine
+# attacker data there is.
+
+
+def _is_non_routable(value) -> bool:
+    try:
+        addr = ipaddress.ip_address(str(value))
+    except ValueError:
+        return False        # a hashed identifier is not an IP; keep it
+    return not addr.is_global
+
+
+@functools.lru_cache(maxsize=8192)
+def is_experiment_ip(ip: str) -> bool:
+    """The whole harness test, keyed on src_ip alone.
+
+    Memoised because addresses repeat enormously: a sensor switch ran this
+    78,208 times over 766 distinct IPs, and re-parsing each was 0.49s of pure
+    repeat work.
+    """
+    if ip.startswith(EXPERIMENT_SRC_PREFIXES):
+        return True
+    if ip.lower() in EXPERIMENT_SRC_EXACT:
+        return True
+    if len(ip) <= HARNESS_TOKEN_MAXLEN and "." not in ip:
+        return True
+    return _is_non_routable(ip)
+
+
+def is_experiment_row(row) -> bool:
+    """One row. THE definition -- every caller uses this one, so two endpoints
+    can never disagree about what real traffic is."""
+    return is_experiment_ip(str(row.get("src_ip") or ""))
+
+
+def real_rows(rows):
+    """Drop harness traffic. What every read path should go through."""
+    return [r for r in rows if not is_experiment_row(r)]
+
+
+# ── runtime health & counters ────────────────────────────────────────────────
+# Written by the honeypot process, read by the API process. See the two table
+# definitions in SCHEMA for why this goes through the database at all.
+#
+# Every function here swallows its own failures. These are diagnostics: losing
+# a heartbeat must never take down the thing it was reporting on.
+
+def record_health(component: str, ok: bool, detail: str = None,
+                  instance: str = "default", path: str = DB_PATH) -> None:
+    """Upsert one component's heartbeat. Called by whoever owns the work."""
+    try:
+        with connect(path) as conn:
+            conn.execute(
+                """INSERT INTO runtime_health (instance, component, updated_at, ok, detail)
+                   VALUES (?, ?, ?, ?, ?)
+                   ON CONFLICT(instance, component) DO UPDATE SET
+                       updated_at = excluded.updated_at,
+                       ok         = excluded.ok,
+                       detail     = excluded.detail""",
+                (instance, component, _now_iso(), 1 if ok else 0, detail))
+    except Exception:
+        pass
+
+
+def read_health(instance: str = "default", path: str = DB_PATH) -> dict:
+    """-> {component: {"ok", "detail", "updated_at", "age_sec"}}.
+
+    `age_sec` is the point of this table: the caller needs to distinguish a
+    component reporting healthy a second ago from the same row left behind by
+    a process that died.
+    """
+    out = {}
+    try:
+        with connect(path) as conn:
+            rows = conn.execute(
+                "SELECT * FROM runtime_health WHERE instance = ?",
+                (instance,)).fetchall()
+    except Exception:
+        return out
+    now = datetime.now()
+    for r in rows:
+        try:
+            stamp = datetime.fromisoformat(r["updated_at"])
+        except (TypeError, ValueError):
+            stamp = None
+        out[r["component"]] = {
+            "ok": bool(r["ok"]),
+            "detail": r["detail"],
+            "updated_at": r["updated_at"],
+            "age_sec": int((now - stamp).total_seconds()) if stamp else None,
+        }
+    return out
+
+
+def bump_counter(name: str, instance: str = "default", when=None,
+                 path: str = DB_PATH) -> None:
+    """Add one to this hour's bucket for `name`."""
+    hour = (when or datetime.now()).strftime("%Y-%m-%d %H")
+    try:
+        with connect(path) as conn:
+            conn.execute(
+                """INSERT INTO runtime_counters (instance, name, hour, n)
+                   VALUES (?, ?, ?, 1)
+                   ON CONFLICT(instance, name, hour) DO UPDATE SET n = n + 1""",
+                (instance, name, hour))
+    except Exception:
+        pass
+
+
+def counter_total(name: str, hours: int = 1, instance: str = "default",
+                  path: str = DB_PATH) -> int:
+    """Sum of `name` over the last `hours` hourly buckets, this one included.
+
+    Measured from the wall clock, unlike the aggregation windows elsewhere:
+    this asks "is the system sick RIGHT NOW", so an imported 2019 corpus is
+    exactly what it should report zero for.
+    """
+    now = datetime.now()
+    wanted = [(now - timedelta(hours=h)).strftime("%Y-%m-%d %H")
+              for h in range(max(1, hours))]
+    try:
+        with connect(path) as conn:
+            marks = ",".join("?" * len(wanted))
+            row = conn.execute(
+                f"""SELECT COALESCE(SUM(n), 0) AS total FROM runtime_counters
+                    WHERE instance = ? AND name = ? AND hour IN ({marks})""",
+                (instance, name, *wanted)).fetchone()
+        return int(row["total"])
+    except Exception:
+        return 0
+
+
+def db_writable(path: str = DB_PATH) -> bool:
+    """Can we actually WRITE, not merely read?
+
+    A full disk, a read-only mount or a stale WAL lock all leave SELECT
+    working while every INSERT fails -- which is the shape of outage where a
+    honeypot keeps answering attackers and silently records none of it.
+    Writes to runtime_health rather than to a real table, so the probe never
+    pollutes the data it is checking on.
+    """
+    try:
+        record_health("_probe", True, "write check", path=path)
+        with connect(path) as conn:
+            conn.execute("DELETE FROM runtime_health WHERE component = '_probe'")
+        return True
+    except Exception:
+        return False
 
 
 # ── alerts ───────────────────────────────────────────────────────────────────

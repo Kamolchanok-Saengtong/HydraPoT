@@ -411,7 +411,7 @@ def main():
     # ── Load entries ──────────────────────────────────────────────────────
     # Priority: explicit --file, then an explicit --dir the user actually
     # passed, then SQLite (where the honeypot writes now). The file/dir
-    # loaders are kept so old exported JSON and NSC's own logs still replay.
+    # loaders are kept so old exported JSON and the experiment sandbox's own logs still replay.
     if args.file:
         if not os.path.exists(args.file):
             console.print(f"[red]File not found: {args.file}[/red]")

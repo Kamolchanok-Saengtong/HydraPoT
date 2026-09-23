@@ -54,3 +54,4 @@ FIXES.md
 # Fine-tuning checkpoints — 3.7GB of model weights, rebuildable from
 # finetuning/train_lora.py. Never belongs in git.
 finetuning/out/
+tests/
