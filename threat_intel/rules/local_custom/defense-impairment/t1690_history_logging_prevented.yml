@@ -1,66 +1,49 @@
-id: 3c8f5a71-6e02-4b93-a4d7-90e21b5cf864
-title: Command history logging prevented
+id: 59f39798-efc5-4dcd-adce-d79955ed8f50
+title: 'Impair Defenses: Disable Command History Logging'
 status: stable
 description: >-
-  Future shell commands are stopped from ever reaching the history file — the
-  history variables are unset or neutered, the history option is switched off,
-  or the history file is redirected to /dev/null.
-
-  This is a distinct technique from clearing history. T1070.003 Clear Command
-  History covers destroying a record that already exists; T1690 covers making
-  sure no record is written in the first place. HydraPoT previously had no
-  T1690 rule and mis-attributed these commands to T1070.003 and to T1685
-  Disable or Modify Tools. Both were wrong: nothing is being cleared, and
-  T1685 is scoped to security tools, which a shell history file is not.
-
-  Found by the stratified precision audit of 2026-08-26 — 7 of the 11
-  incorrect verdicts in that sample were this single misattribution.
-
-  `ln -sf /dev/null <histfile>` is deliberately tagged BOTH here and under
-  T1070.003: replacing the file destroys the existing record (clearing) and
-  guarantees nothing is retained afterwards (prevention).
-
-  Deliberately NOT covered: ART's "Clear bash history" atomic, which it files
-  under T1690. Its commands (`echo "" > $HISTFILE`, `history -c`) destroy an
-  existing record rather than prevent future logging, so HydraPoT tags them
-  T1070.003. That atomic is expected to stay undetected here.
+  History recording is switched off BEFORE the attacker works, so nothing
+  is written in the first place. Distinct from T1070.003, which erases a
+  record that already exists. ART's uncovered atomics include `export
+  HISTCONTROL=ignoreboth` and `set +o history`.
 references:
   - https://attack.mitre.org/techniques/T1690
-  - https://github.com/redcanaryco/atomic-red-team/blob/master/atomics/T1562.003/T1562.003.md
+  - https://github.com/redcanaryco/atomic-red-team  # 9 Linux atomic(s)
 author: HydraPoT
-date: 2026-08-26
+date: 2026-09-20
 technique: T1690
-technique_name: 'Prevent Command History Logging'
+technique_name: 'Disable Command History Logging'
 tactic: 'Defense Impairment'
-priority: 20
+priority: 15
 confidence: high
+# DERIVATION. SigmaHQ's imported Linux rules detect 0 of this technique's
+# Atomic Red Team Linux atomics: their detection is written against EDR
+# process-creation fields (Image, ParentImage, TargetFilename) that an SSH
+# honeypot cannot emit. MITRE ATT&CK defines the behaviour; ART's atomics
+# supply the command forms this pattern is written against.
 logsource:
   product: cowrie
   category: command
 detection:
-  # Values may be quoted (`HISTFILE="/dev/null"`), so quotes are optional
-  # throughout. HISTIGNORE suppresses commands matching a pattern list;
-  # HISTCONTROL ignorespace/ignoreboth suppresses anything typed with a
-  # leading space, which is the quietest of these and the easiest to miss.
   selection_vars:
     command|re:
+      - '\b(?:export\s+)?(?:unset\s+)?HISTFILE\s*=\s*[\x27"]?(?:/dev/null|[\x27"]?\s*(?:;|$))'
       - '\bunset\s+(?:HISTFILE|HISTSIZE|HISTFILESIZE|HISTCONTROL|HISTIGNORE)\b'
-      - '\bHISTFILE\s*=\s*["'']?/dev/null\b'
-      - '\bHISTFILE\s*=\s*(?:["'']{2})?\s*(?:;|$)'
-      - '\b(?:HISTSIZE|HISTFILESIZE)\s*=\s*["'']?0\b'
-      - '\bHISTCONTROL\s*=\s*["'']?\S*ignore(?:space|both|dups)\b'
-      - '\bHISTIGNORE\s*=\s*["'']'
-  # The shell option itself switched off.
+      - '\b(?:export\s+)?(?:HISTSIZE|HISTFILESIZE)\s*=\s*[\x27"]?0\b'
+      - '\b(?:export\s+)?HISTCONTROL\s*=\s*[\x27"]?\S*ignore(?:space|both|dups)\b'
+      - '\b(?:export\s+)?HISTIGNORE\s*=\s*[\x27"]'
   selection_option:
     command|re:
       - '\bset\s+\+o\s+history\b'
-      - '\bshopt\s+-u\s+histappend\b'
       - '\bset\s+\+H\b'
-  # History file pointed at the bit bucket so writes are discarded.
+      - '\bshopt\s+-u\s+hist\w*\b'
   selection_redirect:
     command|re:
-      - '\bln\s+-\w*s\w*\s+/dev/null\s+\S*(?:\.bash_history|\.zsh_history|\.sh_history|\.history)\b'
+      - '\bln\s+-\w*s\w*\s+/dev/null\s+\S*(?:\.bash_history|\.zsh_history|\.history)\b'
+  selection_histfile:
+    command|re:
+      - '\$HISTFILE\b'
   condition: 1 of selection*
 tags:
-  - attack.defense_impairment
+  - attack.defense-impairment
   - attack.t1690

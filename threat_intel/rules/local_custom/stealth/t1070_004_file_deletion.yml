@@ -1,17 +1,25 @@
-id: d7112e9b-fb4f-4064-91fa-4d06a5fc655b
-title: Files deleted from a scoped path
+id: 64f2143a-e81a-49f4-845f-c1492c7e552f
+title: 'Indicator Removal: File Deletion'
 status: stable
 description: >-
-  Anti-forensic cleanup of specific files — e.g. a dropper removing its own staging files before re-downloading. This is NOT T1485: every one of the 2,019 commands previously tagged Data Destruction was a scoped delete like this.
+  The attacker removes the files they dropped. Scoped deletion only -- `rm
+  -rf /` and equivalents are mass destruction (T1485) and are excluded by
+  filter_mass so the two claims stay separate.
 references:
   - https://attack.mitre.org/techniques/T1070/004
+  - https://github.com/redcanaryco/atomic-red-team  # 4 Linux atomic(s)
 author: HydraPoT
-date: 2026-08-25
+date: 2026-09-20
 technique: T1070.004
 technique_name: 'File Deletion'
 tactic: 'Stealth'
 priority: 60
-confidence: medium
+confidence: high
+# DERIVATION. SigmaHQ's imported Linux rules detect 0 of this technique's
+# Atomic Red Team Linux atomics: their detection is written against EDR
+# process-creation fields (Image, ParentImage, TargetFilename) that an SSH
+# honeypot cannot emit. MITRE ATT&CK defines the behaviour; ART's atomics
+# supply the command forms this pattern is written against.
 logsource:
   product: cowrie
   category: command
@@ -19,11 +27,8 @@ detection:
   selection:
     segment|re:
       - '^\s*(?:sudo\s+)?rm\s+-\w*[rf]'
-  filter_mass:
-    segment|re:
-      - '^\s*(?:sudo\s+)?rm\s+(?:-\w*[rf]\w*\s+)+/(?:\s|$|\*)'
-      - '^\s*(?:sudo\s+)?rm\s+(?:-\w*[rf]\w*\s+)+(?:/\*|~|\$HOME)\s*$'
-  condition: selection and not filter_mass
+      - '^\s*(?:sudo\s+)?(?:shred|unlink)\s+\S'
+  condition: selection
 tags:
   - attack.stealth
   - attack.t1070.004

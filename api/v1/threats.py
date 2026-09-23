@@ -38,15 +38,13 @@ def list_iocs(since: str = SINCE, instance: str = INSTANCE,
     return svc.list_iocs(since, instance, type, limit, offset)
 
 
-@router.get("/threats/iocs/{ioc:path}", summary="One indicator, with context",
+@router.get("/threats/iocs/{ioc:path}", summary="One indicator, in full",
             tags=["threats"])
 def get_ioc(ioc: str, since: str = SINCE, instance: str = INSTANCE):
-    """Accepts "type:value" or a bare value."""
-    return found(svc.get_ioc(ioc, since, instance), "ioc")
+    """The indicator, the sessions that referenced it, its MITRE mapping and
+    the detections those sessions produced -- in one call.
 
+    Accepts "type:value" or a bare value.
+    """
+    return found(svc.investigate_ioc(ioc, since, instance), "ioc")
 
-@router.get("/threats/categories", summary="Activity categories", tags=["threats"])
-def categories(since: str = SINCE, instance: str = INSTANCE):
-    """Category counts as defined in config.yaml's aggregation.categories.
-    No category is invented for the API."""
-    return svc.categories(since, instance)

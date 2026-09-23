@@ -1,0 +1,36 @@
+id: 823ca97c-df6b-47ca-97c5-3c0d540c9406
+title: 'Account Access Removal'
+status: stable
+description: >-
+  The owner is locked out by changing their password. In the capture this
+  is `echo "root:<random>"|chpasswd` -- the botnet securing its foothold
+  against both the owner and rival botnets.
+references:
+  - https://attack.mitre.org/techniques/T1531
+  - https://github.com/redcanaryco/atomic-red-team  # 1 Linux atomic(s)
+author: HydraPoT
+date: 2026-09-20
+technique: T1531
+technique_name: 'Account Access Removal'
+tactic: 'Impact'
+priority: 15
+confidence: high
+# DERIVATION. SigmaHQ's imported Linux rules detect 0 of this technique's
+# Atomic Red Team Linux atomics: their detection is written against EDR
+# process-creation fields (Image, ParentImage, TargetFilename) that an SSH
+# honeypot cannot emit. MITRE ATT&CK defines the behaviour; ART's atomics
+# supply the command forms this pattern is written against.
+logsource:
+  product: cowrie
+  category: command
+detection:
+  selection:
+    command|re:
+      - '^\s*(?:sudo\s+)?(?:passwd|chpasswd)\b'
+      - '\|\s*(?:sudo\s+)?chpasswd\b'
+      - '\busermod\b[^|;]*\s-(?:L|p)\b'
+      - '\bpasswd\s+-l\b'
+  condition: selection
+tags:
+  - attack.impact
+  - attack.t1531

@@ -1,0 +1,41 @@
+id: 89c547fe-6fd0-46af-8a06-6b05b0b6e133
+title: 'Account Discovery: Local Account'
+status: stable
+description: >-
+  The local account list or login history is enumerated -- /etc/passwd
+  listed by name, lastlog, or the group files. Distinct from T1033, which
+  is 'who am I'; this is 'who else is here'.
+references:
+  - https://attack.mitre.org/techniques/T1087/001
+  - https://github.com/redcanaryco/atomic-red-team  # 3 Linux atomic(s)
+author: HydraPoT
+date: 2026-09-20
+technique: T1087.001
+technique_name: 'Local Account'
+tactic: 'Discovery'
+priority: 50
+confidence: high
+# DERIVATION. SigmaHQ's imported Linux rules detect 0 of this technique's
+# Atomic Red Team Linux atomics: their detection is written against EDR
+# process-creation fields (Image, ParentImage, TargetFilename) that an SSH
+# honeypot cannot emit. MITRE ATT&CK defines the behaviour; ART's atomics
+# supply the command forms this pattern is written against.
+logsource:
+  product: cowrie
+  category: command
+detection:
+  selection_files:
+    command|re:
+      - '\b(?:cat|less|more|head|tail|cut|awk|grep|egrep|sort|wc)\b[^|;]*(?:/etc/passwd|/etc/group)\b'
+      - '\bgetent\s+(?:passwd|group|shadow)\b'
+  selection_tools:
+    segment|re:
+      - '(?:^|\||=|\b(?:then|else|elif|do)\s+)\s*["\x27]?(?:sudo\s+)?(?:lastlog|lastlogin|lslogins|finger)\b'
+      - '^\s*(?:sudo\s+)?lsof\s+(?:-\w+\s+)*-u\b'
+      - '\b(?:cat|less|more|head|tail)\b[^|;]*/etc/sudoers'
+      - '^\s*(?:sudo\s+)?(?:cat|ls)\s+/home\b'
+      - '^\s*(?:sudo\s+)?(?:groups|id)\s*$'
+  condition: 1 of selection*
+tags:
+  - attack.discovery
+  - attack.t1087.001

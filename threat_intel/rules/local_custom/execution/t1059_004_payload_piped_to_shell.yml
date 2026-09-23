@@ -1,46 +1,38 @@
-id: 54fd75d6-531e-48ed-82a7-0e064a4153bf
-title: Remote or decoded payload piped to interpreter
+id: d6a97c68-c2ce-4a9f-b749-14e229af4a6e
+title: 'Command and Scripting Interpreter: Unix Shell'
 status: stable
 description: >-
-  A fetched or decoded payload is executed without ever being inspected on
-  disk. Ranked above T1140 because execution is the more consequential half of
-  the same command.
-
-  Two fixes derived from the Atomic Red Team T1059.004 atomics. First, the
-  pipe target may be path-qualified: ART's "Environment variable scripts" and
-  "Obfuscated command line scripts" both end in `|/bin/sh` and `|/bin/bash`,
-  which the previous bare `(?:ba)?sh` alternation could not reach. Second, the
-  producer side was an explicit list of curl/wget/base64, so a payload built
-  by anything else — including a decoder held in a shell variable, as in
-  `echo -n "$ART" | $decodecmd |/bin/bash` — was invisible. Piping *anything*
-  into a shell interpreter is the mechanism, so the producer no longer has to
-  be recognised.
-
-  `| ssh host` and `| grep sh` do not match: the interpreter name must sit at
-  a command position immediately after the pipe.
+  Remote or decoded content is fed straight into an interpreter without
+  ever being written to disk -- the curl|sh pattern. Highest priority of
+  the T1059.004 family: nothing legitimate needs to execute a stream it
+  has not inspected.
 references:
   - https://attack.mitre.org/techniques/T1059/004
-  - https://github.com/redcanaryco/atomic-red-team/blob/master/atomics/T1059.004/T1059.004.md
+  - https://github.com/redcanaryco/atomic-red-team  # 14 Linux atomic(s)
 author: HydraPoT
-date: 2026-08-25
+date: 2026-09-20
 technique: T1059.004
 technique_name: 'Unix Shell'
 tactic: 'Execution'
 priority: 10
 confidence: high
+# DERIVATION. SigmaHQ's imported Linux rules detect 0 of this technique's
+# Atomic Red Team Linux atomics: their detection is written against EDR
+# process-creation fields (Image, ParentImage, TargetFilename) that an SSH
+# honeypot cannot emit. MITRE ATT&CK defines the behaviour; ART's atomics
+# supply the command forms this pattern is written against.
 logsource:
   product: cowrie
   category: command
 detection:
-  # Anything piped into a shell interpreter, path-qualified or not.
   selection_pipe:
     command|re:
-      - '\|\s*(?:\S*/)?(?:ba|z|k|da|a)?sh\b'
-      - '\|\s*(?:\S*/)?(?:ba|z|k|da|a)?sh\s+-\w*c\b'
-  # Fetch and run as a two-step chain rather than a pipe.
-  selection_fetch_then_run:
+      - '\|\s*(?:sudo\s+)?(?:\S*/)?(?:ba|z|k|da|a)?sh\b'
+      - '\|\s*(?:\S*/)?(?:python3?|perl|ruby|php|node)\b'
+  selection_fetch_run:
     command|re:
       - '\b(?:curl|wget|fetch)\b[^;]*&&\s*(?:sudo\s+)?(?:\./|(?:\S*/)?(?:ba)?sh\b)'
+      - '\$\(\s*(?:curl|wget)\b[^)]*\)'
   condition: 1 of selection*
 tags:
   - attack.execution

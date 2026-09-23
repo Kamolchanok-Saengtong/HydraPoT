@@ -1,0 +1,40 @@
+technique_id,tactic,rule_title,knowledge_source,art_detection_rate,art_verdict,file
+T1105,Command and Control,Tool or payload downloaded,MITRE ATT&CK page,62%,PARTIAL,t1105_tool_downloaded.yml
+T1003.008,Credential Access,/etc/passwd or /etc/shadow read,ART (validated),60%,PARTIAL,t1003_008_passwd_shadow_read.yml
+T1552.003,Credential Access,Shell history mined for credentials,FP-fix,100%,GOOD,t1552_003_history_mined.yml
+T1552.004,Credential Access,Private key material read,MITRE ATT&CK page,71%,GOOD,t1552_004_private_key_read.yml
+T1222.002,Defense Impairment,File permissions or ownership modified,MITRE ATT&CK page,64%,PARTIAL,t1222_002_perms_modified.yml
+T1685,Defense Impairment,"Security tooling, logging or kernel hardening disabled",ART (validated),89%,GOOD,t1685_security_tooling_disabled.yml
+T1686,Defense Impairment,"Host firewall flushed, disabled or reconfigured",ART (validated),92%,GOOD,t1686_firewall_disabled.yml
+T1690,Defense Impairment,Command history logging prevented,ART (validated),89%,GOOD,t1690_history_logging_prevented.yml
+T1016,Discovery,Network configuration discovered,ART (validated),100%,GOOD,t1016_network_config.yml
+T1033,Discovery,User discovery,MITRE ATT&CK page,100%,GOOD,t1033_user_discovery.yml
+T1046,Discovery,Network service scanning,MITRE ATT&CK page,67%,PARTIAL,t1046_service_scanning.yml
+T1049,Discovery,Network connections enumerated,MITRE ATT&CK page,67%,PARTIAL,t1049_network_connections.yml
+T1057,Discovery,Process discovery,MITRE ATT&CK page,100%,GOOD,t1057_process_discovery.yml
+T1082,Discovery,System information discovery,MITRE ATT&CK page,50%,PARTIAL,t1082_system_info.yml
+T1083,Discovery,File and directory discovery,MITRE ATT&CK page,67%,PARTIAL,t1083_file_discovery.yml
+T1518,Discovery,Installed software discovery,MITRE ATT&CK page,n/a,UNVALIDATED,t1518_software_discovery.yml
+T1053.003,Execution,Cron persistence established,MITRE ATT&CK page,100%,GOOD,t1053_003_cron_persistence.yml
+T1059.004,Execution,Shell control flow written on the command line,ART (validated),94%,GOOD,t1059_004_inline_shell_scripting.yml
+T1059.004,Execution,Shell script or local binary executed,MITRE ATT&CK page,94%,GOOD,t1059_004_local_script_executed.yml
+T1059.004,Execution,Remote or decoded payload piped to interpreter,ART (validated),94%,GOOD,t1059_004_payload_piped_to_shell.yml
+T1059.004,Execution,Shell environment interrogated or reconfigured,ART (validated),94%,GOOD,t1059_004_shell_environment_interrogated.yml
+T1059.004,Execution,Interactive shell spawned from another utility,ART (validated),94%,GOOD,t1059_004_shell_spawned_from_utility.yml
+T1485,Impact,Mass or root-level data destruction,MITRE ATT&CK page,100%,GOOD,t1485_mass_destruction.yml
+T1489,Impact,Service stopped or process killed,ART (validated),100%,GOOD,t1489_service_stopped.yml
+T1496,Impact,CPU deliberately exhausted,ART (validated),100%,GOOD,t1496_cpu_exhaustion.yml
+T1496,Impact,Cryptomining tooling,ART (validated),100%,GOOD,t1496_cryptomining.yml
+T1531,Impact,Account password changed,FP-fix,100%,GOOD,t1531_account_password_changed.yml
+T1021.004,Lateral Movement,Outbound SSH/SCP/SFTP,MITRE ATT&CK page,n/a,UNVALIDATED,t1021_004_ssh_outbound.yml
+T1098.004,Persistence,SSH authorized_keys modified,MITRE ATT&CK page,100%,GOOD,t1098_004_authorized_keys_modified.yml
+T1136.001,Persistence,Local account created,MITRE ATT&CK page,50%,PARTIAL,t1136_001_local_account_created.yml
+T1543.002,Persistence,Systemd service persistence,MITRE ATT&CK page,67%,PARTIAL,t1543_002_systemd_persistence.yml
+T1548.003,Privilege Escalation,Sudo invoked,MITRE ATT&CK page,100%,GOOD,t1548_003_sudo_invoked.yml
+T1027,Stealth,Encoded payload present in command,ART (validated),100%,GOOD,t1027_encoded_payload.yml
+T1027,Stealth,Hex-escaped payload written to disk,MITRE ATT&CK page,100%,GOOD,t1027_hex_escaped_payload.yml
+T1070.003,Stealth,Shell history cleared,ART (validated),70%,GOOD,t1070_003_history_cleared.yml
+T1070.004,Stealth,Files deleted from a scoped path,MITRE ATT&CK page,50%,PARTIAL,t1070_004_file_deletion.yml
+T1070.006,Stealth,File timestamps altered,MITRE ATT&CK page,50%,PARTIAL,t1070_006_timestomping.yml
+T1078.003,Stealth,Switch to another local account,MITRE ATT&CK page,100%,GOOD,t1078_003_su_local_account.yml
+T1140,Stealth,Encoded payload decoded,ART (validated),100%,GOOD,t1140_payload_decoded.yml

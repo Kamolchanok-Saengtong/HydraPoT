@@ -1,0 +1,41 @@
+id: 5333a33c-1a4b-40d1-b255-4203cb5ede63
+title: 'Indicator Removal: Clear Linux or Mac System Logs'
+status: stable
+description: >-
+  System log files are truncated, filled or deleted. ART's atomics
+  truncate /var/log/messages and /var/log/secure with `cat /dev/null >`,
+  `cat /dev/zero >` and `echo '' >`. Separate from history clearing: this
+  destroys the host's own audit trail, not the attacker's shell record.
+references:
+  - https://attack.mitre.org/techniques/T1070/002
+  - https://github.com/redcanaryco/atomic-red-team  # 5 Linux atomic(s)
+author: HydraPoT
+date: 2026-09-20
+technique: T1070.002
+technique_name: 'Clear Linux or Mac System Logs'
+tactic: 'Stealth'
+priority: 20
+confidence: high
+# DERIVATION. SigmaHQ's imported Linux rules detect 0 of this technique's
+# Atomic Red Team Linux atomics: their detection is written against EDR
+# process-creation fields (Image, ParentImage, TargetFilename) that an SSH
+# honeypot cannot emit. MITRE ATT&CK defines the behaviour; ART's atomics
+# supply the command forms this pattern is written against.
+logsource:
+  product: cowrie
+  category: command
+detection:
+  selection_truncate:
+    command|re:
+      - '\b(?:cat|echo|printf|:)\b[^|;]*>\s*\S*/var/log/'
+      - '\btruncate\b[^|;]*-s\s*0\b[^|;]*/var/log/'
+      - '\bcat\s+/dev/(?:null|zero)\s*>\s*\S*/var/log/'
+  selection_destroy:
+    command|re:
+      - '\b(?:rm|shred|unlink)\b[^|;]*/var/log/'
+      - '\bjournalctl\b[^|;]*--(?:vacuum-time|vacuum-size|rotate|flush)\b'
+      - '\blogrotate\b[^|;]*-f\b'
+  condition: 1 of selection*
+tags:
+  - attack.stealth
+  - attack.t1070.002

@@ -1,23 +1,38 @@
-id: c020226d-5be2-4557-a883-466b30c7a1ab
-title: Local account created
+id: 5165ea5c-cfcc-4cc2-affe-333d2d669f60
+title: 'Create Account: Local Account'
 status: stable
+description: >-
+  A new local account is added, or an existing one is given a shell and a
+  password. ART's atomics use `useradd -M -N -r -s /bin/bash` and the BSD
+  `pw usermod` form.
 references:
   - https://attack.mitre.org/techniques/T1136/001
+  - https://github.com/redcanaryco/atomic-red-team  # 4 Linux atomic(s)
 author: HydraPoT
-date: 2026-08-25
+date: 2026-09-20
 technique: T1136.001
 technique_name: 'Local Account'
 tactic: 'Persistence'
-priority: 20
+priority: 15
 confidence: high
+# DERIVATION. SigmaHQ's imported Linux rules detect 0 of this technique's
+# Atomic Red Team Linux atomics: their detection is written against EDR
+# process-creation fields (Image, ParentImage, TargetFilename) that an SSH
+# honeypot cannot emit. MITRE ATT&CK defines the behaviour; ART's atomics
+# supply the command forms this pattern is written against.
 logsource:
   product: cowrie
   category: command
 detection:
-  selection:
+  selection_create:
     segment|re:
-      - '^\s*(?:sudo\s+)?(?:useradd|adduser)\b'
-  condition: selection
+      - '^\s*(?:sudo\s+)?(?:useradd|adduser|newusers)\b\s+\S'
+      - '^\s*(?:sudo\s+)?pw\s+(?:user|group)(?:add|mod)\b'
+  selection_write:
+    command|re:
+      - '(?:>>?|\btee\b)\s*\S*/etc/(?:passwd|shadow|group)\b'
+      - '\busermod\b[^|;]*\s-\w*(?:G|s|p)\b'
+  condition: 1 of selection*
 tags:
   - attack.persistence
   - attack.t1136.001

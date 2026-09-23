@@ -1,17 +1,25 @@
-id: 0e55cd84-a78a-4f66-9b57-f0d22df7f4c3
-title: Mass or root-level data destruction
+id: 06033ff0-b503-453d-bb06-838c3a45e494
+title: 'Data Destruction'
 status: stable
 description: >-
-  Reserved for destruction of the system or a whole tree. Scoped `rm -rf <files>` is T1070.004, not this.
+  Destruction of the system or a whole tree, rather than cleanup of
+  specific files. Scoped `rm -rf <files>` is T1070.004; this is `rm -rf
+  /`, dd over a block device, and mkfs.
 references:
   - https://attack.mitre.org/techniques/T1485
+  - https://github.com/redcanaryco/atomic-red-team  # 1 Linux atomic(s)
 author: HydraPoT
-date: 2026-08-25
+date: 2026-09-20
 technique: T1485
 technique_name: 'Data Destruction'
 tactic: 'Impact'
 priority: 5
 confidence: high
+# DERIVATION. SigmaHQ's imported Linux rules detect 0 of this technique's
+# Atomic Red Team Linux atomics: their detection is written against EDR
+# process-creation fields (Image, ParentImage, TargetFilename) that an SSH
+# honeypot cannot emit. MITRE ATT&CK defines the behaviour; ART's atomics
+# supply the command forms this pattern is written against.
 logsource:
   product: cowrie
   category: command
@@ -20,8 +28,7 @@ detection:
     segment|re:
       - '^\s*(?:sudo\s+)?rm\s+(?:-\w*[rf]\w*\s+)+/(?:\s|$|\*)'
       - '^\s*(?:sudo\s+)?rm\s+(?:-\w*[rf]\w*\s+)+(?:/\*|~|\$HOME)\s*$'
-      - '\bdd\b[^;|]*\bif=/dev/(?:zero|urandom)\b[^;|]*\bof=\S'
-      - '\bdd\b[^;|]*\bof=\S[^;|]*\bif=/dev/(?:zero|urandom)\b'
+      - '\bdd\b(?=[^;|]*\bif=/dev/(?:zero|u?random)\b)(?=[^;|]*\bof=(?!/dev/null\b))'
       - '\bmkfs(?:\.\w+)?\s+/dev/'
       - '\bshred\b[^|;]*/dev/[sh]d'
   condition: selection

@@ -104,6 +104,8 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
     INTERACTIVE = ("adduser", "useradd", "userdel")
 
     SESSION_ID = datetime.now().strftime("%Y%m%d_%H%M%S")
+    INSTANCE = getattr(getattr(config, "honeypot", None),
+                       "instance_name", "default")
     print(f"[HydraPot] New session {SESSION_ID} from {src_ip}")
 
     # No impactful_dir/session_dir setup any more: both logs go to SQLite, so
@@ -125,7 +127,7 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
         # is exactly how the two drifted apart the first time.
         **({"impactful_path": os.path.join(store_dir, "impactful.json")}
            if store == "json" and store_dir else {}),
-        instance=getattr(getattr(config, "honeypot", None), "instance_name", "default"),
+        instance=INSTANCE,
     )
     if plugins:
         plugins.apply_fi_rules(fi_manager.scorer)
@@ -287,7 +289,19 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
         sys_p, usr_p = prompt_manager.build_prompt(cmd_text)
         return _llm_send(ondevice, sys_p, usr_p, record_usage=False), "on_device"
 
-    link = CowrieLink(cowrie, fallback=_answer_without_cowrie)
+    def _count_degradation():
+        """One tick per Cowrie outage that a model had to cover.
+
+        Only counted when store="sqlite" -- an experiment run writing JSONL
+        must not add its harness outages to the production sensor's numbers.
+        """
+        if store != "sqlite":
+            return
+        import storage
+        storage.bump_counter("cowrie_fallback", instance=INSTANCE)
+
+    link = CowrieLink(cowrie, fallback=_answer_without_cowrie,
+                      on_degrade=_count_degradation)
 
     # ── shortcut: log + return ────────────────────────────────────────────
     def _reaches_a_model(agent, needs_llm, base, lookup_base, cmd) -> bool:
@@ -420,7 +434,7 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
 
     telemetry = Telemetry(
         SESSION_ID, src_ip=src_ip, public_ip=public_ip,
-        instance=getattr(getattr(config, "honeypot", None), "instance_name", "default"),
+        instance=INSTANCE,
         store=store, store_dir=store_dir,
         session_dir=getattr(getattr(config, "logging", None), "session_dir", ""),
         tag=mitre_tag,

@@ -1,0 +1,45 @@
+id: 0f21a5c9-63a0-4349-92e0-332da90fac4f
+title: 'Abuse Elevation Control Mechanism: Sudo and Sudo Caching'
+status: stable
+description: >-
+  Sudo policy is READ or edited -- `sudo -l`, or opening /etc/sudoers.
+  This is the elevation mechanism being probed for a way up, which is what
+  T1548.003 describes. Plain `sudo <command>` is deliberately NOT matched:
+  using sudo is not abusing it, and tagging every invocation would make
+  the signal meaningless.
+references:
+  - https://attack.mitre.org/techniques/T1548/003
+  - https://github.com/redcanaryco/atomic-red-team  # 6 Linux atomic(s)
+author: HydraPoT
+date: 2026-09-20
+technique: T1548.003
+technique_name: 'Sudo and Sudo Caching'
+tactic: 'Privilege Escalation'
+priority: 25
+confidence: high
+# DERIVATION. SigmaHQ's imported Linux rules detect 0 of this technique's
+# Atomic Red Team Linux atomics: their detection is written against EDR
+# process-creation fields (Image, ParentImage, TargetFilename) that an SSH
+# honeypot cannot emit. MITRE ATT&CK defines the behaviour; ART's atomics
+# supply the command forms this pattern is written against.
+logsource:
+  product: cowrie
+  category: command
+detection:
+  selection_list:
+    command|re:
+      - '\bsudo\s+(?:-\w+\s+)*-l\b'
+      - '\bsudo\s+-ll?\b'
+  selection_sudoers:
+    command|re:
+      - '\b(?:cat|less|more|head|tail|vi|vim|nano|ee|visudo)\b[^|;]*/etc/sudoers'
+      - '(?:>>?|\btee\b|\bsed\s+-i)[^|;&]*/etc/sudoers'
+      - '\bsudo\s+(?:cat|ee|vi|vim|nano)\b[^|;]*sudoers'
+  selection_timestamp:
+    command|re:
+      - '\bsudo\s+-k\b'
+      - '/var/(?:db|lib|run)/sudo\b'
+  condition: 1 of selection*
+tags:
+  - attack.privilege-escalation
+  - attack.t1548.003

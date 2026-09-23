@@ -1,0 +1,36 @@
+id: b67120c9-29f8-40ea-9d4f-b634f0d591ca
+title: 'Device Driver Discovery'
+status: stable
+description: >-
+  Loaded kernel modules or driver files are enumerated. ART's atomics are
+  `lsmod` and a find over /lib/modules/$(uname -r)/kernel/drivers. Often a
+  precursor to loading a rootkit module or to detecting a sandbox.
+references:
+  - https://attack.mitre.org/techniques/T1652
+  - https://github.com/redcanaryco/atomic-red-team  # 2 Linux atomic(s)
+author: HydraPoT
+date: 2026-09-20
+technique: T1652
+technique_name: 'Device Driver Discovery'
+tactic: 'Discovery'
+priority: 55
+confidence: medium
+# DERIVATION. SigmaHQ's imported Linux rules detect 0 of this technique's
+# Atomic Red Team Linux atomics: their detection is written against EDR
+# process-creation fields (Image, ParentImage, TargetFilename) that an SSH
+# honeypot cannot emit. MITRE ATT&CK defines the behaviour; ART's atomics
+# supply the command forms this pattern is written against.
+logsource:
+  product: cowrie
+  category: command
+detection:
+  selection:
+    command|re:
+      - '^\s*(?:sudo\s+)?lsmod\b'
+      - '\b(?:cat|less|head)\b[^|;]*/proc/modules\b'
+      - '\bfind\b[^|;]*/lib/modules/[^|;]*\.ko'
+      - '^\s*(?:sudo\s+)?(?:modinfo|depmod)\b'
+  condition: selection
+tags:
+  - attack.discovery
+  - attack.t1652

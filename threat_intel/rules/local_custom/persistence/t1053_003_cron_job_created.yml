@@ -1,0 +1,46 @@
+id: 8bb823be-fe5c-482e-95bc-c810e0f5fb21
+title: 'Scheduled Task/Job: Cron'
+status: stable
+description: >-
+  A cron job is INSTALLED. ART's atomics write into /etc/cron.daily/,
+  /etc/cron.hourly/ and /etc/crontab, or pipe a schedule into `crontab -`.
+  `crontab -l` and reading /etc/crontab are enumeration, not persistence,
+  and are excluded by filter_read.
+references:
+  - https://attack.mitre.org/techniques/T1053/003
+  - https://github.com/redcanaryco/atomic-red-team  # 3 Linux atomic(s)
+author: HydraPoT
+date: 2026-09-20
+technique: T1053.003
+technique_name: 'Cron'
+tactic: 'Persistence'
+priority: 15
+confidence: high
+# DERIVATION. SigmaHQ's imported Linux rules detect 0 of this technique's
+# Atomic Red Team Linux atomics: their detection is written against EDR
+# process-creation fields (Image, ParentImage, TargetFilename) that an SSH
+# honeypot cannot emit. MITRE ATT&CK defines the behaviour; ART's atomics
+# supply the command forms this pattern is written against.
+logsource:
+  product: cowrie
+  category: command
+detection:
+  selection_write:
+    command|re:
+      - '(?:>>?|\btee\b(?:\s+-\w+)*)\s*\S*/etc/cron(?:tab|\.d/|\.daily/|\.hourly/|\.weekly/|\.monthly/)'
+      - '(?:>>?|\btee\b(?:\s+-\w+)*)\s*\S*/var/spool/cron/'
+      - '\|\s*(?:sudo\s+)?crontab\s+-\s*$'
+      - '\bcrontab\s+(?:-\w+\s+)*\S+\s*$'
+  selection_edit:
+    command|re:
+      - '\bcrontab\s+-e\b'
+      - '\bsed\s+-i\b[^|;]*(?:/etc/cron|/var/spool/cron)'
+      - '^\s*(?:sudo\s+)?at\s+(?:-\w+\s+)*\d'
+  filter_read:
+    command|re:
+      - '\bcrontab\s+-l\b'
+      - '\b(?:cat|less|more|head|tail|ls)\b[^|;]*(?:/etc/cron|/var/spool/cron)'
+  condition: 1 of selection* and not filter_read
+tags:
+  - attack.persistence
+  - attack.t1053.003

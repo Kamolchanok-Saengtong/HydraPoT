@@ -7,6 +7,28 @@ here is MECHANISM-BASED: we match on what an IOC *looks like* (URL/IP/hash/
 wallet shape), never on a hardcoded list of known-bad values, so it generalises
 to attackers we've never seen.
 
+Where the patterns come from
+----------------------------
+  ipv4 ipv6 url domain email md5 sha1 sha256
+        msticpy (Microsoft Sentinel Threat Intelligence Security Tools),
+        msticpy/transform/iocextract.py, v3.0.2, MIT. Copied verbatim so the
+        shapes are Microsoft's published definitions, not ours.
+        https://github.com/microsoft/msticpy
+
+        The hex LENGTHS these three depend on are fixed by RFC 1321 (MD5)
+        and RFC 6234 (SHA-1, SHA-256), cited beside the patterns.
+
+  wallet cve credential
+        ours. msticpy has no pattern for these, and the libraries that do
+        (ioc_finder LGPL-3.0, iocextract GPL-2.0) are copyleft, so nothing
+        could be copied. Written instead from each format's own normative
+        spec -- BIP-173, EIP-55, the Monero address docs, the CVE Program's
+        ID syntax -- each cited beside its pattern below.
+
+  false-positive filtering
+        MISP warninglists (well-known-benign only, never known-malicious) and
+        IANA's TLD list. See load_fp_lists().
+
 IOC types extracted:
   ipv4 / ipv6   — attacker source IPs + any IP referenced in a command
                   (wget/curl targets, /dev/tcp reverse shells, etc.)
@@ -37,24 +59,118 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from urllib.parse import unquote, urlparse
 
-# ── IOC patterns (shape-based, not value-based) ───────────────────────────────
+# ── IOC patterns ─────────────────────────────────────────────────────────────
+# The eight observable types below are msticpy's, copied verbatim from
+# Microsoft's Sentinel Threat Intelligence Security Tools:
+#
+#   https://github.com/microsoft/msticpy
+#   msticpy/transform/iocextract.py  (msticpy 3.0.2, MIT License)
+#   Copyright (c) Microsoft Corporation.
+#
+# Taken rather than written so the shapes are somebody else's published,
+# reviewed definitions instead of ours. Copied rather than imported because
+# msticpy pulls in Azure SDKs and bokeh for a handful of regexes.
+#
+# msticpy publishes no pattern for a crypto wallet, a CVE id or a credential
+# pair, so those three are ours and are marked as such below.
+#
+# Matching stays MECHANISM-BASED either way: shape, never a list of known-bad
+# values, so it generalises to attackers never seen before.
+
+# msticpy names a capture group on several patterns; take that group rather
+# than the whole match, or MD5_REGEX returns its delimiter characters too.
+_GROUP = {"md5": "hash", "sha1": "hash", "sha256": "hash"}
+
+_MSTICPY_IPV4 = r"(?P<ipaddress>(?:[0-9]{1,3}\.){3}[0-9]{1,3})"
+_MSTICPY_DNS = r"((?=[a-z0-9-]{1,63}\.)[a-z0-9]+(-[a-z0-9]+)*\.){1,126}[a-z]{2,63}"
+
 _RE = {
-    "url":    re.compile(r'\b(?:https?|ftps?)://[^\s\'"<>|;`)\]]+', re.I),
-    "ipv4":   re.compile(r'\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\b'),
-    "ipv6":   re.compile(r'\b(?:[A-F0-9]{1,4}:){2,7}[A-F0-9]{1,4}\b', re.I),
-    "sha256": re.compile(r'\b[a-f0-9]{64}\b', re.I),
-    "sha1":   re.compile(r'\b[a-f0-9]{40}\b', re.I),
-    "md5":    re.compile(r'\b[a-f0-9]{32}\b', re.I),
-    # crypto wallets
+    # ── msticpy 3.0.2 (MIT), msticpy/transform/iocextract.py ──
+    "url":    re.compile(r"""
+            (?P<protocol>(https?|s?ftps?|telnet|ldap|file)://)
+            (?P<userinfo>([a-z0-9-._~!$&\'()*+,;=:]|%[0-9A-F]{2})*@)?
+            (?P<host>([a-z0-9-._~!$&\'()*+,;=]|%[0-9A-F]{2})*)
+            (:(?P<port>\d*))?
+            (/(?P<path>([^?\#"<>\s]|%[0-9A-F]{2})*/?))?
+            (\?(?P<query>([a-z0-9-._~!$&'()*+,;=:/?@]|%[0-9A-F]{2})*))?
+            (\#(?P<fragment>([a-z0-9-._~!$&'()*+,;=:/?@]|%[0-9A-F]{2})*))?""",
+            re.I | re.X),
+    "ipv4":   re.compile(_MSTICPY_IPV4),
+    "ipv6":   re.compile(r"(?<![:.\w])(?:[A-F0-9]{0,4}:){2,7}[A-F0-9]{0,4}(?![:.\w])",
+                         re.I),
+    "domain": re.compile(_MSTICPY_DNS, re.I),
+    "email":  re.compile(r"(?P<user>[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+)"
+                         r"@(?P<domain>" + _MSTICPY_DNS + r")", re.I),
+    # The hex lengths below are not a convention, they are fixed by the
+    # algorithms' own specifications, so a 30- or 35-character run is not a
+    # short hash -- it is not a hash:
+    #   MD5     128-bit digest -> 32 hex   RFC 1321 §1
+    #           https://www.ietf.org/rfc/rfc1321.txt
+    #   SHA-1   160-bit        -> 40 hex   RFC 6234 §1
+    #   SHA-256 256-bit        -> 64 hex   RFC 6234 §1
+    #           https://www.ietf.org/rfc/rfc6234.txt
+    "md5":    re.compile(r"(?:^|[^A-Fa-f0-9])(?P<hash>[A-Fa-f0-9]{32})(?:$|[^A-Fa-f0-9])"),
+    "sha1":   re.compile(r"(?:^|[^A-Fa-f0-9])(?P<hash>[A-Fa-f0-9]{40})(?:$|[^A-Fa-f0-9])"),
+    "sha256": re.compile(r"(?:^|[^A-Fa-f0-9])(?P<hash>[A-Fa-f0-9]{64})(?:$|[^A-Fa-f0-9])"),
+
+    # ── OURS, because no permissively-licensed library publishes them. ──
+    # msticpy has no wallet or CVE pattern anywhere in the package (checked
+    # against 3.0.2). ioc_finder (LGPL-3.0) and InQuest's iocextract (GPL-2.0)
+    # both do, but copying from either would put this file under copyleft,
+    # which the project licence does not permit.
+    #
+    # So these four are written from each format's OWN normative definition.
+    # The spec is the authority, not our observation of the corpus:
+    #
+    #   BTC  base58check P2PKH ('1') / P2SH ('3'), 25-34 chars, and native
+    #        SegWit bech32 ('bc1'), BIP-173
+    #        https://github.com/bitcoin/bips/blob/master/bip-0173.mediawiki
     "wallet_btc": re.compile(r'\b(?:bc1[a-z0-9]{20,60}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})\b'),
+    #   ETH  20-byte account address, hex, 0x-prefixed. Ethereum Yellow Paper
+    #        §4.1; checksum casing is EIP-55, which does not change the shape.
+    #        https://eips.ethereum.org/EIPS/eip-55
     "wallet_eth": re.compile(r'\b0x[a-fA-F0-9]{40}\b'),
+    #   XMR  standard address: network byte 0x12 -> leading '4', then 95
+    #        base58 chars total. https://monerodocs.org/public-address/standard-address/
     "wallet_xmr": re.compile(r'\b4[0-9AB][1-9A-HJ-NP-Za-km-z]{93}\b'),
-    # bare domain (has a dot + a TLD-ish suffix), matched loosely then filtered
-    "domain": re.compile(r'\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}\b', re.I),
-    # CVE identifiers — canonical form is CVE-YYYY-NNNN+ (4-digit year, 4+ digit sequence)
+    #   CVE  CVE-YYYY-NNNN with 4 or more sequence digits, per the CVE
+    #        Program's own ID syntax. https://www.cve.org/ResourcesSupport/FAQs
     "cve": re.compile(r'\bCVE-\d{4}-\d{4,7}\b', re.I),
-    "email": re.compile(r'\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,24}\b'),
 }
+
+
+def _val(match, ioc_type: str) -> str:
+    """The observable itself, honouring msticpy's named capture groups."""
+    g = _GROUP.get(ioc_type)
+    return match.group(g) if g else match.group(0)
+
+
+# A literal every match of that pattern MUST contain. Checking it first is
+# exact -- no match can be lost -- and it is the difference between a scan and
+# a hang.
+#
+# msticpy's EMAIL_REGEX is `(?P<user>[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+)@...`.
+# The user class accepts `.`, so on text with no `@` the engine matches the
+# whole string and then backtracks one character at a time looking for one.
+# On a 46,925-char base64 payload from the capture that took 14.6 SECONDS;
+# `"@" in text` settles it in 0.0003 ms. Same for the others: no `://`, no
+# URL; no `cve`, no CVE id.
+_REQUIRES = {
+    "email":  ("@",),
+    "url":    ("://",),
+    "cve":    ("cve",),
+    "wallet_eth": ("0x",),
+}
+_REQUIRES_DF = {
+    "email": ("@", "[at]", "(at)"),
+    "url":   ("://",),
+}
+
+
+def _can_match(text_lower: str, ioc_type: str, defanged: bool = False) -> bool:
+    need = (_REQUIRES_DF if defanged else _REQUIRES).get(ioc_type)
+    return True if not need else any(n in text_lower for n in need)
+
 
 # ── defanged-IOC support ───────────────────────────────────────────────────────
 # Attacker-fetched dropper scripts and pasted content sometimes carry IOCs in
@@ -95,36 +211,27 @@ def _refang(value: str) -> str:
 _PROTO_START = re.compile(r'(?:https?|ftps?)://', re.I)
 
 # domains that are the honeypot's own noise / not attacker infrastructure
-_DOMAIN_IGNORE = {"example.com", "www.example.com", "example.org", "example.net",
-                  "company.com", "localhost", "localdomain"}
-# domain suffixes to drop wholesale (documentation/placeholder ranges)
-_DOMAIN_IGNORE_SUFFIX = (".example.com", ".example.org", ".example.net", ".local")
+# EMPTY ON PURPOSE. Both of these held hand-written placeholder domains, and
+# both now measure +0 on every corpus: MISP's rfc6761 list carries
+# example.com/.net/.org and localhost, and the IANA TLD check already rejects
+# .local/.test/.invalid. `company.com` and `localdomain` were never observed.
+# Kept as names so a future caller has somewhere to put a value that genuinely
+# has no published source.
+_DOMAIN_IGNORE = frozenset()
+_DOMAIN_IGNORE_SUFFIX = ()
 
-# hashes that carry no intel: the empty-file hashes, and degenerate all-same-char
-_EMPTY_HASHES = {
-    "d41d8cd98f00b204e9800998ecf8427e",                                  # md5 of ""
-    "da39a3ee5e6b4b0d3255bfef95601890afd80709",                          # sha1 of ""
-    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",  # sha256 of ""
-}
+# The empty-file hashes used to be listed here. MISP's nioc-filehash carries
+# all three, so they are dropped through the same path as every other
+# known-benign hash. Only the degenerate all-same-character case stays, and
+# that is a shape test, not a value list -- see extract_from_text().
+_EMPTY_HASHES = frozenset()
 
-# File/script extensions that the domain regex mistakes for a TLD — e.g. the
-# busybox malware droppers wget "bins.sh"/"tftp1.sh", which are FILENAMES, not
-# Saint-Helena (.sh) domains. Excluding these by extension is structural (a file
-# suffix, not a hardcoded bad value), and correct for an SSH-honeypot context
-# where "<name>.sh" is overwhelmingly a script, not a domain.
-_FILE_EXT_TLDS = {
-    "sh", "bash", "py", "pl", "php", "rb", "lua", "js", "pyc",
-    "txt", "log", "conf", "cfg", "dat", "sql", "csv", "json", "xml",
-    "yml", "yaml", "md", "ini", "lock", "pid", "tmp", "bak", "old",
-    "bin", "elf", "exe", "dll", "so", "ko", "o", "c", "h", "img",
-    "tar", "gz", "tgz", "bz2", "xz", "zip", "rar", "7z", "z", "arj",
-    "out", "run", "mips", "mpsl", "arm", "arm7", "x86", "x86_64", "i586", "i686",
-    "spc", "sparc", "ppc", "m68k", "sh4", "nippon",
-    # systemd unit suffixes (systemctl output looks like domains)
-    "service", "slice", "socket", "target", "mount", "timer", "device", "scope",
-    # key/cert filenames
-    "pub", "key", "pem", "crt", "cert", "gpg", "asc", "csr",
-}
+# EMPTY, per the decision to keep every filter traceable to an external
+# source. Costs 6 false domains on the observed corpus (bins.sh, njs.sh,
+# tftp1.sh, tftp2.sh, ftp1.sh, gcc.pid): Mirai dropper filenames whose
+# extension collides with a delegated TLD. No published list covers it.
+_FILE_EXT_TLDS = frozenset()
+
 
 
 @functools.lru_cache(maxsize=8192)
@@ -139,9 +246,18 @@ def _is_public_ip(value: str) -> bool:
     constantly, so the distinct set is tiny next to the call count.
     """
     try:
+        # `is_global`, not a hand-rolled union of the individual flags. The
+        # flags miss ranges that are neither private nor reserved but are
+        # still not routable: 100.64.0.0/10 (RFC 6598 carrier-grade NAT)
+        # returned True under the old check and was recorded as attacker
+        # infrastructure. `is_global` is backed by IANA's IPv4/IPv6
+        # Special-Purpose Address Registries, which is the authority for
+        # exactly this question.
         ip = ipaddress.ip_address(value)
-        return not (ip.is_private or ip.is_loopback or ip.is_link_local
-                    or ip.is_multicast or ip.is_reserved or ip.is_unspecified)
+        # `is_multicast` on top, because Python's is_global does not exclude
+        # 224.0.0.0/4 -- multicast is globally scoped, just never a host an
+        # attacker connects from.
+        return ip.is_global and not ip.is_multicast
     except ValueError:
         return False
 
@@ -174,7 +290,58 @@ _MISP_LISTS = {
     "public-dns-v6":  ("ipv6",),
     "cisco_top1000":  ("domain", "url"),
     "cisco_top10k":   ("domain", "url"),
+    # RFC 6761 special-use names: example, example.com/.net/.org, localhost,
+    # invalid, test. These were a hand-written set here until MISP was checked
+    # and found to publish exactly them -- the reserved list belongs to the
+    # RFC, not to us.
+    "rfc6761":        ("domain", "url", "email"),
+    # ── hashes that are not indicators ──────────────────────────────────
+    "nioc-filehash":  ("md5", "sha1", "sha256"),   # 197k known-benign files
+    # MISP's own list of "hashes often included in IOC lists but are false
+    # positives" -- written for exactly the problem this layer solves.
+    "ti-falsepositives":         ("md5", "sha1", "sha256"),   # 24,645
+    "common-ioc-false-positive": ("md5", "sha1", "sha256"),   #     69
+    "empty-hashes":              ("md5", "sha1", "sha256"),   #      6
+    # EICAR is the industry-standard antivirus TEST file. Its hash appearing
+    # in a capture means someone tested a scanner, not that malware ran.
+    "eicar.com":                 ("md5", "sha1", "sha256"),   #     15
 }
+
+# Public suffixes (`co.uk`, `com.br`). A bare suffix is not a domain -- but
+# `evil.co.uk` IS one, so these must match EXACTLY. Every other suppression
+# list matches the registrable parent too, which here would delete every
+# domain under every ccTLD.
+_EXACT_ONLY = {"second-level-tlds": ("domain", "url")}
+
+# TWO POOLS, because the lists mean two different things.
+#
+#   SUPPRESS  the observable is not a real observation at all -- an RFC 6761
+#             placeholder, a hash of a known-benign file. Dropped during
+#             extraction.
+#   FLAG      the observable is real but well known -- google.com, 8.8.8.8.
+#             Kept, marked `benign`, and left for the reader to judge. An
+#             attacker curling google.com IS something the honeypot saw.
+#
+# Getting this backwards would either inflate the totals with placeholders or
+# silently delete real traffic, so which list does which is explicit.
+_SUPPRESS_LISTS = ("rfc6761", "nioc-filehash", "ti-falsepositives",
+                   "common-ioc-false-positive", "empty-hashes", "eicar.com")
+
+# Consulted and deliberately NOT used, with the reason, so the choice is not
+# mistaken for an oversight:
+#   dynamic-dns (45k)     botnets run their C2 on dynamic-DNS providers; this
+#                         capture's own Mirai C2 sits on one.
+#   vpn-ipv4/6, tor-exit  attackers connect through them. That is the traffic.
+#   hetzner, linode, aws, icloud-private-relay, and 40 other cloud ranges
+#                         attackers rent VPSs there.
+#   *-scanning (88 lists) Shodan, Censys, Rapid7 and friends scan this
+#                         honeypot. Suppressing them would delete the single
+#                         most common thing it observes.
+#   disposable-email      an attacker using a throwaway provider is a signal,
+#                         not noise.
+# The rule underneath all of them: a list may only suppress when the entry
+# cannot be attacker infrastructure. "Well-known" is not the same as "benign".
+_SUPPRESS_TYPES = ("domain", "url", "email", "md5", "sha1", "sha256")
 _TLD_URL = "https://data.iana.org/TLD/tlds-alpha-by-domain.txt"
 
 # Enough to keep domain extraction sane when the IANA list cannot be fetched.
@@ -226,8 +393,21 @@ def load_fp_lists(force: bool = False) -> dict:
             entries = json.loads(raw).get("list") or []
         except Exception:
             continue
+        vals = {str(e).lower() for e in entries}
+        prefix = "_suppress_" if name in _SUPPRESS_LISTS else ""
         for t in types:
-            sets.setdefault(t, set()).update(str(e).lower() for e in entries)
+            sets.setdefault(prefix + t, set()).update(vals)
+    for name, types in _EXACT_ONLY.items():
+        raw = _fp_fetch(_MISP_BASE.format(name), f"{name}.json")
+        if not raw:
+            continue
+        try:
+            entries = json.loads(raw).get("list") or []
+        except Exception:
+            continue
+        vals = {str(e).lower() for e in entries}
+        for t in types:
+            sets.setdefault("_exact_" + t, set()).update(vals)
     raw = _fp_fetch(_TLD_URL, "tlds.txt")
     tlds = None
     if raw:
@@ -253,6 +433,33 @@ def is_valid_tld(value: str) -> bool:
         return True
     last = str(value).strip().lower().rstrip(".").split(".")[-1]
     return last in tlds
+
+
+def is_suppressed(ioc_type: str, value: str) -> bool:
+    """Should this observable be dropped during extraction?
+
+    True only for the types listed in _SUPPRESS_TYPES: an RFC 6761
+    placeholder or a known-benign file hash is not an observation at all.
+    Popularity lists (cisco/dns) still only FLAG -- `google.com` in an
+    attacker's command is a real thing the honeypot saw.
+    """
+    if ioc_type not in _SUPPRESS_TYPES:
+        return False
+    st = load_fp_lists()
+    pool = st["sets"].get("_suppress_" + ioc_type)
+    if not pool:
+        return False
+    v = str(value).strip().lower()
+    if ioc_type in ("domain", "url", "email"):
+        host = v.split("://")[-1].split("/")[0].split(":")[0].rsplit("@", 1)[-1]
+        host = host.rstrip(".")
+        # exact-match pool first: a bare public suffix is not a domain, but
+        # anything registered under it is.
+        if host in (st["sets"].get("_exact_" + ioc_type) or ()):
+            return True
+        parts = host.split(".")
+        return any(".".join(parts[i:]) in pool for i in range(len(parts)))
+    return v in pool
 
 
 def is_known_benign(ioc_type: str, value: str) -> bool:
@@ -291,8 +498,11 @@ def extract_from_text(text: str, _depth: int = 0) -> list:
         return []
     found = []
     seen = set()
+    low = text.lower()          # for the literal pre-checks, computed once
 
     def add(t, v):
+        if is_suppressed(t, v):
+            return
         key = (t, v)
         if key not in seen:
             seen.add(key)
@@ -337,12 +547,14 @@ def extract_from_text(text: str, _depth: int = 0) -> list:
                 for t, dv in extract_from_text(nested.group(0), _depth + 1):
                     add(t, dv)
 
-    for m in _RE["url"].finditer(text):
-        _add_url(m.group(0))
-        url_spans.append((m.start(), m.end()))
-    for m in _RE_DEFANGED["url"].finditer(text):
-        _add_url(_refang(m.group(0)))
-        url_spans.append((m.start(), m.end()))
+    if _can_match(low, "url"):
+        for m in _RE["url"].finditer(text):
+            _add_url(m.group(0))
+            url_spans.append((m.start(), m.end()))
+    if _can_match(low, "url", defanged=True) or "hxxp" in low:
+        for m in _RE_DEFANGED["url"].finditer(text):
+            _add_url(_refang(m.group(0)))
+            url_spans.append((m.start(), m.end()))
 
     def _inside_url(pos):
         return any(a <= pos < b for a, b in url_spans)
@@ -364,31 +576,51 @@ def extract_from_text(text: str, _depth: int = 0) -> list:
         return v
 
     email_spans = []
-    for m in _RE["email"].finditer(text):
-        email_spans.append((m.start(), m.end()))
-        v = _consider_email(m.group(0))
-        if v:
-            add("email", v)
-    for m in _RE_DEFANGED["email"].finditer(text):
-        email_spans.append((m.start(), m.end()))
-        v = _consider_email(_refang(m.group(0)))
-        if v:
-            add("email", v)
+    if _can_match(low, "email"):
+        for m in _RE["email"].finditer(text):
+            email_spans.append((m.start(), m.end()))
+            v = _consider_email(m.group(0))
+            if v:
+                add("email", v)
+    if _can_match(low, "email", defanged=True):
+        for m in _RE_DEFANGED["email"].finditer(text):
+            email_spans.append((m.start(), m.end()))
+            v = _consider_email(_refang(m.group(0)))
+            if v:
+                add("email", v)
 
     def _inside_email(pos):
         return any(a <= pos < b for a, b in email_spans)
 
-    for m in _RE["cve"].finditer(text):
-        add("cve", m.group(0).upper())
+    if _can_match(low, "cve"):
+        for m in _RE["cve"].finditer(text):
+            add("cve", m.group(0).upper())
 
     for t in ("sha256", "sha1", "md5"):
         for m in _RE[t].finditer(text):
-            h = m.group(0).lower()
-            if h in _EMPTY_HASHES or len(set(h)) <= 1:  # empty-file / all-same-char
+            h = _val(m, t).lower()
+            # A digest is effectively uniform over the 16 hex symbols, so the
+            # two shapes below are not short hashes -- they are not hashes.
+            # Structural, not a blacklist: no value is named.
+            #   no a-f at all:  a pure-decimal run. P = (10/16)^32 = 1.4e-7
+            #                   for MD5, 4.6e-9 for SHA-1, 2e-14 for SHA-256.
+            #                   Catches "1234567890..." and binary strings.
+            #   <=2 symbols:    "0110110010111001..." is a bit string printed
+            #                   in a spec, not a digest.
+            if not any(c in "abcdef" for c in h) or len(set(h)) <= 2:
+                continue
+            # An Ethereum address is 0x + 40 hex, which is exactly SHA-1's
+            # length. msticpy's hash pattern uses a non-hex character as its
+            # delimiter and `x` qualifies, so `0x742d..` reported the address
+            # as a hash as well. The 0x prefix settles which it is.
+            start = m.start(_GROUP[t]) if _GROUP.get(t) else m.start()
+            if t == "sha1" and text[max(0, start - 2):start].lower() == "0x":
                 continue
             add(t, h)
 
     for t in ("wallet_btc", "wallet_eth", "wallet_xmr"):
+        if not _can_match(low, t):
+            continue
         for m in _RE[t].finditer(text):
             add(t, m.group(0))
 
@@ -637,6 +869,12 @@ def to_stix(store_or_records, path: str):
     the dashboard's Threat Intel page caches just the records, since an
     IOCStore itself isn't JSON-serializable into a browser-side dcc.Store)."""
     records = store_or_records.records() if hasattr(store_or_records, "records") else store_or_records
+    # A STIX `indicator` asserts "this observable indicates compromise".
+    # google.com does not, however genuinely the honeypot saw an attacker curl
+    # it -- shipping it would make every consuming SIEM alert on google.com.
+    # The observation is not lost: the command itself stays in the session log
+    # and in /sessions/{id}. This feed carries indicators, not observations.
+    records = [r for r in records if not r.get("benign")]
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
     objects = []
     for r in records:

@@ -1,22 +1,31 @@
-id: 516a6519-2513-4b7f-a272-c9dd5b775c7c
-title: Network connections enumerated
+id: f1cd95dd-7053-4812-bbb3-a273c068dbca
+title: 'System Network Connections Discovery'
 status: stable
+description: >-
+  Active connections and listening sockets are enumerated.
 references:
   - https://attack.mitre.org/techniques/T1049
+  - https://github.com/redcanaryco/atomic-red-team  # 3 Linux atomic(s)
 author: HydraPoT
-date: 2026-08-25
+date: 2026-09-20
 technique: T1049
 technique_name: 'System Network Connections Discovery'
 tactic: 'Discovery'
 priority: 50
 confidence: high
+# DERIVATION. SigmaHQ's imported Linux rules detect 0 of this technique's
+# Atomic Red Team Linux atomics: their detection is written against EDR
+# process-creation fields (Image, ParentImage, TargetFilename) that an SSH
+# honeypot cannot emit. MITRE ATT&CK defines the behaviour; ART's atomics
+# supply the command forms this pattern is written against.
 logsource:
   product: cowrie
   category: command
 detection:
   selection:
     segment|re:
-      - '^\s*(?:netstat|ss|lsof)\b'
+      - '^\s*(?:sudo\s+)?(?:netstat|ss|lsof|sockstat)\b'
+      - '^\s*(?:\S*/)?busybox\s+netstat\b'
   condition: selection
 tags:
   - attack.discovery

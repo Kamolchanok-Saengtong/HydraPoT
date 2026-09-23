@@ -48,6 +48,7 @@ Usage
 """
 
 import argparse
+import collections
 import json
 import os
 import re
@@ -66,9 +67,10 @@ CACHE_DIR  = os.path.join(_HERE, ".art_cache")
 ART_CACHE  = os.path.join(CACHE_DIR, "art_index.yaml")
 
 # thresholds for the verdict column
-GOOD_DETECTION = 0.70
-WEAK_DETECTION = 0.30
-HIGH_CROSS     = 0.25
+# NO GRADING THRESHOLDS. Atomic Red Team IS the baseline: it says these
+# commands ARE technique T, so the only honest figure is "of ART's atomics for
+# T, how many did we tag T". A cut-off like "70% = GOOD" would be a number we
+# invented, and a verdict resting on it would measure our own generosity.
 
 
 # ── reference corpus ─────────────────────────────────────────────────────────
@@ -128,13 +130,101 @@ def load_art_linux(path: str) -> list:
                 raw = ex.get("command") or ""
                 filled = _fill_placeholders(raw, test.get("input_arguments"))
                 for line in filled.splitlines():
-                    line = line.strip()
-                    if not line or line.startswith("#"):
+                    # rstrip only: a LEADING space can itself be the technique
+                    # (T1070.003), so stripping both ends would destroy it.
+                    line = line.rstrip()
+                    if not line.strip() or line.strip().startswith("#"):
                         continue
                     out.append({"technique": tid, "tactic": tactic,
                                 "test": test.get("name", ""),
+                                "description": test.get("description", ""),
                                 "executor": ex.get("name", ""), "command": line})
     return out
+
+
+# ── what HydraPoT can possibly observe ──────────────────────────────────────
+# ART is a test suite for fully instrumented endpoints. HydraPoT sees ONE
+# thing: the text of a command typed into an SSH session. It has no process
+# tree, no file-content monitor, no network flow, no GUI and no second host.
+#
+# Scoring those atomics as misses measures the sensor, not the rules -- and
+# quietly rewards writing patterns for commands that can never arrive. So each
+# test is classified first, the reason is printed, and BOTH rates are reported:
+# raw (every Linux atomic) and in-scope (the ones a shell sensor could see).
+#
+# The rules below are deliberately about the ATOMIC's requirements, never
+# about whether we happen to detect it. Nothing here may reference our own
+# rule set; if it did, the scope would shrink to fit the score.
+
+OUT_OF_SCOPE = (
+    ("gui",
+     r"\b(?:xwd|xwud|xdotool|scrot|import\s+-window|gnome-screenshot|"
+     r"xrandr|Xvfb|DISPLAY=)",
+     "needs an X11 session; an SSH honeypot has no display"),
+    ("compiled-artifact",
+     r"PathToAtomicsFolder/\S+/(?:bin|src)/|\bgcc\b|\bg\+\+\b|\bmake\b\s|"
+     r"\.c\b|\.so\b\s*$|/tmp/T\d{4}\d*(?:own)?\s",
+     "runs a binary compiled from the ART repo, not a shell command"),
+    ("cloud-api",
+     r"^\s*(?:aws|az|gcloud|oci|kubectl|stratus|doctl|ibmcloud)\s",
+     "calls a cloud provider API with credentials the honeypot has none of"),
+    ("windows-tooling",
+     r"\bpsexec\b|\.exe\b|\.ps1\b|powershell|\bwmic\b",
+     "Windows tooling invoked through sh"),
+    ("second-host",
+     r"\bsshpass\b|@localhost|\bexpect\s+-c|\bdocker\s+(?:run|exec|container)",
+     "needs a second reachable host or container runtime"),
+    ("non-command-telemetry",
+     r"/proc/\d+/(?:maps|mem)\b|\bptrace\b|\bgcore\b|\bLD_PRELOAD=\S+\s+\S|"
+     r"\bprctl\b|\btcpdump\b|\btshark\b",
+     "the effect is only visible in memory or packet capture, not in the command"),
+)
+
+_SCOPE_RE = [(name, re.compile(pat, re.I), why) for name, pat, why in OUT_OF_SCOPE]
+
+
+# A test whose DESCRIPTION names a characteristic its own `command` field does
+# not contain. ART's index stores the commands to run, not how to type them, so
+# where the technique IS the typing the index cannot express it.
+#
+# Narrow on purpose: the description must name the characteristic AND the
+# command must provably lack it. This is a property of ART's data, checkable by
+# anyone with the index -- not a judgement about our rules.
+_DESC_NOT_IN_COMMAND = (
+    (r"space before|leading space|prepend(?:ing)? a space",
+     lambda lines: not any(l[:1] in (" ", "\t") for l in lines),
+     "ART's command field omits the leading space that IS this technique"),
+)
+
+
+def unexpressed(description: str, lines) -> str:
+    """Reason this test cannot be measured from ART's index, or ""."""
+    d = description or ""
+    for pat, missing, why in _DESC_NOT_IN_COMMAND:
+        if re.search(pat, d, re.I) and missing(lines):
+            return why
+    return ""
+
+
+def scope_of(lines) -> tuple:
+    """(in_scope: bool, reason: str) for one atomic test's command lines.
+
+    A test is OUT of scope only when EVERY line that does real work is out of
+    scope. One unobservable line in an otherwise shell-based test does not
+    excuse the test -- the observable lines still had their chance.
+    """
+    verdicts = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        hit = next(((n, w) for n, rx, w in _SCOPE_RE if rx.search(stripped)), None)
+        verdicts.append(hit)
+    if not verdicts:
+        return True, ""
+    if all(v is not None for v in verdicts):
+        return False, verdicts[0][1]
+    return True, ""
 
 
 # ── scoring ──────────────────────────────────────────────────────────────────
@@ -174,14 +264,33 @@ def evaluate(art_rows: list) -> dict:
                                    "lines": []})
         t["tags"] |= tags
         t["lines"].append(row["command"])
+        t.setdefault("description", row.get("description", ""))
+
+    # Classify each test against what a shell sensor can observe, BEFORE any
+    # scoring, so the in-scope rate cannot be shaped by what we detect.
+    for t in tests.values():
+        why = unexpressed(t.get("description", ""), t["lines"])
+        if why:
+            t["in_scope"], t["out_reason"] = False, why
+        else:
+            t["in_scope"], t["out_reason"] = scope_of(t["lines"])
 
     art_techniques = {r["technique"] for r in art_rows}
     results = {}
+    scope_counts = collections.Counter(
+        "in" if t["in_scope"] else t["out_reason"] for t in tests.values())
     for tid in targeted:
         truth = [t for t in tests.values() if t["technique"] == tid]
+        scoped = [t for t in truth if t["in_scope"]]
         hit   = [t for t in truth if tid in t["tags"]]
         miss  = [t for t in truth if tid not in t["tags"]]
+        s_hit = [t for t in scoped if tid in t["tags"]]
         cross = [(r, s) for r, s in tagged if r["technique"] != tid and tid in s]
+        in_scope_lines = [(r, s) for r, s in tagged
+                          if tests.get((r["technique"], r["test"],
+                                        r.get("executor", "")), {}).get("in_scope", True)]
+        cross_in = [(r, s) for r, s in in_scope_lines
+                    if r["technique"] != tid and tid in s]
 
         results[tid] = {
             "technique": tid,
@@ -190,8 +299,18 @@ def evaluate(art_rows: list) -> dict:
             "art_lines": sum(len(t["lines"]) for t in truth),
             "detected": len(hit),
             "detection_rate": (len(hit) / len(truth)) if truth else None,
-            "cross_tags": len(cross),
-            "cross_rate": (len(cross) / max(1, len(tagged))),
+            # In-scope = atomics a shell sensor could observe at all. This is
+            # the rate that measures the RULES; the raw one above also
+            # measures the sensor.
+            "in_scope_total": len(scoped),
+            "in_scope_detected": len(s_hit),
+            "in_scope_rate": (len(s_hit) / len(scoped)) if scoped else None,
+            "out_of_scope": len(truth) - len(scoped),
+            "out_reasons": sorted({t["out_reason"] for t in truth
+                                   if not t["in_scope"]}),
+            "cross_tags": len(cross_in),
+            # Denominator matches the grade this feeds: in-scope lines only.
+            "cross_rate": (len(cross_in) / max(1, len(in_scope_lines))),
             "miss_examples": [f"{t['test'][:44]} :: {t['lines'][0][:60]}"
                               for t in miss[:3]],
             "cross_examples": [f"[{r['technique']}] {r['command'][:80]}"
@@ -201,18 +320,26 @@ def evaluate(art_rows: list) -> dict:
     for tid, res in results.items():
         res["verdict"] = _verdict(res)
     return {"results": results, "corpus_size": len(art_rows),
-            "tests": len(tests), "art_techniques": len(art_techniques)}
+            "tests": len(tests), "art_techniques": len(art_techniques),
+            "scope": dict(scope_counts),
+            "in_scope_tests": scope_counts.get("in", 0)}
 
 
 def _verdict(res: dict) -> str:
+    """Only what ART can actually support.
+
+    NO_ATOMIC       ART publishes no Linux atomic for this technique, so
+                    nothing external can measure it.
+    NOT_OBSERVABLE  atomics exist but none is a shell command this sensor
+                    could see.
+    Otherwise the score itself is the answer -- there is no pass mark, because
+    no external source defines one.
+    """
     if not res["art_available"] or res["art_total"] == 0:
-        return "UNVALIDATED"
-    dr = res["detection_rate"]
-    if dr >= GOOD_DETECTION:
-        return "GOOD" if res["cross_rate"] < HIGH_CROSS else "GOOD/NOISY"
-    if dr >= WEAK_DETECTION:
-        return "PARTIAL"
-    return "SUSPECT" if res["cross_tags"] else "MISSES"
+        return "NO_ATOMIC"
+    if res.get("in_scope_total", 0) == 0:
+        return "NOT_OBSERVABLE"
+    return "MEASURED"
 
 
 # ── honeypot corpus context ──────────────────────────────────────────────────
@@ -256,6 +383,29 @@ def print_report(ev: dict, corpus: dict = None):
           f"{ev['art_techniques']} techniques")
     print(f"rules loaded     : {len(load_rules())} "
           f"targeting {len(results)} techniques")
+
+    # What a shell sensor could observe at all. Printed BEFORE any score, with
+    # the reason for every exclusion, so the in-scope rate can be audited.
+    sc = ev.get("scope") or {}
+    ins = ev.get("in_scope_tests", 0)
+    out = ev["tests"] - ins
+    print(f"\nSCOPE — HydraPoT observes shell command text and nothing else")
+    print(f"  in scope     : {ins}/{ev['tests']} tests  "
+          f"({ins/max(1,ev['tests'])*100:.1f}%)")
+    print(f"  out of scope : {out}")
+    for reason, n in sorted(((k, v) for k, v in sc.items() if k != "in"),
+                            key=lambda kv: -kv[1]):
+        print(f"      {n:>4}  {reason}")
+
+    tot_raw = sum(r["art_total"] for r in results.values())
+    det_raw = sum(r["detected"] for r in results.values())
+    tot_in  = sum(r.get("in_scope_total", 0) for r in results.values())
+    det_in  = sum(r.get("in_scope_detected", 0) for r in results.values())
+    print(f"\nDETECTION over the techniques these rules target")
+    print(f"  raw      : {det_raw}/{tot_raw} atomics "
+          f"({det_raw/max(1,tot_raw)*100:.1f}%)   -- measures rules AND sensor")
+    print(f"  in scope : {det_in}/{tot_in} atomics "
+          f"({det_in/max(1,tot_in)*100:.1f}%)   -- measures the RULES")
     errs = load_errors()
     if errs:
         print(f"rule load errors : {len(errs)}")
@@ -263,23 +413,21 @@ def print_report(ev: dict, corpus: dict = None):
             print(f"    {rel}: {msg}")
     print()
 
-    order = {"SUSPECT": 0, "MISSES": 1, "PARTIAL": 2, "GOOD/NOISY": 3,
-             "GOOD": 4, "UNVALIDATED": 5}
+    order = {"MEASURED": 0, "NOT_OBSERVABLE": 1, "NO_ATOMIC": 2}
     rows = sorted(results.values(), key=lambda r: (order.get(r["verdict"], 9),
-                                                   -(r["detection_rate"] or 0)))
+                                                   -(r.get("in_scope_rate") or 0)))
 
-    print(f"  {'TECHNIQUE':<12} {'VERDICT':<12} {'DETECT':>8} {'TESTS':>6} "
-          f"{'CROSS':>6}   NOTE")
-    print("  " + "-" * 74)
+    print(f"  {'TECHNIQUE':<12} {'ART':>5} {'OBSERVABLE':>11} {'DETECTED':>9} {'SCORE':>7}")
+    print("  " + "-" * 50)
     for r in rows:
-        dr = "   n/a" if r["detection_rate"] is None else f"{r['detection_rate']*100:5.0f}%"
-        note = ""
-        if r["verdict"] == "UNVALIDATED":
-            note = "no Linux atomics for this technique"
-        elif r["miss_examples"]:
-            note = "misses: " + r["miss_examples"][0][:38]
-        print(f"  {r['technique']:<12} {r['verdict']:<12} {dr:>8} "
-              f"{r['art_total']:>5} {r['cross_tags']:>6}   {note}")
+        n = r.get("in_scope_total", 0)
+        if not n:
+            why = "no atomic" if r["verdict"] == "NO_ATOMIC" else "not observable"
+            print(f"  {r['technique']:<12} {r['art_total']:>5} {'0':>11} "
+                  f"{'-':>9} {why:>16}")
+            continue
+        print(f"  {r['technique']:<12} {r['art_total']:>5} {n:>11} "
+              f"{r['in_scope_detected']:>9} {r['in_scope_rate']*100:6.0f}%")
 
     flagged = [r for r in rows if r["verdict"] in ("SUSPECT", "MISSES", "PARTIAL")]
     if flagged:
@@ -288,18 +436,45 @@ def print_report(ev: dict, corpus: dict = None):
         print("-" * 78)
         for r in flagged:
             print(f"\n{r['technique']}  [{r['verdict']}]  "
-                  f"detected {r['detected']}/{r['art_total']}")
+                  f"in-scope {r.get('in_scope_detected',0)}/{r.get('in_scope_total',0)}"
+                  f"   raw {r['detected']}/{r['art_total']}"
+                  + (f"   ({r['out_of_scope']} out of scope)" if r.get("out_of_scope") else ""))
             for m in r["miss_examples"]:
                 print(f"    MISSED  {m}")
             for c in r["cross_examples"]:
                 print(f"    CROSS   {c}")
 
-    unval = [r for r in rows if r["verdict"] == "UNVALIDATED"]
-    if unval:
+    measured = [r for r in rows if r["verdict"] == "MEASURED"]
+    if measured:
+        det = sum(r["in_scope_detected"] for r in measured)
+        tot = sum(r["in_scope_total"] for r in measured)
+        raw_d = sum(r["detected"] for r in rows)
+        raw_t = sum(r["art_total"] for r in rows)
+        print("\n" + "=" * 78)
+        print("SCORE AGAINST ATOMIC RED TEAM")
+        print("=" * 78)
+        print(f"  techniques measured : {len(measured)} of {len(rows)} targeted")
+        print(f"  ART atomics         : {raw_d}/{raw_t}  "
+              f"({raw_d/max(1,raw_t)*100:.1f}%)   every Linux atomic")
+        print(f"  observable only     : {det}/{tot}  "
+              f"({det/max(1,tot)*100:.1f}%)   excluding what this sensor cannot see")
+        print()
+        print("  ART is the baseline: it labels each command with the technique")
+        print("  it demonstrates, so the score is simply how many of its atomics")
+        print("  we tagged the same way. There is no pass mark here -- no")
+        print("  external source defines one, so none is invented.")
+
+    noatomic = [r for r in rows if r["verdict"] == "NO_ATOMIC"]
+    if noatomic:
         print("\n" + "-" * 78)
-        print(f"UNVALIDATED ({len(unval)}) — no external reference exists, "
-              "these rest on our judgement alone:")
-        print("    " + ", ".join(r["technique"] for r in unval))
+        print(f"NO ATOMIC ({len(noatomic)}) — ART publishes no Linux test for these,")
+        print("so nothing external can measure them:")
+        print("    " + ", ".join(r["technique"] for r in noatomic))
+    notobs = [r for r in rows if r["verdict"] == "NOT_OBSERVABLE"]
+    if notobs:
+        print(f"\nNOT OBSERVABLE ({len(notobs)}) — atomics exist but none is a shell")
+        print("command this sensor could see:")
+        print("    " + ", ".join(r["technique"] for r in notobs))
 
     if corpus:
         print("\n" + "=" * 78)
