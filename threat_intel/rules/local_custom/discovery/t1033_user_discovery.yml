@@ -1,22 +1,31 @@
-id: 30d961f2-995c-4e84-acec-3d46d637a3f4
-title: User discovery
+id: 1564f0d8-8606-430a-a056-63c104403f72
+title: 'System Owner/User Discovery'
 status: stable
+description: >-
+  Who am I and who else is logged in -- the first thing typed in almost
+  every session in the capture.
 references:
   - https://attack.mitre.org/techniques/T1033
+  - https://github.com/redcanaryco/atomic-red-team  # 1 Linux atomic(s)
 author: HydraPoT
-date: 2026-08-25
+date: 2026-09-20
 technique: T1033
 technique_name: 'System Owner/User Discovery'
 tactic: 'Discovery'
 priority: 50
 confidence: high
+# DERIVATION. SigmaHQ's imported Linux rules detect 0 of this technique's
+# Atomic Red Team Linux atomics: their detection is written against EDR
+# process-creation fields (Image, ParentImage, TargetFilename) that an SSH
+# honeypot cannot emit. MITRE ATT&CK defines the behaviour; ART's atomics
+# supply the command forms this pattern is written against.
 logsource:
   product: cowrie
   category: command
 detection:
   selection:
     segment|re:
-      - '^\s*(?:whoami|id|who|w|users|groups|logname|last|lastlog)\b'
+      - '^\s*(?:sudo\s+)?(?:whoami|id|who|w|users|groups|logname)\b'
   condition: selection
 tags:
   - attack.discovery

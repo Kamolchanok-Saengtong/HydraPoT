@@ -272,3 +272,5 @@ class StateTracker:
         if src in self.state["files"]:
             self.state["files"][dst] = self.state["files"].pop(src)
 
+
+

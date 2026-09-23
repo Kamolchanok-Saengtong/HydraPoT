@@ -1,22 +1,32 @@
-id: 240bb559-6548-4499-a509-181b6a9c8fd1
-title: Process discovery
+id: 14093144-c81a-4104-afc5-1fad18cdb21a
+title: 'Process Discovery'
 status: stable
+description: >-
+  Running processes are listed -- often to find a rival botnet's miner
+  before killing it.
 references:
   - https://attack.mitre.org/techniques/T1057
+  - https://github.com/redcanaryco/atomic-red-team  # 1 Linux atomic(s)
 author: HydraPoT
-date: 2026-08-25
+date: 2026-09-20
 technique: T1057
 technique_name: 'Process Discovery'
 tactic: 'Discovery'
 priority: 50
 confidence: high
+# DERIVATION. SigmaHQ's imported Linux rules detect 0 of this technique's
+# Atomic Red Team Linux atomics: their detection is written against EDR
+# process-creation fields (Image, ParentImage, TargetFilename) that an SSH
+# honeypot cannot emit. MITRE ATT&CK defines the behaviour; ART's atomics
+# supply the command forms this pattern is written against.
 logsource:
   product: cowrie
   category: command
 detection:
   selection:
     segment|re:
-      - '^\s*(?:ps|top|htop|pgrep|pidof)\b'
+      - '^\s*(?:sudo\s+)?(?:ps|top|htop|pgrep|pidof|pstree)\b'
+      - '^\s*(?:\S*/)?busybox\s+ps\b'
   condition: selection
 tags:
   - attack.discovery

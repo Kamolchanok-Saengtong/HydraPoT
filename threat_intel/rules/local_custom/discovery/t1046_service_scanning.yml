@@ -1,25 +1,37 @@
-id: 9030c740-f597-4f40-a8ad-1bf74a945532
-title: Network service scanning
+id: 006f8ea1-7cfc-42e9-9670-e7dabaf4228b
+title: 'Network Service Discovery'
 status: stable
+description: >-
+  The attacker scans for reachable services, either with a scanner or with
+  a bash /dev/tcp loop when no scanner is installed.
 references:
   - https://attack.mitre.org/techniques/T1046
+  - https://github.com/redcanaryco/atomic-red-team  # 3 Linux atomic(s)
 author: HydraPoT
-date: 2026-08-25
+date: 2026-09-20
 technique: T1046
 technique_name: 'Network Service Discovery'
 tactic: 'Discovery'
 priority: 20
 confidence: high
+# DERIVATION. SigmaHQ's imported Linux rules detect 0 of this technique's
+# Atomic Red Team Linux atomics: their detection is written against EDR
+# process-creation fields (Image, ParentImage, TargetFilename) that an SSH
+# honeypot cannot emit. MITRE ATT&CK defines the behaviour; ART's atomics
+# supply the command forms this pattern is written against.
 logsource:
   product: cowrie
   category: command
 detection:
   selection:
     segment|re:
-      - '^\s*(?:nmap|masscan|zmap|unicornscan)\b'
-      - '\bfor\s+port\s+in\b[^;]*(?:\.\.|\bseq\b)'
+      - '^\s*(?:sudo\s+)?(?:nmap|masscan|zmap|unicornscan|nc|ncat|netcat)\b[^|;]*-\w*z'
+      - '^\s*(?:sudo\s+)?(?:nmap|masscan|zmap|unicornscan)\b'
+  selection_devtcp:
+    command|re:
+      - '/dev/tcp/\S+/(?:\d|\$)'
       - '\bfor\b[^;]*\bin\b[^;]*\{\d+\.\.\d+\}[^;]*/dev/tcp/'
-  condition: selection
+  condition: 1 of selection*
 tags:
   - attack.discovery
   - attack.t1046

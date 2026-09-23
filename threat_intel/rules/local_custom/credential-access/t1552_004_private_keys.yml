@@ -1,0 +1,43 @@
+id: 1b087897-90d0-4090-abb0-3b10acd494b9
+title: 'Unsecured Credentials: Private Keys'
+status: stable
+description: >-
+  SSH or TLS private key material is located, read or staged for
+  collection. ART's atomics run `find / -name id_rsa -exec cp --parents {}
+  /tmp/art-staging` and variants with gcp/rsync -- the -exec staging step
+  is what separates this from ordinary file discovery.
+references:
+  - https://attack.mitre.org/techniques/T1552/004
+  - https://github.com/redcanaryco/atomic-red-team  # 7 Linux atomic(s)
+author: HydraPoT
+date: 2026-09-20
+technique: T1552.004
+technique_name: 'Private Keys'
+tactic: 'Credential Access'
+priority: 15
+confidence: high
+# DERIVATION. SigmaHQ's imported Linux rules detect 0 of this technique's
+# Atomic Red Team Linux atomics: their detection is written against EDR
+# process-creation fields (Image, ParentImage, TargetFilename) that an SSH
+# honeypot cannot emit. MITRE ATT&CK defines the behaviour; ART's atomics
+# supply the command forms this pattern is written against.
+logsource:
+  product: cowrie
+  category: command
+detection:
+  selection_read:
+    command|re:
+      - '\b(?:cat|less|more|head|tail|cp|scp|strings|base64)\b[^|;]*(?:id_rsa|id_dsa|id_ecdsa|id_ed25519)\b'
+      - '\b(?:cat|less|more|head|tail|cp|scp|strings)\b[^|;]*\.(?:pem|ppk|p12|pfx)\b'
+  selection_hunt:
+    command|re:
+      - '\bfind\b[^|;]*-name\s+[\x27"]?id_(?:rsa|dsa|ecdsa|ed25519)'
+      - '\bfind\b[^|;]*-name\s+[\x27"]?\*\.pem'
+      - '\b(?:locate|grep\s+-\w*r)\b[^|;]*(?:id_rsa|BEGIN (?:RSA |OPENSSH |EC )?PRIVATE KEY)'
+  selection_stage:
+    command|re:
+      - '\bfind\b[^|;]*-exec\s+(?:cp|gcp|rsync|mv|tar)\b'
+  condition: 1 of selection*
+tags:
+  - attack.credential-access
+  - attack.t1552.004

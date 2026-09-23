@@ -1,51 +1,44 @@
-id: a9a34abf-7d54-4969-9245-0639819d62dc
-title: Outbound SSH/SCP/SFTP
+id: fef8937d-495d-4508-99fe-ee5b9209b44d
+title: 'Remote Services: SSH'
 status: stable
 description: >-
-  The session reaches OUT to another host over SSH — the pivot step.
-
-  Direction is the whole technique. T1021.004 is using SSH to move to a
-  different machine; it is not "the string ssh appeared". Measured against the
-  honeypot's own corpus the previous version was 46 of 46 rows wrong, and
-  every one of them was `/etc/init.d/ssh restart` — restarting the LOCAL sshd,
-  which is the opposite end of the connection.
-
-  The cause is worth recording because it is self-inflicted. The matcher
-  expands each segment into path-stripped variants so that `/bin/chmod` can
-  match a rule written for `chmod`. That same expansion rewrites
-  `/etc/init.d/ssh restart` into `ssh restart`, which then satisfies a bare
-  `^\s*ssh\s+\S` selection. The stripping is correct and useful for binaries
-  in /bin and /usr/bin, so the fix belongs here rather than in the matcher:
-  this rule now excludes service-management forms explicitly.
-
-  Local sshd administration is service control, not lateral movement. If it
-  should be tagged at all it is T1489/T1685 territory, not this technique.
+  An outbound SSH session or copy is started FROM the honeypot -- the
+  attacker pivoting onward. The local sshd daemon being managed is not
+  lateral movement and is excluded; `scp -t`/`scp -f` are the receiving
+  ends of an INBOUND copy and are excluded too (that is T1105).
 references:
   - https://attack.mitre.org/techniques/T1021/004
+  - https://github.com/redcanaryco/atomic-red-team  # 2 Linux atomic(s)
 author: HydraPoT
-date: 2026-08-26
+date: 2026-09-20
 technique: T1021.004
 technique_name: 'SSH'
 tactic: 'Lateral Movement'
 priority: 30
 confidence: medium
+# DERIVATION. SigmaHQ's imported Linux rules detect 0 of this technique's
+# Atomic Red Team Linux atomics: their detection is written against EDR
+# process-creation fields (Image, ParentImage, TargetFilename) that an SSH
+# honeypot cannot emit. MITRE ATT&CK defines the behaviour; ART's atomics
+# supply the command forms this pattern is written against.
 logsource:
   product: cowrie
   category: command
 detection:
   selection:
     segment|re:
-      - '^\s*(?:sudo\s+)?(?:ssh|scp|sftp)\s+\S'
-  # Managing the local SSH daemon, not connecting out. `sshd` is the daemon;
-  # a lone service verb after `ssh` is what the path-stripped
-  # `/etc/init.d/ssh restart` collapses to.
+      - '^\s*(?:sudo\s+)?ssh\s+\S+@\S'
+      - '^\s*(?:sudo\s+)?(?:scp|sftp)\s+\S+@\S'
+      - '^\s*(?:sudo\s+)?ssh\s+(?:-\w+\s+\S+\s+)*\S+\s+\S'
   filter_local_daemon:
     command|re:
       - '/etc/init\.d/sshd?\b'
       - '\b(?:systemctl|service|invoke-rc\.d|rc-service|chkconfig)\b[^|;]*\bsshd?\b'
-      - '\bsshd\b'
-      - '\bssh\s+(?:start|stop|restart|reload|status|force-reload|condrestart|enable|disable)\b'
-  condition: selection and not filter_local_daemon
+      - '\bssh\s+(?:start|stop|restart|reload|status|enable|disable)\b'
+  filter_inbound_scp:
+    command|re:
+      - '^\s*scp\s+(?:-\w+\s+)*-[tf]\b'
+  condition: selection and not 1 of filter_*
 tags:
-  - attack.lateral_movement
+  - attack.lateral-movement
   - attack.t1021.004

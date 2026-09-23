@@ -12,8 +12,18 @@ BUCKETS = ("detections", "suppressed", "unmatched", "all")
 def list_detections(since: str = SINCE, instance: str = INSTANCE,
                     severity: str = Query(None),
                     bucket: str = Query("detections",
-                                        description="detections | suppressed | "
-                                                    "unmatched | all"),
+                                        description=
+                                        "Which stage of the detection engine to "
+                                        "read. detections = a rule matched "
+                                        "(the default). suppressed = a rule "
+                                        "matched and a suppression rule filtered "
+                                        "it; readable so the filtering is "
+                                        "auditable. unmatched = no rule claimed "
+                                        "the relationship, which is NOT a finding "
+                                        "of benign. all = the three concatenated, "
+                                        "each item still carrying its own "
+                                        "`bucket`, for a consumer that wants the "
+                                        "whole window in one call."),
                     limit: int = LIMIT, offset: int = OFFSET):
     """Output of the existing detection engine, with severity already applied.
 

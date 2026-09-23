@@ -1,0 +1,36 @@
+id: 51519295-ba68-463e-bf77-fbecc950f87d
+title: 'Command and Scripting Interpreter: Unix Shell'
+status: stable
+description: >-
+  A dropped script or binary is run. ART's uncovered atomics include the
+  `chmod +x /tmp/art.sh` then execute sequence; in the capture this is
+  always the third step after download and chmod.
+references:
+  - https://attack.mitre.org/techniques/T1059/004
+  - https://github.com/redcanaryco/atomic-red-team  # 14 Linux atomic(s)
+author: HydraPoT
+date: 2026-09-20
+technique: T1059.004
+technique_name: 'Unix Shell'
+tactic: 'Execution'
+priority: 35
+confidence: high
+# DERIVATION. SigmaHQ's imported Linux rules detect 0 of this technique's
+# Atomic Red Team Linux atomics: their detection is written against EDR
+# process-creation fields (Image, ParentImage, TargetFilename) that an SSH
+# honeypot cannot emit. MITRE ATT&CK defines the behaviour; ART's atomics
+# supply the command forms this pattern is written against.
+logsource:
+  product: cowrie
+  category: command
+detection:
+  selection:
+    segment|re:
+      - '^\s*(?:sudo\s+)?(?:ba|z|k|da|a)?sh\s+\S+'
+      - '^\s*\./\S+'
+      - '^\s*(?:sudo\s+)?(?:python3?|perl|ruby|lua|php|node)\s+\S+\.\w+'
+      - '^\s*(?:\S*/)?busybox\s+(?:ba)?sh\b'
+  condition: selection
+tags:
+  - attack.execution
+  - attack.t1059.004

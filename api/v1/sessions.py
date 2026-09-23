@@ -12,11 +12,19 @@ def list_sessions(since: str = SINCE, instance: str = INSTANCE,
                   technique: str = Query(None, description="ATT&CK technique id"),
                   tactic: str = Query(None, description="ATT&CK tactic name"),
                   min_fi: int = Query(None, ge=0, le=4,
-                                      description="OPERATIONAL filter only. FI is "
-                                                  "HydraPoT's routing metric -- it "
-                                                  "decides which agent answered a "
-                                                  "command -- and is NOT security "
-                                                  "severity."),
+                                      description=
+                                      "Keep sessions whose highest Fidelity Impact "
+                                      "is at least this (0-4). FI is HydraPoT's "
+                                      "ROUTING metric: it decides which agent "
+                                      "answered a command -- 0 means Cowrie "
+                                      "handled it, 4 means the cloud model was "
+                                      "worth spending. So this filters by how much "
+                                      "interaction a session drew, which is a "
+                                      "useful place to start looking. It is NOT "
+                                      "security severity, it never orders the "
+                                      "results, and it never appears as a rating: "
+                                      "severity comes from the severity layer "
+                                      "alone."),
                   limit: int = LIMIT, offset: int = OFFSET):
     """Session rollups from the aggregation layer.
 
@@ -28,26 +36,45 @@ def list_sessions(since: str = SINCE, instance: str = INSTANCE,
                              min_fi, limit, offset)
 
 
-@router.get("/sessions/{session_id}",
-            summary="One session's investigation context", tags=["sessions"])
-def get_session(session_id: str, instance: str = INSTANCE):
-    """Metadata, timeline, commands and MITRE mapping, from the existing
-    aggregation logic.
-
-    FI, the selected agent and latency appear under `operational` on each
-    command: they describe how the HONEYPOT responded, not what the attacker
-    did.
-    """
-    return found(svc.get_session(session_id, instance), "session")
-
-
-@router.get("/sessions/{session_id}/related", summary="Related activity",
+@router.get("/sessions/{session_id}", summary="One session, in full",
             tags=["sessions"])
-def related(session_id: str, since: str = SINCE, instance: str = INSTANCE):
-    """Relationships this session takes part in, from the correlation engine.
+def get_session(session_id: str, since: str = SINCE, instance: str = INSTANCE):
+    """Everything HydraPoT knows about one session, in one call: metadata,
+    commands, MITRE mapping, the correlations it belongs to, the detections
+    and alerts that fired on it, the indicators it touched, and evidence with
+    provenance.
 
-    Each carries the engine's own statement and whether a detection rule
-    surfaced it, so a consumer can tell "this was correlated" from "this was
-    considered worth showing".
+    One call rather than five. An external analyst -- or an AI agent -- should
+    not have to know which HydraPoT module owns which fact, nor stitch the
+    join itself and risk getting it wrong.
+
+    Costs ~1ms more than the metadata alone: the correlation and detection
+    work is per-WINDOW and cached, so every session in a window shares one
+    pipeline run.
+
+    FI, the selected agent and latency appear under `operational`: they
+    describe how the HONEYPOT responded, not what the attacker did. Never a
+    severity.
     """
-    return svc.related_sessions(session_id, since, instance)
+    return found(svc.investigate_session(session_id, since, instance), "session")
+
+
+@router.get("/sources/{ip}", summary="One source address, in full",
+            tags=["sources"])
+def get_source(ip: str, since: str = SINCE, instance: str = INSTANCE):
+    """Everything recorded from one address: its sessions, tactics, indicators
+    and detections.
+
+    The response says plainly that an address is not an identity. NAT
+    collapses many hosts into one, rotation splits one actor across many, and
+    an imported corpus may store a pseudonymised token. This reports what was
+    observed, not who it was.
+    """
+    return found(svc.investigate_ip(ip, since, instance), "source")
+
+
+# /sessions/{session_id}/related used to live here. The investigation package
+# already carries the same correlations alongside the detections and alerts
+# that give them meaning, so this was a second door into one room. Retired with
+# a 410 in api_server.py; api/services/sessions.related_sessions stays -- the
+# investigation is what calls it.

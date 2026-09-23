@@ -83,7 +83,11 @@ class RuleError(ValueError):
     """A rule file is malformed. Raised at load time, never at match time."""
 
 
-_SUPPORTED_FIELDS    = ("command", "segment")
+# `raw` is the command EXACTLY as typed, before any stripping. It exists for
+# one reason: a leading space is itself a technique (T1070.003 -- bash omits
+# space-prefixed commands from history), and every other field has already
+# thrown that space away. Use it only where the whitespace IS the signal.
+_SUPPORTED_FIELDS    = ("command", "segment", "raw")
 _SUPPORTED_MODIFIERS = ("re", "contains", "startswith", "endswith", "all")
 
 
@@ -126,7 +130,12 @@ def _compile_matcher(field_expr: str, values):
 
     def predicate(ctx):
         # `command` tests the whole line; `segment` succeeds if ANY segment hits
-        haystacks = [ctx["command"]] if field == "command" else ctx["segments"]
+        if field == "command":
+            haystacks = [ctx["command"]]
+        elif field == "raw":
+            haystacks = [ctx.get("raw", ctx["command"])]
+        else:
+            haystacks = ctx["segments"]
         agg = all if require_all else any
         return agg(any(test(h, p) for h in haystacks) for p in pats)
 
@@ -358,7 +367,8 @@ def _context(cmd: str) -> dict:
     expanded = []
     for seg in segs:
         expanded.extend(_segment_variants(seg))
-    return {"command": s, "segments": expanded}
+    # `raw` keeps the original spacing; everything else is normalised.
+    return {"command": s, "segments": expanded, "raw": cmd or ""}
 
 
 @functools.lru_cache(maxsize=8192)

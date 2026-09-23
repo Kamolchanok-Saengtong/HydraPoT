@@ -1,0 +1,39 @@
+id: d81c1ecc-85a6-4094-b274-916922321fe4
+title: 'Command and Scripting Interpreter: Python'
+status: stable
+description: >-
+  Python is used to obtain an interactive TTY or run inline code. ART's
+  atomics are `python -c "import pty;pty.spawn('/bin/bash')"` -- the
+  standard upgrade from a dumb shell to a full one after initial access.
+references:
+  - https://attack.mitre.org/techniques/T1059/006
+  - https://github.com/redcanaryco/atomic-red-team  # 4 Linux atomic(s)
+author: HydraPoT
+date: 2026-09-20
+technique: T1059.006
+technique_name: 'Python'
+tactic: 'Execution'
+priority: 15
+confidence: high
+# DERIVATION. SigmaHQ's imported Linux rules detect 0 of this technique's
+# Atomic Red Team Linux atomics: their detection is written against EDR
+# process-creation fields (Image, ParentImage, TargetFilename) that an SSH
+# honeypot cannot emit. MITRE ATT&CK defines the behaviour; ART's atomics
+# supply the command forms this pattern is written against.
+logsource:
+  product: cowrie
+  category: command
+detection:
+  selection_pty:
+    command|re:
+      - '\bpython3?\b[^|;]*\bpty\s*\.\s*spawn\b'
+      - '\bpython3?\b[^|;]*\bos\s*\.\s*system\s*\('
+      - '\bpython3?\b[^|;]*\bsubprocess\s*\.\s*(?:call|Popen|run)\b'
+  selection_inline:
+    command|re:
+      - '^\s*(?:sudo\s+)?python3?\s+(?:-\w+\s+)*-c\b'
+      - '\bpython3?\b[^|;]*\bsocket\s*\.\s*socket\b'
+  condition: 1 of selection*
+tags:
+  - attack.execution
+  - attack.t1059.006

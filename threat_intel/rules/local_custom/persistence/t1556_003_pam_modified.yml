@@ -1,0 +1,38 @@
+id: 485cc918-321b-40bf-95f9-2f25e0a69d13
+title: 'Modify Authentication Process: Pluggable Authentication Modules'
+status: stable
+description: >-
+  The PAM stack is edited so authentication always succeeds, or a rogue
+  module is inserted. ART's atomics insert `auth sufficient
+  pam_succeed_if.so uid >= 0` at the top of /etc/pam.d/su with sed -i. A
+  read of /etc/pam.d is password-policy discovery (T1201), not this --
+  only writes match.
+references:
+  - https://attack.mitre.org/techniques/T1556/003
+  - https://github.com/redcanaryco/atomic-red-team  # 3 Linux atomic(s)
+author: HydraPoT
+date: 2026-09-20
+technique: T1556.003
+technique_name: 'Pluggable Authentication Modules'
+tactic: 'Persistence'
+priority: 10
+confidence: high
+# DERIVATION. SigmaHQ's imported Linux rules detect 0 of this technique's
+# Atomic Red Team Linux atomics: their detection is written against EDR
+# process-creation fields (Image, ParentImage, TargetFilename) that an SSH
+# honeypot cannot emit. MITRE ATT&CK defines the behaviour; ART's atomics
+# supply the command forms this pattern is written against.
+logsource:
+  product: cowrie
+  category: command
+detection:
+  selection:
+    command|re:
+      - '\bsed\s+-i\b[^|;]*/etc/pam\.d/'
+      - '(?:>>?|\btee\b(?:\s+-\w+)*)\s*\S*/etc/pam\.d/'
+      - '\b(?:cp|mv|ln)\b[^|;]*\S+\.so\b[^|;]*/(?:lib|usr/lib)\S*/security/'
+      - '\bpam_succeed_if\.so\b'
+  condition: selection
+tags:
+  - attack.persistence
+  - attack.t1556.003

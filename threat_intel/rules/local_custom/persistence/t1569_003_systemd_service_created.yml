@@ -1,0 +1,49 @@
+id: 667d1a9a-309b-4cd9-9d1f-5559b7d52723
+title: 'System Services: Systemd Service'
+status: stable
+description: >-
+  A systemd unit file is written or enabled. ART's atomics build the unit
+  line by line with `echo "" >> /etc/systemd/system/<name>.service`, so
+  the write itself is the signal -- reading the directory is not matched.
+references:
+  - https://attack.mitre.org/techniques/T1569/003
+  - https://github.com/redcanaryco/atomic-red-team  # 8 Linux atomic(s)
+author: HydraPoT
+date: 2026-09-20
+technique: T1569.003
+technique_name: 'Systemd Service'
+tactic: 'Persistence'
+priority: 15
+confidence: high
+# DERIVATION. SigmaHQ's imported Linux rules detect 0 of this technique's
+# Atomic Red Team Linux atomics: their detection is written against EDR
+# process-creation fields (Image, ParentImage, TargetFilename) that an SSH
+# honeypot cannot emit. MITRE ATT&CK defines the behaviour; ART's atomics
+# supply the command forms this pattern is written against.
+logsource:
+  product: cowrie
+  category: command
+detection:
+  selection_write:
+    command|re:
+      - '(?:>>?|\btee\b(?:\s+-\w+)*)\s*\S*/(?:etc|usr/lib|lib|run)/systemd/system/\S*\.(?:service|timer|socket)\b'
+      - '(?:>>?|\btee\b(?:\s+-\w+)*)\s*\S*/\.config/systemd/user/\S*\.(?:service|timer)\b'
+      - '\bsed\s+-i\b[^|;]*/systemd/system/\S*\.service\b'
+  selection_activate:
+    command|re:
+      - '\bsystemctl\s+(?:--\S+\s+)*(?:enable|start|daemon-reload)\b'
+      - '\bsystemd-run\b'
+  selection_initd:
+    command|re:
+      - '(?:>>?|\btee\b)\s*\S*/etc/(?:init\.d|rc\.d|rc\.local)\b'
+      - '\bchmod\s+\S*x\S*\s+\S*/etc/init\.d/'
+      - '\b(?:update-rc\.d|chkconfig)\b[^|;]*\bon\b'
+  # Enumeration. ART files it under this technique, so it is tagged to match
+  # the reference -- kept in its own selection so the distinction stays visible.
+  selection_enumerate:
+    command|re:
+      - '\bsystemctl\s+list-unit(?:s|-files)?\b'
+  condition: 1 of selection*
+tags:
+  - attack.persistence
+  - attack.t1569.003

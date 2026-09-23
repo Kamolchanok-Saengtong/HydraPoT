@@ -1,23 +1,35 @@
-id: 37bd9b9e-442a-4a0e-9e4f-9d130c1e4baf
-title: SSH authorized_keys modified
+id: 955e1042-0d30-45e4-a4c6-ed342a4e88e6
+title: 'Account Manipulation: SSH Authorized Keys'
 status: stable
+description: >-
+  An SSH public key is appended to authorized_keys, giving the attacker
+  password-independent re-entry that survives a password reset. One of the
+  highest-confidence signals a honeypot can record.
 references:
   - https://attack.mitre.org/techniques/T1098/004
+  - https://github.com/redcanaryco/atomic-red-team  # 1 Linux atomic(s)
 author: HydraPoT
-date: 2026-08-25
+date: 2026-09-20
 technique: T1098.004
 technique_name: 'SSH Authorized Keys'
 tactic: 'Persistence'
-priority: 15
+priority: 10
 confidence: high
+# DERIVATION. SigmaHQ's imported Linux rules detect 0 of this technique's
+# Atomic Red Team Linux atomics: their detection is written against EDR
+# process-creation fields (Image, ParentImage, TargetFilename) that an SSH
+# honeypot cannot emit. MITRE ATT&CK defines the behaviour; ART's atomics
+# supply the command forms this pattern is written against.
 logsource:
   product: cowrie
   category: command
 detection:
   selection:
     command|re:
-      - '>>?\s*[^\s;|]*authorized_keys\b'
-      - '\btee\b[^|;]*authorized_keys\b'
+      - '(?:>>?|\btee\b(?:\s+-\w+)*)\s*\S*authorized_keys\b'
+      - '\bsed\s+-i\b[^|;]*authorized_keys\b'
+      - '\bssh-copy-id\b'
+      - '\bmkdir\b[^|;]*\.ssh\b[^|;]*(?:&&|;)[^|;]*authorized_keys'
   condition: selection
 tags:
   - attack.persistence

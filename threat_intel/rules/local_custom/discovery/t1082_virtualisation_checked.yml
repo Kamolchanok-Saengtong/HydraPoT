@@ -1,0 +1,53 @@
+id: 75bbbae1-bcf9-42c5-b694-f5cff53f1ed3
+title: 'System Information Discovery'
+status: stable
+description: >-
+  Host and virtualisation identity is read. ART's uncovered atomics are
+  the sandbox checks -- grepping /proc/scsi/scsi, /sys/class/dmi/id/* or
+  /proc/ide/*/model for vmware|vbox|qemu|virtual -- plus bare `env`.
+  Malware runs these to decide whether it is being analysed.
+references:
+  - https://attack.mitre.org/techniques/T1082
+  - https://github.com/redcanaryco/atomic-red-team  # 5 Linux atomic(s)
+author: HydraPoT
+date: 2026-09-20
+technique: T1082
+technique_name: 'System Information Discovery'
+tactic: 'Discovery'
+priority: 55
+confidence: high
+# DERIVATION. SigmaHQ's imported Linux rules detect 0 of this technique's
+# Atomic Red Team Linux atomics: their detection is written against EDR
+# process-creation fields (Image, ParentImage, TargetFilename) that an SSH
+# honeypot cannot emit. MITRE ATT&CK defines the behaviour; ART's atomics
+# supply the command forms this pattern is written against.
+logsource:
+  product: cowrie
+  category: command
+detection:
+  selection_tool:
+    segment|re:
+      - '^\s*(?:sudo\s+)?(?:uname|lscpu|lsmem|lsblk|lshw|lspci|lsusb|dmidecode|lsb_release|arch|nproc|free|systemd-detect-virt|getconf|virt-what|kldstat|sysctl\s+-n\s+hw)\b'
+      - '(?:^|\||\b(?:then|else|elif|do)\s+)\s*(?:sudo\s+)?(?:uname|dmidecode|kldstat)\b'
+      - '^\s*env\s*$'
+      - '^\s*(?:sudo\s+)?hostname\s*$'
+      - '^\s*(?:sudo\s+)?(?:hostnamectl|domainname)\b'
+  selection_sysfile:
+    command|re:
+      - '/proc/(?:cpuinfo|meminfo|version|scsi/scsi|ide/)'
+      - '/etc/(?:os-release|issue|lsb-release|debian_version|redhat-release)'
+      - '/sys/class/dmi/id/'
+      - '/sys/hypervisor/'
+  selection_vm_probe:
+    command|re:
+      - '\bgrep\b[^|;]*-\w*i\w*\b[^|;]*(?:vmware|vbox|virtualbox|qemu|kvm|xen|hyperv|virtual)'
+  # ART labels module listing T1082 as well as T1652; both tags are emitted.
+  selection_modules:
+    command|re:
+      - '^\s*(?:sudo\s+)?(?:lsmod|kldstat)\b'
+      - '\bkmod\s+list\b'
+      - '/proc/modules\b'
+  condition: 1 of selection*
+tags:
+  - attack.discovery
+  - attack.t1082

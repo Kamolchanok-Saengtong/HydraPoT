@@ -1,0 +1,43 @@
+id: 9a08d2fc-fece-4a99-83af-0d9a65c223c4
+title: 'Obfuscated Files or Information'
+status: stable
+description: >-
+  The payload itself is obfuscated on the command line -- hex escape
+  sequences fed to `echo -e`, or a long base64 blob echoed into a decoder.
+  This is the payload BEING obfuscated; the act of decoding it is T1140
+  and is deliberately a separate rule.
+references:
+  - https://attack.mitre.org/techniques/T1027
+  - https://github.com/redcanaryco/atomic-red-team  # 1 Linux atomic(s)
+author: HydraPoT
+date: 2026-09-20
+technique: T1027
+technique_name: 'Obfuscated Files or Information'
+tactic: 'Stealth'
+priority: 20
+confidence: high
+# DERIVATION. SigmaHQ's imported Linux rules detect 0 of this technique's
+# Atomic Red Team Linux atomics: their detection is written against EDR
+# process-creation fields (Image, ParentImage, TargetFilename) that an SSH
+# honeypot cannot emit. MITRE ATT&CK defines the behaviour; ART's atomics
+# supply the command forms this pattern is written against.
+logsource:
+  product: cowrie
+  category: command
+detection:
+  selection_hex:
+    command|re:
+      - 'echo\s+-\w*e\w*\s+[\x27"]?(?:\\x[0-9a-fA-F]{2}){4,}'
+      - '(?:\\x[0-9a-fA-F]{2}){8,}'
+  selection_b64_blob:
+    command|re:
+      - '\becho\s+[\x27"]?[A-Za-z0-9+/]{60,}={0,2}[\x27"]?\s*\|'
+  selection_decoded_to_script:
+    command|re:
+      - '\b(?:base64|b64decode|uudecode|xxd|openssl)\b[^|;]*>\s*\S+\.(?:sh|py|pl|rb|elf|bin)\b'
+      - '\|\s*\$?\w*\s*>\s*\S+\.(?:sh|py|pl|rb)\b'
+      - '\bcat\b[^|;]*\.(?:dat|b64|enc|txt)\b[^|;]*\|[^|;]*>\s*\S+\.(?:sh|py|pl)\b'
+  condition: 1 of selection*
+tags:
+  - attack.stealth
+  - attack.t1027

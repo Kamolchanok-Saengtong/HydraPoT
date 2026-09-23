@@ -1,0 +1,39 @@
+id: b795f9d0-8488-40ce-9e57-9246df87cc59
+title: 'Command and Scripting Interpreter: Python'
+status: stable
+description: >-
+  A Python script is assembled on disk a line at a time and then run.
+  ART's atomics build T1059.006.py with repeated `echo '...' >> file.py`
+  and locate an interpreter with `which python || which python3`. Writing
+  source with a shell redirect is the observable half.
+references:
+  - https://attack.mitre.org/techniques/T1059/006
+  - https://github.com/redcanaryco/atomic-red-team  # 4 Linux atomic(s)
+author: HydraPoT
+date: 2026-09-20
+technique: T1059.006
+technique_name: 'Python'
+tactic: 'Execution'
+priority: 20
+confidence: high
+# DERIVATION. SigmaHQ's imported Linux rules detect 0 of this technique's
+# Atomic Red Team Linux atomics: their detection is written against EDR
+# process-creation fields (Image, ParentImage, TargetFilename) that an SSH
+# honeypot cannot emit. MITRE ATT&CK defines the behaviour; ART's atomics
+# supply the command forms this pattern is written against.
+logsource:
+  product: cowrie
+  category: command
+detection:
+  selection_build:
+    command|re:
+      - '(?:>>?|\btee\b)\s*\S*\.py\b'
+      - '\becho\b[^|;]*\b(?:import\s+os|import\s+socket|import\s+requests|os\.system|subprocess)\b'
+  selection_locate:
+    command|re:
+      - '\bwhich\s+python\d?(?:\.\d+)?\b'
+      - '\bcommand\s+-v\s+python\d?\b'
+  condition: 1 of selection*
+tags:
+  - attack.execution
+  - attack.t1059.006

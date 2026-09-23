@@ -1,23 +1,34 @@
-id: ca0151e5-7e75-424f-93e9-880bd7e88c46
-title: File permissions or ownership modified
+id: 8d375bb7-997a-4f7c-b8f1-5dda54291ddc
+title: 'File and Directory Permissions Modification: Linux and Mac'
 status: stable
+description: >-
+  Permissions or ownership are changed. In the capture this is always
+  `chmod +x` or `chmod 777` on a freshly downloaded payload; ART adds
+  chown and the BSD chflags immutable forms.
 references:
   - https://attack.mitre.org/techniques/T1222/002
+  - https://github.com/redcanaryco/atomic-red-team  # 9 Linux atomic(s)
 author: HydraPoT
-date: 2026-08-25
+date: 2026-09-20
 technique: T1222.002
-technique_name: 'Linux and Mac Permissions'
+technique_name: 'Linux and Mac'
 tactic: 'Defense Impairment'
 priority: 45
 confidence: high
+# DERIVATION. SigmaHQ's imported Linux rules detect 0 of this technique's
+# Atomic Red Team Linux atomics: their detection is written against EDR
+# process-creation fields (Image, ParentImage, TargetFilename) that an SSH
+# honeypot cannot emit. MITRE ATT&CK defines the behaviour; ART's atomics
+# supply the command forms this pattern is written against.
 logsource:
   product: cowrie
   category: command
 detection:
   selection:
     segment|re:
-      - '^\s*(?:sudo\s+)?(?:chmod|chown|chgrp|chattr|setfacl)\b'
+      - '^\s*(?:sudo\s+)?(?:chmod|chown|chgrp|chattr|chflags|setfacl)\b'
+      - '^\s*(?:\S*/)?busybox\s+chmod\b'
   condition: selection
 tags:
-  - attack.defense_impairment
+  - attack.defense-impairment
   - attack.t1222.002

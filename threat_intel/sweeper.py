@@ -48,16 +48,29 @@ def start(config, plugins=None, interval=SWEEP_INTERVAL_SEC):
     _started = True
 
     def _loop():
+        import storage
         from threat_intel import alert_records
         while True:
             time.sleep(interval)
+            inst = getattr(getattr(config, "honeypot", None),
+                           "instance_name", "default")
             try:
-                inst = getattr(getattr(config, "honeypot", None),
-                               "instance_name", "default")
-                out = alert_records.sweep(instance=inst, plugins=plugins)
+                # exclude_row is the caller's policy for what counts as real
+                # traffic. Not passing it meant a headless sensor could raise
+                # alerts off its own replay runs -- latent so far only because
+                # the dashboard, which does filter, has been doing the raising.
+                out = alert_records.sweep(instance=inst, plugins=plugins,
+                                          exclude_row=storage.is_experiment_row)
                 if out["new"]:
                     print(f"[alert] {len(out['new'])} new finding(s) raised")
+                # Heartbeat. The API runs in a different process and cannot
+                # see this thread, so a sweeper that died is indistinguishable
+                # from one that found nothing -- unless it says so here.
+                storage.record_health(
+                    "sweeper", True, f"{len(out['new'])} new", instance=inst)
             except Exception as e:
                 print(f"[alert] sweep failed: {e}")
+                storage.record_health(
+                    "sweeper", False, f"{type(e).__name__}: {e}", instance=inst)
 
     threading.Thread(target=_loop, name="hp-alert-sweep", daemon=True).start()

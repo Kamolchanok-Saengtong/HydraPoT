@@ -1,0 +1,36 @@
+id: 7a0c49a6-6f84-4ff5-b1ba-2eb4d57d971a
+title: 'Valid Accounts: Local Accounts'
+status: stable
+description: >-
+  The session switches to another local account with su. ART's atomics
+  create an account and then su to it; in a honeypot the su itself is the
+  observable half.
+references:
+  - https://attack.mitre.org/techniques/T1078/003
+  - https://github.com/redcanaryco/atomic-red-team  # 5 Linux atomic(s)
+author: HydraPoT
+date: 2026-09-20
+technique: T1078.003
+technique_name: 'Local Accounts'
+tactic: 'Stealth'
+priority: 40
+confidence: medium
+# DERIVATION. SigmaHQ's imported Linux rules detect 0 of this technique's
+# Atomic Red Team Linux atomics: their detection is written against EDR
+# process-creation fields (Image, ParentImage, TargetFilename) that an SSH
+# honeypot cannot emit. MITRE ATT&CK defines the behaviour; ART's atomics
+# supply the command forms this pattern is written against.
+logsource:
+  product: cowrie
+  category: command
+detection:
+  selection:
+    segment|re:
+      - '^\s*(?:sudo\s+)?su\s+'
+      - '^\s*(?:sudo\s+)?su\s*$'
+      - '^\s*sudo\s+-u\s+\S'
+      - '^\s*sudo\s+-i\b'
+  condition: selection
+tags:
+  - attack.stealth
+  - attack.t1078.003

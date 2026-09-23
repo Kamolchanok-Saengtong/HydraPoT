@@ -37,10 +37,14 @@ class CowrieLink:
     raising -- a dead container must never kill the session.
     """
 
-    def __init__(self, cowrie, fallback=None, log=print):
+    def __init__(self, cowrie, fallback=None, log=print, on_degrade=None):
         self.cowrie = cowrie
         self.fallback = fallback
         self.log = log
+        # Called with no arguments every time Cowrie is unreachable and the
+        # model answers instead. A callback, not an import: this module stays
+        # free of storage for the same reason it stays free of agents.
+        self.on_degrade = on_degrade
 
     @property
     def available(self) -> bool:
@@ -77,6 +81,11 @@ class CowrieLink:
         return out, "cowrie"
 
     def _degrade(self, cmd: str):
+        if self.on_degrade is not None:
+            try:
+                self.on_degrade()
+            except Exception:
+                pass            # a counter must never cost a response
         if self.fallback is None:
             return "", "cowrie"
         try:

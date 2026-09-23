@@ -1,0 +1,42 @@
+id: 6425f610-43f1-435d-8669-f6fd64b24138
+title: 'Resource Hijacking'
+status: stable
+description: >-
+  The host's compute is taken for the attacker's benefit -- a miner
+  binary, a stratum pool address, or a busy loop whose output is discarded
+  so the work has no product but the CPU burn.
+references:
+  - https://attack.mitre.org/techniques/T1496
+  - https://github.com/redcanaryco/atomic-red-team  # 1 Linux atomic(s)
+author: HydraPoT
+date: 2026-09-20
+technique: T1496
+technique_name: 'Resource Hijacking'
+tactic: 'Impact'
+priority: 10
+confidence: high
+# DERIVATION. SigmaHQ's imported Linux rules detect 0 of this technique's
+# Atomic Red Team Linux atomics: their detection is written against EDR
+# process-creation fields (Image, ParentImage, TargetFilename) that an SSH
+# honeypot cannot emit. MITRE ATT&CK defines the behaviour; ART's atomics
+# supply the command forms this pattern is written against.
+logsource:
+  product: cowrie
+  category: command
+detection:
+  selection_miner:
+    command|re:
+      - '\b(?:xmrig|minerd|cpuminer|ccminer|ethminer|nbminer|xmr-stak|phoenixminer|lolminer|teamredminer|srbminer)\b'
+      - '\bstratum\+(?:tcp|udp|ssl)://'
+      - '--(?:donate-level|cpu-priority=|nicehash|algo=rx/)'
+  selection_burn:
+    command|re:
+      - '\byes\b[^|;]*>\s*/dev/null'
+      - '\bcat\s+/dev/(?:zero|urandom)\s*>\s*/dev/null'
+      - '\bwhile\s+(?:true|:)\s*;?\s*do\s*(?::|true)?\s*;?\s*done'
+      - '\bstress(?:-ng)?\b[^|;]*--(?:cpu|vm|matrix)\b'
+      - '\bopenssl\s+speed\b'
+  condition: 1 of selection*
+tags:
+  - attack.impact
+  - attack.t1496

@@ -1,22 +1,35 @@
-id: 0b1e08e2-f07e-469e-8827-0ef138aab8f8
-title: Installed software discovery
+id: 980bb263-cbe0-4805-8b80-e05bddd11697
+title: 'Software Discovery'
 status: stable
+description: >-
+  Installed packages or available binaries are enumerated. Medium
+  confidence: `which <tool>` is also how a loader checks which download
+  utility exists before using it.
 references:
   - https://attack.mitre.org/techniques/T1518
+  - https://github.com/redcanaryco/atomic-red-team  # 1 Linux atomic(s)
 author: HydraPoT
-date: 2026-08-25
+date: 2026-09-20
 technique: T1518
 technique_name: 'Software Discovery'
 tactic: 'Discovery'
 priority: 55
 confidence: medium
+# DERIVATION. SigmaHQ's imported Linux rules detect 0 of this technique's
+# Atomic Red Team Linux atomics: their detection is written against EDR
+# process-creation fields (Image, ParentImage, TargetFilename) that an SSH
+# honeypot cannot emit. MITRE ATT&CK defines the behaviour; ART's atomics
+# supply the command forms this pattern is written against.
 logsource:
   product: cowrie
   category: command
 detection:
   selection:
     segment|re:
-      - '^\s*(?:dpkg|rpm|which|whereis|apt\s+list|yum\s+list|pip\s+list)\b'
+      - '^\s*(?:sudo\s+)?(?:dpkg|rpm|apk|pacman)\b'
+      - '^\s*(?:sudo\s+)?(?:apt|apt-get|yum|dnf|zypper)\s+list\b'
+      - '^\s*(?:sudo\s+)?(?:which|whereis|command\s+-v|type)\b'
+      - '^\s*(?:sudo\s+)?pip3?\s+list\b'
   condition: selection
 tags:
   - attack.discovery

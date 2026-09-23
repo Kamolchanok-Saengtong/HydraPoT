@@ -1,0 +1,37 @@
+id: fd3f8bbe-26b3-4ec5-935a-f0d73e3597b2
+title: 'System Shutdown/Reboot'
+status: stable
+description: >-
+  The host is shut down or rebooted, denying the service to its users and
+  destroying anything held only in memory. ART has 10 Linux atomics for
+  this and SigmaHQ's imported set detects none.
+references:
+  - https://attack.mitre.org/techniques/T1529
+  - https://github.com/redcanaryco/atomic-red-team  # 10 Linux atomic(s)
+author: HydraPoT
+date: 2026-09-20
+technique: T1529
+technique_name: 'System Shutdown/Reboot'
+tactic: 'Impact'
+priority: 20
+confidence: high
+# DERIVATION. SigmaHQ's imported Linux rules detect 0 of this technique's
+# Atomic Red Team Linux atomics: their detection is written against EDR
+# process-creation fields (Image, ParentImage, TargetFilename) that an SSH
+# honeypot cannot emit. MITRE ATT&CK defines the behaviour; ART's atomics
+# supply the command forms this pattern is written against.
+logsource:
+  product: cowrie
+  category: command
+detection:
+  selection:
+    segment|re:
+      - '^\s*(?:sudo\s+)?(?:shutdown|poweroff|halt|reboot)\b'
+      - '^\s*(?:sudo\s+)?(?:systemctl|init|telinit)\s+(?:--\S+\s+)*(?:reboot|poweroff|halt|0|6)\b'
+  selection_sysrq:
+    command|re:
+      - '\becho\s+[\x27"]?[bo][\x27"]?\s*>\s*/proc/sysrq-trigger'
+  condition: 1 of selection*
+tags:
+  - attack.impact
+  - attack.t1529
