@@ -320,29 +320,14 @@ def load_raw_session_rows() -> list:
     _cache["raw_rows_ts"] = now
     return rows
 
-# The DB holds both real honeypot traffic and the experiment-sandbox runs, which
-# share the same tables. Experiment harnesses put a run label in src_ip
-# ("eval_sync_on", "partc_cloud_12580") where real traffic has an IP, so the
-# label prefix is what separates them. Presentation-only: the data is untouched
-# on disk, and the sandbox's own scripts read it exactly as before.
-EXPERIMENT_SRC_PREFIXES = (
-    "eval", "parta_", "partb_", "partc_", "hrreplay_", "bench",
-    "ml4net", "quickcheck", "cloudcheck", "sanity", "smoke", "replay",
-)
-# Harness rows whose src_ip is a bare token rather than a prefixed label
-# ("t", "x", "v", "t1", "test"...). Matched by SHAPE, not by a growing list of
-# literals: a real source is either a dotted IP or CyberLab's 16-char hashed
-# identifier, so anything non-numeric and shorter than 6 characters is a label
-# somebody typed. Well-known public resolvers are listed because they appear as
-# test *targets*; none of them ever initiates an SSH connection to a honeypot.
-_HARNESS_TOKEN_MAXLEN = 5
-EXPERIMENT_SRC_EXACT = {"localhost", "-", "", "8.8.8.8", "8.8.4.4",
-                        "1.1.1.1", "9.9.9.9"}
-
-# NOTE: "cyberlab" is deliberately NOT a prefix any more. The CyberLab Cowrie
-# capture is now imported as real sensor traffic (instance="CyberLab", src_ip =
-# the dataset's hashed attacker identifier), so filtering on that string would
-# hide the only genuine attacker data the dashboard has.
+# The definition of "real attacker traffic" now lives in storage.py, so every
+# layer that reads rows gets the same answer. It started here, which is why
+# /export and /threats/iocs never had it -- they do not import the dashboard.
+# Re-exported under the old names; SIEM/pages/summary.py imports them from here.
+from storage import (EXPERIMENT_SRC_PREFIXES, EXPERIMENT_SRC_EXACT,   # noqa: E402
+                     HARNESS_TOKEN_MAXLEN as _HARNESS_TOKEN_MAXLEN,
+                     is_experiment_ip as _is_experiment_ip,
+                     is_experiment_row, real_rows, _is_non_routable)
 
 
 def drop_experiment_rows(df: pd.DataFrame) -> pd.DataFrame:
@@ -363,43 +348,6 @@ def drop_experiment_rows(df: pd.DataFrame) -> pd.DataFrame:
     # a new test address does not need a code change to be excluded.
     drop |= ip.map(_is_non_routable)
     return df[~drop]
-
-
-@functools.lru_cache(maxsize=8192)
-def _is_experiment_ip(ip: str) -> bool:
-    """The whole experiment/harness test, keyed on src_ip alone.
-
-    Every rule below depends only on the address, and addresses repeat
-    enormously: a sensor switch ran this 78,208 times over 766 distinct IPs,
-    with ipaddress.ip_address() re-parsing each one — 0.49s of pure repeat
-    work. Memoised, it is 766 real evaluations.
-    """
-    if ip.startswith(EXPERIMENT_SRC_PREFIXES):
-        return True
-    if ip.lower() in EXPERIMENT_SRC_EXACT:
-        return True
-    if len(ip) <= _HARNESS_TOKEN_MAXLEN and "." not in ip:
-        return True
-    return _is_non_routable(ip)
-
-
-def is_experiment_row(row) -> bool:
-    """Row-level twin of drop_experiment_rows()'s DataFrame predicate.
-
-    Same rules, one row at a time, so callers that work in plain dicts
-    (threat_intel.aggregator.aggregate_overview's exclude_row hook) apply
-    exactly the same definition of "not real attacker traffic" the
-    DataFrame path does -- otherwise the same page shows two different
-    command counts."""
-    return _is_experiment_ip(str(row.get("src_ip") or ""))
-
-
-def _is_non_routable(value) -> bool:
-    try:
-        addr = ipaddress.ip_address(str(value))
-    except ValueError:
-        return False        # a hashed identifier is not an IP; keep it
-    return not addr.is_global
 
 
 def load_all() -> pd.DataFrame:
