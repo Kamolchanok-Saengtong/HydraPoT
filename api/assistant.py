@@ -249,7 +249,7 @@ def _dispatch(name: str, args: dict) -> dict:
         # window is attached here; saying otherwise would imply a filter that
         # is not applied.
         return svc.list_alerts(args.get("state"), args.get("severity"), None,
-                               args.get("limit", 20), 0)
+                               since=None, limit=args.get("limit", 20), offset=0)
     if name == "list_detections":
         out = _windowed(svc.list_detections(
             since, None, args.get("severity"), args.get("bucket", "detections"),
