@@ -19,7 +19,7 @@ pipeline: classify() routing, _needs_llm overrides, deterministic handlers, cd
 and state tracking, FI scoring. The three agents are replaced by LOOKUP STUBS
 returning the dataset's recorded response, so there are no live agent calls
 (no GPU, no Cowrie, no cloud API). Same technique as
-NSC/PartC/replay_honeyrouter.py, which does this for the HoneyRouter arm.
+experiment_data/PartC/replay_honeyrouter.py, which does this for the HoneyRouter arm.
 
 The prompt is captured BEFORE the command runs (what the model would see at
 inference) and the command is then executed so SRi advances for the next turn.
