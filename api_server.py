@@ -22,6 +22,7 @@ or directly for testing:
     uvicorn api_server:api --host 127.0.0.1 --port 8050
 """
 import asyncio
+import re
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.openapi.docs import get_swagger_ui_html
@@ -146,7 +147,45 @@ _RETIRED = {
     # Renamed: it serves CEF and ECS too, so naming it after one format
     # pointed the other three somewhere that did not exist.
     "/api/v1/ocsf":       "/api/v1/export",
+    # Counted the same categories /overview already reports, one HTTP call
+    # further away.
+    "/api/v1/threats/categories": "/api/v1/overview",
 }
+
+# The /investigations/* namespace. Each one was a second URL for a thing that
+# already had one, and the resource endpoint now serves the full picture --
+# measured at ~1ms more than the metadata alone, because the expensive work is
+# per-window and cached. Two doors into one room, removed.
+_RETIRED_PATTERNS = [
+    (re.compile(r"^/api/v1/alerts/(?P<id>.+)/related$"),
+     "/api/v1/alerts/{id}"),
+    (re.compile(r"^/api/v1/sessions/(?P<id>[^/]+)/related$"),
+     "/api/v1/sessions/{id}"),
+    (re.compile(r"^/api/v1/investigations/session/(?P<id>.+)$"),
+     "/api/v1/sessions/{id}"),
+    (re.compile(r"^/api/v1/investigations/alert/(?P<id>.+)$"),
+     "/api/v1/alerts/{id}"),
+    (re.compile(r"^/api/v1/investigations/ioc/(?P<id>.+)$"),
+     "/api/v1/threats/iocs/{id}"),
+    (re.compile(r"^/api/v1/investigations/ip/(?P<id>.+)$"),
+     "/api/v1/sources/{id}"),
+]
+
+
+def _replacement_for(path: str):
+    """The path a retired endpoint moved to, or None if it never existed.
+
+    Kept as data rather than dead routes: a 410 naming where to go is the whole
+    difference between "we moved this" and "your client is broken".
+    """
+    for retired, replacement in _RETIRED.items():
+        if path == retired or path.startswith(retired + "/"):
+            return retired, replacement
+    for pattern, template in _RETIRED_PATTERNS:
+        match = pattern.match(path)
+        if match:
+            return path, template.format(**match.groupdict())
+    return None
 
 
 @api.api_route("/api/{rest:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
@@ -160,12 +199,13 @@ def api_fallback(rest: str):
     before the mount, so it only ever sees genuine misses.
     """
     path = "/api/" + rest
-    for retired, replacement in _RETIRED.items():
-        if path == retired or path.startswith(retired + "/"):
-            return JSONResponse(status_code=410, content={
-                "detail": f"{retired} was removed; use {replacement}",
-                "replacement": replacement,
-            })
+    moved = _replacement_for(path)
+    if moved:
+        retired, replacement = moved
+        return JSONResponse(status_code=410, content={
+            "detail": f"{retired} was removed; use {replacement}",
+            "replacement": replacement,
+        })
     return JSONResponse(status_code=404,
                         content={"detail": f"no such endpoint: {path}",
                                  "docs": "/docs"})
