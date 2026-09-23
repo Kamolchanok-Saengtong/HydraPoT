@@ -1,5 +1,18 @@
 """
-api/services/investigations.py — coherent investigation packages per subject.
+api/services/investigations.py — the full picture for one subject.
+
+These ARE the item endpoints. /sessions/{id}, /alerts/{id},
+/threats/iocs/{ioc} and /sources/{ip} each serve one of these functions, so a
+consumer asks for a thing once and gets its complete security context --
+metadata, commands, correlations, detections, alerts, IOCs and evidence --
+instead of reconstructing it from five calls it has to stitch itself.
+
+A separate /investigations/* namespace used to serve them alongside thin
+resource endpoints. Two URLs for one thing, and the consumer had to guess
+which was authoritative. Measured before removing it: the expensive work is
+WINDOW-scoped and cached, so one pipeline run serves every session in the
+window and the marginal cost of the full picture is ~1ms per request. There
+was nothing to buy with the second endpoint.
 
 Part of HydraPoT's application layer:
 
@@ -48,7 +61,6 @@ def investigate_session(session_id, since=None, instance=None):
                     if session_id in (i.get("sessions") or [])]
 
     return {
-        "subject": {"type": "session", "id": session_id},
         "summary": {
             "src_ip": sess.get("src_ip"),
             "commands": sess.get("command_count"),
@@ -60,9 +72,11 @@ def investigate_session(session_id, since=None, instance=None):
             "detections": len(dets),
             "alerts": len(alert_ids),
         },
-        "session": sess,
-        "timeline": sess.get("commands"),
-        "mitre": sess.get("mitre"),
+        # Flattened: this IS /sessions/{id}, so wrapping the session inside a
+        # "session" key would nest a resource inside itself. `timeline` and a
+        # second `mitre` used to sit here too -- both byte-identical copies of
+        # what `commands` and `mitre` already carry.
+        **sess,
         "iocs": session_iocs,
         "correlations": rel["relationships"],
         "detections": dets,
@@ -105,7 +119,6 @@ def investigate_alert(alert_id, since=None, instance=None):
     sessions = [s for s in (get_session(m, instance) for m in members[:25]) if s]
 
     return {
-        "subject": {"type": "alert", "id": alert_id},
         "summary": {
             "severity": alert.get("severity"),
             "state": alert.get("state"),
@@ -115,7 +128,7 @@ def investigate_alert(alert_id, since=None, instance=None):
             "first_seen": alert.get("first_seen"),
             "last_seen": alert.get("last_seen"),
         },
-        "alert": alert,
+        **alert,
         "detection": det,
         "correlation": det.get("correlation"),
         "mitre": det.get("mitre"),
@@ -152,7 +165,7 @@ def investigate_ip(ip, since=None, instance=None):
                if ip in (i.get("src_ips") or [])]
 
     return {
-        "subject": {"type": "ip", "id": ip},
+        "src_ip": ip,
         "summary": {
             "commands": (ip_row or {}).get("commands"),
             "sessions": len(sessions),
@@ -186,7 +199,6 @@ def investigate_ioc(ioc, since=None, instance=None):
             if sids & set((det.get("relationship") or {}).get("members") or [])]
 
     return {
-        "subject": {"type": "ioc", "id": rec["ioc"]},
         "summary": {
             "type": rec["type"], "occurrences": rec["occurrences"],
             "sessions": rec["session_count"],
@@ -194,7 +206,7 @@ def investigate_ioc(ioc, since=None, instance=None):
             "first_seen": rec.get("first_seen"), "last_seen": rec.get("last_seen"),
             "detections": len(dets),
         },
-        "ioc": rec,
+        **rec,
         "sessions": rec.get("sessions"),
         "mitre": _mitre_dto(rec.get("techniques"), []),
         "detections": dets,

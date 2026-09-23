@@ -19,7 +19,7 @@ import storage
 from threat_intel.alert_records import alert_key
 
 from api.services.common import (page, pipeline, _inst, detection_id,
-                                 correlation_id, _evidence_id)
+                                 correlation_id, _evidence_id, window_filter)
 
 def _detection_dto(det, include_evidence=True) -> dict:
     """One detection, as an external consumer should see it.
@@ -215,10 +215,13 @@ def _alert_dto(row, det=None) -> dict:
     return out
 
 
-def list_alerts(state=None, severity_level=None, instance=None,
+def list_alerts(state=None, severity_level=None, instance=None, since=None,
                 limit=50, offset=0) -> dict:
     rows = storage.query_alerts(state=state, severity=severity_level,
                                 instance=_inst(instance) or "default", limit=2000)
+    # Dated by the ACTIVITY where it is known, by the record otherwise -- the
+    # same order query_alerts sorts by, so a window and the sort agree.
+    rows = window_filter(rows, since, "last_seen", "updated_at")
     return page([_alert_dto(r) for r in rows], limit, offset)
 
 

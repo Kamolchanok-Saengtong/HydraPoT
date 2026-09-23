@@ -1,5 +1,5 @@
 """
-api/services/intel.py — MITRE activity, IOCs and categories.
+api/services/intel.py — MITRE activity and IOCs.
 
 Part of HydraPoT's application layer:
 
@@ -87,7 +87,14 @@ def _ioc_dto(rec) -> dict:
 
 
 def list_iocs(since=None, instance=None, ioc_type=None, limit=50, offset=0):
-    recs = iocs(since, instance)
+    """Indicators. Observables flagged `benign` are NOT indicators.
+
+    An attacker curling google.com is a real thing the honeypot saw, and it
+    stays in the session log and in /sessions/{id}. It is not an indicator of
+    compromise, and a consumer that ingests this endpoint as one would end up
+    alerting on google.com. Same reasoning as to_stix().
+    """
+    recs = [r for r in iocs(since, instance) if not r.get("benign")]
     if ioc_type:
         recs = [r for r in recs if r.get("type") == ioc_type]
     recs = sorted(recs, key=lambda r: -(r.get("count") or 0))
@@ -102,12 +109,4 @@ def get_ioc(ioc, since=None, instance=None):
            (not want_type or r.get("type") == want_type):
             return _ioc_dto(r)
     return None
-
-
-def categories(since=None, instance=None) -> dict:
-    """Category counts from config.yaml's aggregation.categories, via the
-    aggregation layer. No category is invented here."""
-    o = overview(since, instance)
-    return {"categories": o.get("categories") or {}, "window": o.get("window")}
-
 
