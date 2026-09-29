@@ -11,7 +11,7 @@ behaviour: if you are looking for how a command is answered, it is not here.
     threat_intel/      correlation -> detection -> severity -> alerting
     storage.py         SQLite
 
-Run with `hp run`, or `python main.py`.
+Run with `hp --run`, or `python main.py`.
 """
 import os
 import sys
