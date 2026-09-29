@@ -374,7 +374,8 @@ def _origin_map(df, big=False):
                              "country": geo["country"], "city": geo["city"],
                              "count": int(counts.get(ip, 0))})
     if not geo_rows:
-        msg = ("geoip.mmdb not found — run `hp geoip`" if _load_geo_reader() is None
+        msg = ("geoip.mmdb not found — the automatic download on dashboard "
+               "start did not complete (offline?)" if _load_geo_reader() is None
                else "No geolocatable source addresses in this window "
                     "(sessions are from local/synthetic sources).")
         return html.Div([dcc.Graph(figure=empty_geo_fig(), config=GEO_CONFIG),
@@ -752,7 +753,7 @@ def build_summary_page(sensor_filter="all", rng="ALL", criterion="techniques"):
     ]) if all_sensors else html.Span()
 
     if df_all.empty:
-        return [header, html.Div("No data yet. Start the honeypot with `hp run`.",
+        return [header, html.Div("No data yet. Start the honeypot with `hp --run`.",
                                  className="empty-state")]
 
     if df.empty:

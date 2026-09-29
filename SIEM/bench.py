@@ -103,14 +103,14 @@ def footprint() -> dict:
 def idle(seconds: int, port: int = 8050) -> dict:
     """RSS and CPU while serving nobody.
 
-    Samples the running `hp dashboard` when there is one -- that is the number
+    Samples the running `hp --dashboard` when there is one -- that is the number
     an operator cares about -- and this process otherwise.
     """
     import psutil
     me = psutil.Process()
     target, what = me, "this process (no server found)"
     # By LISTENING PORT, not by cmdline: the server is started through the `hp`
-    # entry point, so its argv says "hp dashboard" and never "api_server".
+    # entry point, so its argv says "hp --dashboard" and never "api_server".
     try:
         for c in psutil.net_connections(kind="tcp"):
             if (c.status == psutil.CONN_LISTEN and c.laddr

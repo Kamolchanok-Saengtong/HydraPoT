@@ -17,7 +17,7 @@ What this file serves:
   /           the existing Dash app, unchanged, mounted last so it doesn't
               swallow /api or /ws first
 
-Run via `hp dashboard` (hp.py's _serve_dashboard calls uvicorn on this file)
+Run via `hp --dashboard` (hp.py's _serve_dashboard calls uvicorn on this file)
 or directly for testing:
     uvicorn api_server:api --host 127.0.0.1 --port 8050
 """

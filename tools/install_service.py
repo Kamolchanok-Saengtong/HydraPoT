@@ -108,7 +108,7 @@ def main():
         print(f"  {w}")
     print(f"\n  User={user}  Group={group}")
     print(f"  WorkingDirectory={_ROOT}")
-    print(f"  ExecStart={exe} run")
+    print(f"  ExecStart={exe} --run")
 
     print("\nnext steps:")
     if a.user:
@@ -129,7 +129,7 @@ def main():
 
     print("\n  Stop any hand-started process first, or the unit fails to bind "
           "the port:")
-    print("    pkill -f 'hp run'    # check with: ps -eo pid,cmd | grep 'hp run'")
+    print("    pkill -f 'hp --run'    # check with: ps -eo pid,cmd | grep 'hp --run'")
 
 
 if __name__ == "__main__":

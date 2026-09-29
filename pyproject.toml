@@ -42,6 +42,16 @@ dependencies = [
     "plotly>=5.18",
     "pandas>=2.0",
     "geoip2>=4.8",
+
+    # Dashboard server. [standard] is required for the /ws/events WebSocket —
+    # plain uvicorn starts, then fails the upgrade.
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "a2wsgi>=1.10",
+
+    # Imported inside functions, so a missing one only shows when that path runs
+    "matplotlib>=3.8",
+    "psutil>=5.9",
 ]
 
 
@@ -62,19 +72,19 @@ build-backend = "setuptools.build_meta"
 # listed explicitly. Anything NOT listed here is missing after `pip install`,
 # with no error until something imports it — that is how `dashboard` stayed
 # listed after the file was deleted (which broke the install outright) while
-# storage/geoip_fetch/api_server were never listed at all, so `hp geoip` would
-# have failed on a real install.
+# storage/geoip_fetch/api_server were never listed at all, so the dashboard's
+# geolocation fetch would have failed on a real install.
 [tool.setuptools]
 py-modules = [
     "hp",                 # the `hp` CLI entry point
     "main",               # honeypot responder
-    "setup_wizard",       # hp init
+    "setup_wizard",       # hp --init
     "config_loader",
     "ssh_server",
     "router",
     "storage",            # SQLite layer — imported by nearly everything
     "api_server",         # FastAPI + Dash host
-    "geoip_fetch",        # hp geoip
+    "geoip_fetch",        # auto-fetch on dashboard start
     "cost_model",
     "power_cost",
     "replay",
@@ -121,3 +131,31 @@ plugins = [
     "static/*.py",
     "cowrie/**/*",
 ]
+
+# ─── Dependency drift check (deptry) ────────────────────────────────────────
+# `deptry .` fails when an import isn't declared above — how fastapi, uvicorn
+# and a2wsgi went missing and broke `hp --dashboard` on a clean install.
+[tool.deptry]
+# Regexes match the path without a leading "./", so each pattern names its
+# own subtree
+extend_exclude = [
+    "honeypot_new/.*",
+    "tests/.*", ".*/tests/.*",
+    "experiment_data/.*", "archive_code/.*", "evaluation/.*",
+    "dataset/.*", "models/.*", "var/.*",
+    # Research code, never shipped — its stable_baselines3/gymnasium/peft/trl
+    # are not runtime dependencies
+    "honeyrouter/.*", "finetuning/.*",
+    "tools/.*",
+    "test.py", "measure.py", "debug_chmod_state.py",
+]
+
+# Import name != distribution name. Listing these lets deptry run without the
+# dependencies installed, so CI never needs torch.
+[tool.deptry.package_module_name_map]
+PyYAML = ["yaml"]
+llama-cpp-python = ["llama_cpp"]
+
+[tool.deptry.per_rule_ignores]
+# Imported by transformers/llama-cpp, not by our own code
+DEP002 = ["torch", "accelerate", "bitsandbytes"]

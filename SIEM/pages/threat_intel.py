@@ -265,8 +265,8 @@ def render_ioc_content(ioc_data):
 
 # ── STIX export — reuses threat_intel.ioc_extractor.to_stix() unchanged, just
 # fed the cached ioc-store records instead of a live IOCStore. Written to the
-# same data/threat_intel/ directory `hp intel --format stix` uses, then served
-# to the browser as a download. ─────────────────────────────────────────────
+# data/threat_intel/ directory, then served to the browser as a download.
+# This page is the only IOC export path now. ────────────────────────────────
 STIX_OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(storage.__file__)),
                              "data", "threat_intel")
 

@@ -9,7 +9,7 @@ from SIEM.server import app
 
 # Imported, never re-derived. This used to build its own path next to
 # storage.py, so moving the database to data/ silently broke the map here while
-# `hp geoip` kept reporting success -- two copies of one path is how that
+# the fetcher kept reporting success -- two copies of one path is how that
 # happens. geoip_fetch owns it; everyone else asks.
 from geoip_fetch import DEFAULT_MMDB as MMDB_PATH
 

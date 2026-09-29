@@ -864,7 +864,7 @@ def to_stix(store_or_records, path: str):
     standard STIX object type, so they're emitted as generic indicators with a
     custom pattern comment rather than skipped.
 
-    Accepts either a live IOCStore (the `hp intel` CLI path) or a plain list
+    Accepts either a live IOCStore or a plain list
     of already-computed record dicts (IOCStore.records()'s own output shape —
     the dashboard's Threat Intel page caches just the records, since an
     IOCStore itself isn't JSON-serializable into a browser-side dcc.Store)."""

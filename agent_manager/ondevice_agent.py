@@ -67,7 +67,7 @@ def _find_gguf_file(model_id: str, preferred_file: str = "") -> str | None:
     """
     Find the .gguf file to load for this model. If multiple quant variants
     are cached for the same repo (e.g. downloaded at different times via
-    `hp init`), `preferred_file` (the basename picked/recorded in
+    `hp --init`), `preferred_file` (the basename picked/recorded in
     config.yaml's agents.on_device.gguf_file) disambiguates which one to
     load instead of silently taking whichever glob() lists first.
     """
@@ -125,7 +125,7 @@ class OnDeviceAgent:
         gguf_path = _find_gguf_file(model, self.gguf_file)
         if not gguf_path:
             print(f"\n[on_device] ✗ No .gguf file found for {model}")
-            print("  Try re-downloading the model via `hp init`.")
+            print("  Try re-downloading the model via `hp --init`.")
             sys.exit(1)
 
         print(f"[on_device] GGUF file: {os.path.basename(gguf_path)}")

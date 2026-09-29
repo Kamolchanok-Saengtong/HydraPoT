@@ -3,13 +3,24 @@ hp.py — HydraPoT CLI entry point.
 
 Registered as `hp` command via pyproject.toml.
 
+ONE COMMAND, FLAGS ONLY -- there are no subcommands. Every action is a `--`
+flag on `hp` itself, and exactly one action flag may be given per invocation.
+
 Usage:
-    hp init        # run setup wizard
-    hp run         # start the honeypot
-    hp dashboard   # open streamlit dashboard
-    hp logs        # view recent session logs
-    hp logs --auth # view auth attempt logs
-    hp version     # show version
+    hp --init             # run setup wizard
+    hp --run              # start the honeypot
+    hp --dashboard        # open the dashboard
+    hp --dashboard-stop   # stop a detached dashboard
+    hp --config           # show the active configuration
+    hp --version          # show version
+
+    hp --dashboard --port 8050 --host 127.0.0.1
+    hp --run --host 0.0.0.0 --port 2222
+
+--host and --port are SHARED by --run and --dashboard, so neither can carry
+its own default at the parser level. They default to None and each action
+fills in its own: --run falls back to config.yaml, --dashboard to
+127.0.0.1:8050.
 """
 
 import os
@@ -43,8 +54,16 @@ try:
 except FileNotFoundError:
     LICENSE_TEXT = ""
 
+_HP_DIR       = os.path.dirname(os.path.abspath(__file__))
+DASHBOARD_PID = os.path.join(_HP_DIR, "data", "dashboard.pid")
+DASHBOARD_LOG = os.path.join(_HP_DIR, "data", "dashboard.log")
 
-class LicenseGroup(click.Group):
+# Defaults live here rather than in the click options: --host/--port are shared
+# by two actions that want different ones.
+DASH_HOST, DASH_PORT = "127.0.0.1", 8050
+
+
+class LicenseCommand(click.Command):
     """Prints the epilog as-is, skipping click's default rewrap — click's
     textwrap splits on whitespace only, which mangles Thai text (no spaces
     between words)."""
@@ -54,29 +73,18 @@ class LicenseGroup(click.Group):
             formatter.write(self.epilog + "\n")
 
 
-@click.group(cls=LicenseGroup, invoke_without_command=True, epilog=LICENSE_TEXT)
-@click.pass_context
-def main(ctx):
-    """HydraPoT: Multi Agent Honeypot System"""
-    if ctx.invoked_subcommand is None:
-        click.echo(ctx.get_help())
+# ── actions ─────────────────────────────────────────────────────────────────
 
-@main.command()
-@click.option("--force", is_flag=True, help="(kept for compatibility)")
-def init(force):
+def _init():
     """Run the setup wizard to configure HydraPoT."""
     from setup_wizard import run_wizard
     run_wizard()
 
 
-@main.command()
-@click.option("--host", default=None, help="Override bind address from config")
-@click.option("--port", default=None, type=int, help="Override port from config")
-def run(host, port):
+def _run(host, port):
     """Start the honeypot server."""
-    # check config exists
     if not os.path.exists("config.yaml"):
-        click.echo("❌ No config.yaml found. Run `hp init` first.")
+        click.echo("❌ No config.yaml found. Run `hp --init` first.")
         sys.exit(1)
 
     from config_loader import load_config
@@ -110,10 +118,6 @@ def run(host, port):
 
     import main as honeypot_main
     honeypot_main.main()
-
-_HP_DIR       = os.path.dirname(os.path.abspath(__file__))
-DASHBOARD_PID = os.path.join(_HP_DIR, "data", "dashboard.pid")
-DASHBOARD_LOG = os.path.join(_HP_DIR, "data", "dashboard.log")
 
 
 def _dash_pid():
@@ -181,18 +185,8 @@ def _is_loopback(host: str) -> bool:
         return False
 
 
-@main.command()
-@click.option("--port", default=8050, type=int, help="Dash port")
-@click.option("--host", default="127.0.0.1",
-              help="Bind address. Keep 127.0.0.1 and reach it over an SSH "
-                   "tunnel; --host 0.0.0.0 needs --i-accept-public-exposure")
-@click.option("--debug/--no-debug", default=False, help="Enable Flask debug/reloader")
-@click.option("--foreground", is_flag=True,
-              help="Run in this terminal (blocking) instead of the background")
-@click.option("--i-accept-public-exposure", is_flag=True,
-              help="Required to bind a non-loopback address. Read the warning.")
-def dashboard(port, host, debug, foreground, i_accept_public_exposure):
-    """Start the analytics dashboard in the background (stop: hp dashboard-stop).
+def _dashboard(port, host, debug, foreground, i_accept_public_exposure):
+    """Start the analytics dashboard in the background.
 
     Binds loopback only by default. View it from another machine with an SSH
     tunnel rather than by exposing the port:
@@ -220,7 +214,7 @@ def dashboard(port, host, debug, foreground, i_accept_public_exposure):
         click.echo(f"  then open http://localhost:{port} on your own machine.\n")
         click.echo("  If you genuinely need a public bind, put it behind a reverse")
         click.echo("  proxy with TLS and auth, and re-run with:")
-        click.echo(f"      hp dashboard --host {host} --i-accept-public-exposure\n")
+        click.echo(f"      hp --dashboard --host {host} --i-accept-public-exposure\n")
         raise SystemExit(2)
 
     if not _is_loopback(host):
@@ -236,7 +230,7 @@ def dashboard(port, host, debug, foreground, i_accept_public_exposure):
     running = _dash_pid()
     if running:
         click.echo(f"🍯 Dashboard already running (pid {running}) → http://{host}:{port}")
-        click.echo("   Stop it with: hp dashboard-stop")
+        click.echo("   Stop it with: hp --dashboard-stop")
         return
 
     os.makedirs(os.path.dirname(DASHBOARD_PID), exist_ok=True)
@@ -247,7 +241,7 @@ def dashboard(port, host, debug, foreground, i_accept_public_exposure):
     import subprocess
     log = open(DASHBOARD_LOG, "ab", buffering=0)
     proc = subprocess.Popen(
-        [sys.argv[0], "dashboard", "--foreground",
+        [sys.argv[0], "--dashboard", "--foreground",
          "--host", str(host), "--port", str(port)]
         + (["--debug"] if debug else [])
         + (["--i-accept-public-exposure"] if i_accept_public_exposure else []),
@@ -292,11 +286,10 @@ def dashboard(port, host, debug, foreground, i_accept_public_exposure):
 
     click.echo(f"🍯 Dashboard started (pid {proc.pid}) → http://{host}:{port}")
     click.echo(f"   logs: {DASHBOARD_LOG}")
-    click.echo("   stop: hp dashboard-stop")
+    click.echo("   stop: hp --dashboard-stop")
 
 
-@main.command("dashboard-stop")
-def dashboard_stop():
+def _dashboard_stop():
     """Stop the background dashboard."""
     import signal
     import time as _time
@@ -309,7 +302,7 @@ def dashboard_stop():
     os.kill(pid, signal.SIGTERM)
     # Give it a moment to close the socket; escalate if it ignores SIGTERM
     # (asyncio/Flask servers sometimes do), otherwise the port stays bound and
-    # the next `hp dashboard` fails with "address already in use".
+    # the next `hp --dashboard` fails with "address already in use".
     for _ in range(20):
         _time.sleep(0.1)
         try:
@@ -327,165 +320,15 @@ def dashboard_stop():
     click.echo(f"🛑 Dashboard stopped (pid {pid}).")
 
 
-@main.command()
-@click.option("--update", "force_update", is_flag=True,
-              help="Re-download even if the database already exists (refresh to the latest month)")
-def geoip(force_update):
-    """Download / refresh the DB-IP geolocation database for the dashboard map."""
-    from geoip_fetch import update_geoip, ensure_geoip, DEFAULT_MMDB
-    if force_update:
-        click.echo("🌍 Refreshing DB-IP geolocation database...")
-        ok = update_geoip(DEFAULT_MMDB)
-    else:
-        if os.path.exists(DEFAULT_MMDB):
-            click.echo(f"🌍 Geolocation database already present: {DEFAULT_MMDB}")
-            click.echo("   Use `hp geoip --update` to refresh to the latest month.")
-            return
-        ok = ensure_geoip(DEFAULT_MMDB)
-    click.echo("✅ Done." if ok else "⚠️  Could not download (offline?). Map will be unavailable.")
-
-
-@main.command()
-@click.option("--out", "out_dir", default="data/threat_intel",
-              help="Directory to write the IOC report into")
-@click.option("--format", "fmt", type=click.Choice(["all", "json", "csv", "stix"]),
-              default="all", help="Export format(s)")
-@click.option("--min-fi", default=0, type=int,
-              help="Only include IOCs whose max FI score is >= this")
-def intel(out_dir, fmt, min_fi):
-    """Extract Indicators of Compromise (IOCs) from the logs into a threat feed."""
-    import json, glob
-    from config_loader import load_config
-    from threat_intel.ioc_extractor import build_iocs, to_json, to_csv, to_stix
-
-    import storage
-
-    load_config()   # validates config / applies the active sensor profile
-
-    # Both come from SQLite now — the sensor no longer writes JSON logs.
-    # Sessions include `response`: IOCs are extracted from command output too.
-    rows = storage.query_all()
-    auth = storage.query_auth()
-
-    if not rows and not auth:
-        click.echo("No logs found yet — run the honeypot first (`hp run`).")
-        return
-
-    store = build_iocs(rows, auth)
-    recs = [r for r in store.records() if r["max_fi"] >= min_fi]
-
-    os.makedirs(out_dir, exist_ok=True)
-    written = []
-    if fmt in ("all", "json"):
-        written.append(to_json(store, os.path.join(out_dir, "iocs.json")))
-    if fmt in ("all", "csv"):
-        written.append(to_csv(store, os.path.join(out_dir, "iocs.csv")))
-    if fmt in ("all", "stix"):
-        written.append(to_stix(store, os.path.join(out_dir, "iocs_stix.json")))
-
-    from collections import Counter
-    by_type = Counter(r["type"] for r in recs)
-    click.echo(f"\n🔎 Extracted {len(recs)} unique IOCs from {len(rows)} commands "
-               f"+ {len(auth)} auth attempts")
-    click.echo("   " + "  ".join(f"{t}:{n}" for t, n in by_type.most_common()))
-    click.echo("\n   Top indicators (by severity, then frequency):")
-    for r in recs[:10]:
-        click.echo(f"     [{r['type']:10}] {r['value'][:48]:48} "
-                   f"×{r['count']} (FI {r['max_fi']}, {r['session_count']} sessions)")
-    click.echo("\n   Files written:")
-    for w in written:
-        click.echo(f"     {w}")
-
-
-@main.command()
-@click.option("--auth", is_flag=True, help="Show auth log instead of session log")
-@click.option("-n", "--lines", default=20, help="Number of recent entries to show")
-def logs(auth, lines):
-    """View recent log entries."""
-    import json
-
-    from config_loader import load_config
-    config = load_config()
-
-    import storage
-
-    if auth:
-        data = storage.query_auth()
-        title = "Auth Attempts"
-        if not data:
-            click.echo("No auth attempts recorded yet.")
-            return
-    else:
-        # Sessions live in SQLite. Ask for the newest rows and show the session
-        # they belong to, instead of picking the alphabetically-last filename —
-        # which was never reliably the most recent session anyway.
-        import storage
-        newest = storage.query_recent(1)
-        if not newest:
-            click.echo("No session logs found — run the honeypot first (`hp run`).")
-            return
-        sid = newest[0]["session_id"]
-        data = storage.query_session(sid, instance=newest[0].get("instance"))
-        title = f"Session: {sid}"
-
-    entries = data[-lines:]
-
-    if console and HAS_RICH:
-        table = Table(title=title, box=box.SIMPLE, show_lines=False)
-
-        if auth:
-            table.add_column("Time",     style="dim",    max_width=19)
-            table.add_column("IP",       style="cyan",   max_width=16)
-            table.add_column("User",     style="yellow", max_width=12)
-            table.add_column("Password", style="red",    max_width=20)
-            for e in entries:
-                table.add_row(
-                    e.get("timestamp", "?"),
-                    e.get("src_ip", "?"),
-                    e.get("username", "?"),
-                    e.get("password", "?"),
-                )
-        else:
-            table.add_column("Time",    style="dim",    max_width=10)
-            table.add_column("IP",      style="cyan",   max_width=16)
-            table.add_column("Agent",   style="yellow", max_width=10)
-            table.add_column("FI",      style="red",    max_width=4)
-            table.add_column("Command", style="white",  max_width=50)
-            for e in entries:
-                fi = e.get("fi_score", 0)
-                fi_style = "red bold" if fi >= 3 else "yellow" if fi >= 2 else "dim"
-                table.add_row(
-                    e.get("timestamp", "?")[-8:],   # just HH:MM:SS
-                    e.get("src_ip", "?"),
-                    e.get("agent", "?"),
-                    str(fi),
-                    e.get("cmd", "?"),
-                )
-
-        console.print(table)
-    else:
-        click.echo(f"\n── {title} (last {len(entries)}) ──")
-        for e in entries:
-            if auth:
-                click.echo(f"  {e.get('timestamp','?')}  {e.get('src_ip','?')}  "
-                           f"{e.get('username','?')}:{e.get('password','?')}")
-            else:
-                click.echo(f"  {e.get('timestamp','?')[-8:]}  FI={e.get('fi_score',0)}  "
-                           f"[{e.get('agent','?')}]  $ {e.get('cmd','?')}")
-        click.echo()
-
-
-@main.command()
-def version():
+def _version():
     """Show HydraPoT version."""
     click.echo(f"HydraPoT v{VERSION}")
 
 
-@main.command()
-def config():
+def _config():
     """Show current configuration."""
     if not os.path.exists("config.yaml"):
-        click.echo("❌ No config.yaml found. Run `hp init` first.")
+        click.echo("❌ No config.yaml found. Run `hp --init` first.")
         return
 
     from config_loader import load_config
@@ -518,6 +361,79 @@ def config():
         click.echo(f"Bind: {cfg.honeypot.host}:{cfg.honeypot.port}")
         click.echo(f"On-device: {cfg.agents.on_device.model if cfg.agents.on_device.enabled else 'disabled'}")
         click.echo(f"Cloud: {'enabled' if cfg.agents.cloud.enabled else 'disabled'}")
+
+
+# ── entry point ─────────────────────────────────────────────────────────────
+
+@click.command(cls=LicenseCommand, epilog=LICENSE_TEXT)
+@click.option("--init", "do_init", is_flag=True,
+              help="Run the setup wizard to configure HydraPoT")
+@click.option("--run", "do_run", is_flag=True,
+              help="Start the honeypot server")
+@click.option("--dashboard", "do_dashboard", is_flag=True,
+              help="Start the analytics dashboard in the background")
+@click.option("--dashboard-stop", "do_dashboard_stop", is_flag=True,
+              help="Stop the background dashboard")
+@click.option("--config", "do_config", is_flag=True,
+              help="Show the active configuration")
+@click.option("--version", "do_version", is_flag=True,
+              help="Show HydraPoT version")
+@click.option("--host", default=None,
+              help="Bind address. --run: overrides config.yaml. --dashboard: "
+                   "defaults to 127.0.0.1; keep it and reach the dashboard over "
+                   "an SSH tunnel, since --host 0.0.0.0 needs "
+                   "--i-accept-public-exposure")
+@click.option("--port", default=None, type=int,
+              help="Port. --run: overrides config.yaml. --dashboard: defaults to 8050")
+@click.option("--debug/--no-debug", default=False,
+              help="--dashboard: enable Flask debug/reloader")
+@click.option("--foreground", is_flag=True,
+              help="--dashboard: run in this terminal (blocking) instead of the background")
+@click.option("--i-accept-public-exposure", is_flag=True,
+              help="--dashboard: required to bind a non-loopback address. Read the warning.")
+@click.pass_context
+def main(ctx, do_init, do_run, do_dashboard, do_dashboard_stop, do_config,
+         do_version, host, port, debug, foreground, i_accept_public_exposure):
+    """HydraPoT: Multi Agent Honeypot System
+
+    One command, flags only. Pick exactly one action flag.
+    """
+    actions = [
+        ("--init", do_init),
+        ("--run", do_run),
+        ("--dashboard", do_dashboard),
+        ("--dashboard-stop", do_dashboard_stop),
+        ("--config", do_config),
+        ("--version", do_version),
+    ]
+    chosen = [name for name, on in actions if on]
+
+    if not chosen:
+        click.echo(ctx.get_help())
+        return
+
+    # Two actions in one invocation has no sensible order (does --run come
+    # before or after --dashboard? does either block?), so refuse rather than
+    # silently picking one.
+    if len(chosen) > 1:
+        raise click.UsageError(
+            f"pick one action, got {len(chosen)}: {' '.join(chosen)}")
+
+    action = chosen[0]
+    if action == "--init":
+        _init()
+    elif action == "--run":
+        _run(host, port)
+    elif action == "--dashboard":
+        _dashboard(port if port is not None else DASH_PORT,
+                   host if host is not None else DASH_HOST,
+                   debug, foreground, i_accept_public_exposure)
+    elif action == "--dashboard-stop":
+        _dashboard_stop()
+    elif action == "--config":
+        _config()
+    elif action == "--version":
+        _version()
 
 
 if __name__ == "__main__":
