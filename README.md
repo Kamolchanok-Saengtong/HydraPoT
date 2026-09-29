@@ -4,6 +4,7 @@
 </h1>
 
 ![CI](https://github.com/Kamolchanok-Saengtong/HydraPoT/actions/workflows/ci.yml/badge.svg)
+![Dependencies](https://github.com/Kamolchanok-Saengtong/HydraPoT/actions/workflows/dependencies.yml/badge.svg)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![Last Commit](https://img.shields.io/github/last-commit/Kamolchanok-Saengtong/HydraPoT)
 [![License](https://img.shields.io/badge/license-Custom%20(NSTDA)-lightgrey)](./license)
@@ -404,13 +405,17 @@ machine and on a CI runner.
 
 ### Continuous integration
 
-`.github/workflows/ci.yml` runs three jobs on every push:
+Two workflows run on every push. They are separate files because a GitHub
+status badge covers a whole workflow, not a single job, so the dependency
+check needs its own file to have its own badge.
 
-| Job | Checks |
-|---|---|
-| `syntax-check` | Every Python file compiles |
-| `dependencies` | `deptry` finds no undeclared imports |
-| `dashboard-boot` | The dashboard installs, starts, and serves requests |
+| Workflow | Job | Checks |
+|---|---|---|
+| `ci.yml` | `syntax-check` | Every Python file compiles |
+| `ci.yml` | `dashboard-boot` | The dashboard installs, starts, and serves requests |
+| `dependencies.yml` | `deptry` | No imported package is undeclared |
+
+The badges at the top of this file report their current status.
 
 The GPU stack is never installed in CI. `.github/workflows/ci_deps.py` reads
 the dependency list from `pyproject.toml` and removes the packages a standard
