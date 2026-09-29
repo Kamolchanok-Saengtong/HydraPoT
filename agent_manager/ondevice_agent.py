@@ -8,6 +8,7 @@ import sys
 import glob
 import os
 import threading
+import requests    # only used by the optional remote (external-GPU) mode
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
 
@@ -95,13 +96,32 @@ class OnDeviceAgent:
 
     def __init__(self, model: str, quantization: str = "4bit",
                  temperature: float = 0.7, max_tokens: int = 256,
-                 do_sample: bool = True, gguf_file: str = ""):
+                 do_sample: bool = True, gguf_file: str = "",
+                 mode: str = "local", base_url: str = None,
+                 api_key_env: str = "ONDEVICE_KEY"):
         self.model_name  = model
         self.temperature = temperature
         self.max_tokens  = max_tokens
         self.do_sample   = do_sample
         self.is_gguf     = _is_gguf(model)
         self.gguf_file   = gguf_file
+        self.remote      = (mode or "local").lower() == "remote"
+
+        # Optional remote (external-GPU) mode: the model runs on a separate host
+        # as an OpenAI-compatible server (see agent_manager/serve_ondevice.py).
+        # We load nothing locally and just call the endpoint -- everything else
+        # (routing, FI, logging) is unchanged. Local mode below is untouched.
+        if self.remote:
+            if not base_url:
+                raise ValueError(
+                    "on_device mode=remote needs agents.on_device.base_url")
+            self._base_url = base_url.rstrip("/")
+            self._api_key  = os.environ.get(api_key_env or "", "")
+            self.llm = self.model = self.tokenizer = None
+            self.n_params = None
+            print(f"[on_device] REMOTE — external GPU server {self._base_url} "
+                  f"(model '{model}')")
+            return
 
         print(f"[on_device] Loading {model} ({quantization})...")
 
@@ -236,6 +256,11 @@ class OnDeviceAgent:
         if len(combined_text) > self._MAX_PROMPT_CHARS_HARD_CEILING:
             return "", None
 
+        # Remote (external-GPU) mode: no local model, no GPU lock -- the server
+        # handles its own concurrency, so just call it over HTTP.
+        if self.remote:
+            return self._send_remote(system_prompt, user_prompt)
+
         # One lock spanning BOTH the token pre-check and generation: tokenize()
         # touches the same model object, so locking only the generate call
         # still leaves a thread racing inside llama.cpp.
@@ -268,6 +293,47 @@ class OnDeviceAgent:
                 return f"[on_device error: {e}]", None
         finally:
             _MODEL_LOCK.release()
+
+    def _send_remote(self, system_prompt: str, user_prompt: str):
+        """Remote mode: call the external OpenAI-compatible on-device server.
+
+        Same (text, usage) contract as _send_gguf. GFLOPs is left None because
+        the remote model's parameter count isn't known on this side.
+        """
+        url = f"{self._base_url}/chat/completions"
+        headers = {"Content-Type": "application/json"}
+        if self._api_key:
+            headers["Authorization"] = f"Bearer {self._api_key}"
+        payload = {
+            "model": self.model_name,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user",   "content": user_prompt},
+            ],
+            "temperature": self.temperature,
+            "max_tokens": self.max_tokens,
+        }
+        try:
+            resp = requests.post(url, headers=headers, json=payload, timeout=120)
+            resp.raise_for_status()
+            data = resp.json()
+        except requests.exceptions.RequestException as e:
+            return f"[on_device remote error: {e}]", None
+
+        try:
+            response = data["choices"][0]["message"]["content"].strip()
+        except (KeyError, IndexError, TypeError):
+            return "[on_device remote error: malformed response]", None
+        response = re.sub(r'```\w*\n?', '', response).strip()
+
+        u = data.get("usage") or {}
+        usage = {
+            "prompt_tokens":     u.get("prompt_tokens"),
+            "completion_tokens": u.get("completion_tokens"),
+            "total_tokens":      u.get("total_tokens"),
+            "gflops":            None,
+        } if u else None
+        return response, usage
 
     def _send_gguf(self, system_prompt: str, user_prompt: str):
         output = self.llm.create_chat_completion(
