@@ -28,7 +28,7 @@ try:
     _FI_ROUTING = {int(k): v for k, v in dict(_config.routing.fi_routing).items()}
     _FALLBACK   = _config.routing.fallback
 except Exception:
-    # config.yaml not found yet (e.g. router.py imported before `hp init`) —
+    # config.yaml not found yet (e.g. router.py imported before `hp --init`) —
     # fall back to today's 3-agent default so nothing breaks at import time
     _AGENTS_ENABLED = {"cowrie": True, "on_device": True, "cloud": True}
     _FI_ROUTING = {0: "cowrie", 1: "cowrie", 2: "on_device", 3: "on_device", 4: "on_device"}

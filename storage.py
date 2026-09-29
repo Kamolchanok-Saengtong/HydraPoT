@@ -153,7 +153,7 @@ CREATE INDEX IF NOT EXISTS ix_alerts_severity ON alerts(severity);
 CREATE INDEX IF NOT EXISTS ix_alerts_updated  ON alerts(updated_at);
 
 -- Runtime facts the API cannot observe for itself. `hp start` (the SSH
--- honeypot and its sweeper) and `hp dashboard` (uvicorn) are SEPARATE
+-- honeypot and its sweeper) and `hp --dashboard` (uvicorn) are SEPARATE
 -- PROCESSES sharing only this file, so a module-global counter in one is
 -- invisible to the other. These two tables are that channel.
 --
