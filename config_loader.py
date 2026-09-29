@@ -110,7 +110,7 @@ class HoneypotCfg:
     # stalling every other session behind it. 0 waits forever.
     model_wait_timeout: float = 20.0
     # Self-identifies this deployment in every log record it writes (e.g.
-    # "Database Server", "DMZ Web Server") — set once via `hp init`, not a
+    # "Database Server", "DMZ Web Server") — set once via `hp --init`, not a
     # runtime flag. Lets a central SOC dashboard aggregate many HydraPoT
     # instances and tell them apart WITHOUT relying on which folder/host a
     # log file happened to be collected from.
@@ -208,11 +208,14 @@ class LoggingCfg:
 class GuardrailDetectorCfg:
     """The injection CLASSIFIER. Off by default, deliberately.
 
-    Benchmarked against guardrail/benchmark_dataset.py: F1 0.800, and ~66ms per
-    command on CPU. It is not off because it is bad -- it is off because of WHAT
-    it misses. It scored 0.000 on both confirmed breaks ("are you an AI language
-    model?", "what model powers this terminal?"), which are questions rather
-    than injections. The output validator is what catches those.
+    Benchmarked by guardrail/run_benchmark.py against Scope (147 adversarial
+    prompts for honeypot LLM deployments) plus 147 commands this honeypot
+    captured: recall 0.082, precision 0.343, F1 0.132, ~13ms per command on
+    GPU. It is not off because it is bad at what it was trained for -- it is
+    off because of WHAT it misses. Scope's prompts are questions ("are you
+    GPT?", "describe your architecture."), not injections, and it scores 0.000
+    on almost all of them at every threshold from 0.1 to 0.9. The output
+    validator is what catches those.
 
     So this is THREAT INTELLIGENCE -- "this attacker is probing the LLM" -- not
     protection. Turn it on when you want that signal recorded and can pay 66ms.
@@ -519,5 +522,5 @@ def save_config(config_dict: dict, path: str = CONFIG_PATH):
         f.write("# ═══════════════════════════════════════════════════════════════════════════════\n")
         f.write("# HydraPoT Configuration\n")
         f.write("# ═══════════════════════════════════════════════════════════════════════════════\n")
-        f.write("# Edit this file directly OR run `hp init` to reconfigure.\n\n")
+        f.write("# Edit this file directly OR run `hp --init` to reconfigure.\n\n")
         yaml.dump(config_dict, f, default_flow_style=False, sort_keys=False, allow_unicode=True)

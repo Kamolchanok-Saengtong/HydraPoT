@@ -4,7 +4,7 @@ SIEM/pages/database.py — Database browser.
 Every read here goes through storage.connect_readonly(): mode=ro blocks
 writes at the engine level and an authorizer blocks ATTACH, so nothing
 entered in the SQL box can modify the database or reach another file. That
-matters because `hp dashboard --host 0.0.0.0` is a documented way to run this.
+matters because `hp --dashboard --host 0.0.0.0` is a documented way to run this.
 """
 import os
 
@@ -43,7 +43,7 @@ def build_database_page():
     tables = storage.list_tables()
     if not tables:
         return [html.H3("🗄 Database"),
-                html.Div("No database yet — run the honeypot first (`hp run`).",
+                html.Div("No database yet — run the honeypot first (`hp --run`).",
                          className="caption")]
 
     default_table = tables[0]["name"]

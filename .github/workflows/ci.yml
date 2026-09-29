@@ -1,11 +1,9 @@
 name: CI
 
-# Kept deliberately minimal and dependency-free: HydraPoT's real stack
-# (torch, bitsandbytes, llama-cpp-python) needs a GPU and heavy compiled
-# packages that a standard GitHub-hosted runner can't reliably provide.
-# What this DOES check, honestly: every Python file in the repo still
-# parses/compiles cleanly. That's a real, always-true-or-false signal —
-# not a full test suite, but not a fake green checkmark either.
+# The real stack (torch, bitsandbytes, llama-cpp-python) needs a GPU and heavy
+# compiled wheels a GitHub runner can't provide, so nothing here installs them.
+# What it does check: every file still compiles, every import is declared, and
+# the dashboard actually starts.
 
 on:
   push:
@@ -23,3 +21,45 @@ jobs:
 
       - name: Compile-check every Python file
         run: python -m compileall -q .
+
+  dependencies:
+    # compileall parses files but never resolves an import, so it can't see a
+    # package that is imported and undeclared.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - run: pip install deptry
+
+      # Needs no project dependencies installed — see package_module_name_map
+      # in pyproject.toml
+      - name: Check declared dependencies match the imports
+        run: deptry .
+
+  dashboard-boot:
+    # Catches what deptry can't: an import that resolves but fails at runtime
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install everything except the GPU stack
+        run: |
+          pip install tomli
+          pip install $(python .github/workflows/ci_deps.py)
+          pip install -e . --no-deps
+
+      # hp --dashboard already blocks until the port serves, or exits 1
+      - name: Start the dashboard and check it serves
+        run: |
+          hp --dashboard
+          curl --fail --silent --show-error http://127.0.0.1:8050/ > /dev/null
+          curl --fail --silent --show-error http://127.0.0.1:8050/api/v1/health
+          hp --dashboard-stop
