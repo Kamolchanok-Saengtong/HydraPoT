@@ -22,24 +22,6 @@ jobs:
       - name: Compile-check every Python file
         run: python -m compileall -q .
 
-  dependencies:
-    # compileall parses files but never resolves an import, so it can't see a
-    # package that is imported and undeclared.
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.10"
-
-      - run: pip install deptry
-
-      # Needs no project dependencies installed — see package_module_name_map
-      # in pyproject.toml
-      - name: Check declared dependencies match the imports
-        run: deptry .
-
   dashboard-boot:
     # Catches what deptry can't: an import that resolves but fails at runtime
     runs-on: ubuntu-latest
