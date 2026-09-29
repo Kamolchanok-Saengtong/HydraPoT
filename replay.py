@@ -97,7 +97,7 @@ def load_from_sqlite() -> list[dict]:
     entries = storage.query_all()
     if not entries:
         console.print("[red]No sessions in the database yet — run the honeypot "
-                      "first (`hp run`), or pass --file / --dir for JSON logs.[/red]")
+                      "first (`hp --run`), or pass --file / --dir for JSON logs.[/red]")
         sys.exit(1)
     return entries
 
