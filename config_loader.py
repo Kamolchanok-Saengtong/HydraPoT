@@ -133,6 +133,15 @@ class OnDeviceCfg:
     temperature: float = 0.7
     max_tokens: int = 256
     do_sample: bool = True
+    # Where the on-device model runs:
+    #   local  -> load the model in this process, use this machine's GPU (default)
+    #   remote -> don't load anything; POST to an OpenAI-compatible server
+    #             (e.g. llama_cpp.server) running the model on a GPU box.
+    # This lets the honeypot run on a machine with no GPU while the model runs
+    # on a separate GPU host -- see agent_manager/serve_ondevice.py.
+    mode: str = "local"
+    base_url: Optional[str] = None          # e.g. http://<gpu-host>:8000/v1 (remote only)
+    api_key_env: str = "ONDEVICE_KEY"       # NAME of env var holding the server's key (optional)
 
 @dataclass
 class CloudCfg:

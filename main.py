@@ -75,6 +75,9 @@ def main():
         temperature  = config.agents.on_device.temperature,
         max_tokens   = config.agents.on_device.max_tokens,
         do_sample    = config.agents.on_device.do_sample,
+        mode         = getattr(config.agents.on_device, "mode", "local"),
+        base_url     = getattr(config.agents.on_device, "base_url", None),
+        api_key_env  = getattr(config.agents.on_device, "api_key_env", "ONDEVICE_KEY"),
     ) if config.agents.on_device.enabled else None
 
     cloud = CloudAgent(

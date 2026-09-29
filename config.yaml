@@ -27,6 +27,13 @@ agents:
     temperature: 0.0
     max_tokens: 256
     do_sample: true
+    # Choose where your on-device model runs:
+    #   local  - run it on this machine's GPU (default; nothing else to set up).
+    #   remote - use an external GPU server instead. Your honeypot then needs no
+    #            GPU -- it just calls that server. Set base_url to its address.
+    mode: local
+    base_url: http://<gpu-host>:8000/v1   # your external GPU server's address (remote only)
+    api_key_env: ONDEVICE_KEY             # name of the env var holding its key, if it needs one
   cloud:
     enabled: true
     provider: openai
@@ -366,6 +373,7 @@ guardrail:
   sanitize: true
   isolate: true
   validate: true
+
   retry_on_break: true
   detector:
     enabled: false

@@ -745,12 +745,16 @@ def build_summary_page(sensor_filter="all", rng="ALL", criterion="techniques"):
         ]),
     ])
 
+    # Single-sensor deployment: hide the sensor picker entirely. It only makes
+    # sense with 2+ sensors; with one (the merged 'default') it is noise. The
+    # sensor-filter-store stays "all", so every panel just shows that one sensor.
+    # If real sensors are ever added back, this selector returns automatically.
     sensor_chips = html.Div(className="hp-range", style={"marginBottom": "14px"}, children=[
         html.Button(("All Sensors" if s == "all" else s),
                     id={"type": "sensor-card-btn", "sensor": s}, n_clicks=0,
                     className="active" if sensor_filter == s else "")
         for s in ["all"] + [x["instance"] for x in all_sensors]
-    ]) if all_sensors else html.Span()
+    ]) if all_sensors and len(all_sensors) > 1 else html.Span()
 
     if df_all.empty:
         return [header, html.Div("No data yet. Start the honeypot with `hp --run`.",

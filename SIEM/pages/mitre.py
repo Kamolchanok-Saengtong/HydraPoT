@@ -836,15 +836,15 @@ def _kc_detail(tid, tactic, days):
     rows = [{
         "Time": (r["timestamp"].strftime("%Y-%m-%d %H:%M:%S")
                  if pd.notna(r["timestamp"]) else "—"),
-        "Sensor": r.get("instance") or "—",
         "Source": str(r.get("src_ip") or "—")[:16],
         "Sev": _kc_severity(r.get("fi_score"))[0],
         "Command": str(r.get("cmd") or "")[:120],
     } for _i, r in d.head(40).iterrows()]
 
+    # Single-sensor deployment: no per-sensor column or SENSORS stat (they only
+    # ever show 'default' now).
     facts = [("TECHNIQUE", tid), ("TACTIC", tactic), ("SEVERITY", label),
              ("EVENTS", f"{len(d):,}"), ("SESSIONS", f"{d['session_id'].nunique():,}"),
-             ("SENSORS", ", ".join(sorted(map(str, d['instance'].dropna().unique()))[:3]) or "—"),
              ("ACCOUNTS SEEN", ", ".join(users) if users else "none recorded")]
 
     return html.Div([
@@ -861,12 +861,11 @@ def _kc_detail(tid, tactic, days):
         ]),
         html.Div("MOST RECENT EVENTS", className="side-head",
                  style={"marginTop": "14px"}),
-        _top_table(rows, ["Time", "Sensor", "Source", "Sev", "Command"],
-                   widths=[{"if": {"column_id": "Time"}, "width": "17%"},
-                           {"if": {"column_id": "Sensor"}, "width": "14%"},
-                           {"if": {"column_id": "Source"}, "width": "14%"},
-                           {"if": {"column_id": "Sev"}, "width": "11%"},
-                           {"if": {"column_id": "Command"}, "width": "44%"}],
+        _top_table(rows, ["Time", "Source", "Sev", "Command"],
+                   widths=[{"if": {"column_id": "Time"}, "width": "20%"},
+                           {"if": {"column_id": "Source"}, "width": "16%"},
+                           {"if": {"column_id": "Sev"}, "width": "12%"},
+                           {"if": {"column_id": "Command"}, "width": "52%"}],
                    row_padding="7px 6px"),
         html.Div(f"Showing {min(40, len(d))} of {len(d):,} events. Response "
                  "playbooks are not wired to this deployment — no automated "
