@@ -3,11 +3,11 @@
   🍯 HydraPoT
 </h1>
 
-![CI](https://github.com/Kamolchanok-Saengtong/HydraPoT/actions/workflows/ci.yml/badge.svg)
-![Dependencies](https://github.com/Kamolchanok-Saengtong/HydraPoT/actions/workflows/dependencies.yml/badge.svg)
+![CI](https://github.com/Kamolchanok-Saengtong/HydraPoT/actions/workflows/ci.yml/badge.svg?branch=main)
+![Dependencies](https://github.com/Kamolchanok-Saengtong/HydraPoT/actions/workflows/dependencies.yml/badge.svg?branch=main)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![Last Commit](https://img.shields.io/github/last-commit/Kamolchanok-Saengtong/HydraPoT)
-[![License](https://img.shields.io/badge/license-Custom%20(NSTDA)-lightgrey)](./license)
+[![License](https://img.shields.io/badge/license-MIT-green)](./license)
 ![Research](https://img.shields.io/badge/type-research-blue)
 ![Peer Review](https://img.shields.io/badge/peer%20review-in%20progress-orange)
 ![Publication](https://img.shields.io/badge/publication-in%20progress-orange)
@@ -463,5 +463,4 @@ The script prints the installation commands rather than running them.
 
 ## License
 
-See [license](./license). Use of this software is subject to the terms
-recorded there.
+MIT. See [license](./license).
