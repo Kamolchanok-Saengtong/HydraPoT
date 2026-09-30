@@ -471,9 +471,16 @@ def load_config(path: str = CONFIG_PATH) -> Config:
         with open(path) as f:
             raw = yaml.safe_load(f) or {}
     except yaml.YAMLError as e:
-        print(f"[config] Error parsing {path}: {e}")
-        print("[config] Using defaults.")
-        return Config()
+        # Falling back to defaults here ran a DIFFERENT honeypot than the one
+        # configured -- a typo in config.yaml silently swapped the hostname,
+        # the ports and the model, and started downloading 7B weights nobody
+        # asked for. A malformed config is an error, not a default.
+        print(f"\n[config] {path} is not valid YAML:\n")
+        for line in str(e).splitlines():
+            print(f"    {line}")
+        print("\n  Fix the file and run again. To see the offending lines:")
+        print(f"    sed -n '1,40p' {path}\n")
+        raise SystemExit(1)
 
     # build Config from raw dict
     honeypot = _merge_dict_into_dataclass(HoneypotCfg, raw.get("honeypot"))
