@@ -50,6 +50,22 @@ PAGE_TTL = TTL
 _page_cache = {}
 
 
+def _db_version() -> int:
+    """Highest session row id -- 0.3 ms even at 660k rows.
+
+    Lets a cache notice NEW data instead of only ageing out. The long TTL below
+    is right for an idle dashboard but made the first session of a fresh
+    install invisible for five minutes, which reads as broken.
+    """
+    import sqlite3
+    import storage
+    try:
+        with sqlite3.connect(storage.DB_PATH) as conn:
+            return conn.execute("SELECT COALESCE(MAX(id),0) FROM sessions").fetchone()[0]
+    except Exception:
+        return 0
+
+
 def _cached_page(key, build):
     """Serve an already-rendered page instead of rebuilding it.
 
@@ -63,11 +79,12 @@ def _cached_page(key, build):
     callback writing into live-feed-wrap, which replaces the feed inside
     whatever page is on screen, cached or not."""
     now = time.time()
+    ver = _db_version()
     hit = _page_cache.get(key)
-    if hit is not None and (now - hit[1]) < PAGE_TTL:
+    if hit is not None and (now - hit[1]) < PAGE_TTL and hit[2] == ver:
         return hit[0]
     page = build()
-    _page_cache[key] = (page, now)
+    _page_cache[key] = (page, now, ver)
     return page
 
 
@@ -114,12 +131,13 @@ def load_overview(preset="ALL", instance=None):
     from threat_intel.aggregator import aggregate_overview
     now = time.time()
     key = (preset or "ALL", instance or "all")
+    ver = _db_version()
     hit = _overview_cache.get(key)
-    if hit is not None and (now - hit[1]) < TTL:
+    if hit is not None and (now - hit[1]) < TTL and hit[2] == ver:
         return hit[0]
     out = aggregate_overview(preset=preset or "ALL", instance=instance,
                              exclude_row=is_experiment_row)
-    _overview_cache[key] = (out, now)
+    _overview_cache[key] = (out, now, ver)
     return out
 
 
@@ -149,8 +167,9 @@ def load_detections(preset="ALL", instance=None):
 
     now = time.time()
     key = (preset or "ALL", instance or "all")
+    ver = _db_version()
     hit = _detect_cache.get(key)
-    if hit is not None and (now - hit[1]) < TTL:
+    if hit is not None and (now - hit[1]) < TTL and hit[2] == ver:
         return hit[0]
 
     win = load_overview(preset=preset or "ALL", instance=instance)["window"]
@@ -187,7 +206,7 @@ def load_detections(preset="ALL", instance=None):
     except Exception as e:
         print(f"[alerts] could not record alerts: {e}")
 
-    _detect_cache[key] = (out, now)
+    _detect_cache[key] = (out, now, ver)
     return out
 
 
