@@ -28,6 +28,43 @@ AI_API_KEY_ENV    = "AI_API_KEY"            # security analyst — answers the o
 ONDEVICE_KEY_ENV  = "ONDEVICE_KEY"          # local model served over HTTP (mode: remote)
 
 
+def sync_compose_env(port: int, path: str = None) -> bool:
+    """Write COWRIE_PORT into .env so docker-compose publishes the port
+    config.yaml expects. Returns True if the file changed.
+
+    docker-compose.yml substitutes ${COWRIE_PORT}, which makes config.yaml the
+    only place the port is written. Without this the two drift: HydraPoT
+    connects to one port while the container publishes another, and Cowrie just
+    looks down.
+
+    Rewrites ONE line and leaves the rest of .env untouched -- the file holds
+    API keys.
+    """
+    path = path or ENV_PATH
+    line = f"COWRIE_PORT={port}\n"
+    try:
+        with open(path, encoding="utf-8") as fh:
+            lines = fh.readlines()
+    except FileNotFoundError:
+        lines = []
+
+    for i, existing in enumerate(lines):
+        if existing.strip().startswith("COWRIE_PORT="):
+            if existing == line:
+                return False
+            lines[i] = line
+            break
+    else:
+        if lines and not lines[-1].endswith("\n"):
+            lines.append("\n")
+        lines.append(line)
+
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.writelines(lines)
+    os.environ["COWRIE_PORT"] = str(port)
+    return True
+
+
 def load_dotenv(path: str = None, override: bool = False) -> dict:
     """Read KEY=VALUE lines from .env into the environment.
 

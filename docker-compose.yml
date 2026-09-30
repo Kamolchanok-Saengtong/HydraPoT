@@ -1,8 +1,11 @@
 services:
   cowrie:
     image: cowrie/cowrie
+    # COWRIE_PORT comes from .env, which hp writes from config.yaml's
+    # agents.cowrie.port -- config.yaml is the single source. The default keeps
+    # a bare `docker-compose up -d` working on a fresh clone with no .env.
     ports:
-      - "127.0.0.1:2222:2222"
+      - "127.0.0.1:${COWRIE_PORT:-2222}:2222"
 
 # Stock Cowrie, with its own built-in filesystem. Nothing here depends on a
 # generated file, so bringing it up works on a fresh clone.

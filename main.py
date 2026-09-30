@@ -16,7 +16,7 @@ Run with `hp --run`, or `python main.py`.
 import os
 import sys
 
-from config_loader import load_config, CLOUD_API_KEY_ENV
+from config_loader import load_config, sync_compose_env, CLOUD_API_KEY_ENV
 from agent_manager.cowrie_agent import CowrieAgent
 from agent_manager.ondevice_agent import OnDeviceAgent
 from agent_manager.cloud_agent import CloudAgent
@@ -84,6 +84,40 @@ def _exit_no_cloud_key() -> None:
     os._exit(1)
 
 
+def _exit_port_in_use(host: str, port: int) -> None:
+    """Name the taken port and how to move, instead of a bind traceback."""
+    from setup_wizard import sad_squid
+
+    finder = ("lsof -nP -iTCP:%d -sTCP:LISTEN" % port if sys.platform == "darwin"
+              else "ss -ltnp | grep :%d" % port)
+    lines = [
+        "",
+        *[f"      {row}" for row in sad_squid().splitlines()],
+        "",
+        f"  HydraPoT can't start: {host}:{port} is already in use.",
+        "",
+        "  Pick another port:",
+        f"                hp --run --port {port + 1}",
+        "  Or set it permanently in config.yaml:",
+        "                honeypot:",
+        f"                  port: {port + 1}",
+        "",
+        "  To see what is holding it:",
+        f"                {finder}",
+        "",
+        "  A previous `hp --run` that did not exit cleanly is the usual cause.",
+        "",
+    ]
+    try:
+        from rich.console import Console
+        Console().print("\n".join(lines), style="yellow", highlight=False)
+    except ImportError:
+        print("\n".join(lines))
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(1)
+
+
 def _start_alert_sweeper(plugins=None):
     sweeper.start(config, plugins=plugins)
 
@@ -133,6 +167,12 @@ def main():
             getattr(config.honeypot, "model_wait_timeout", 20.0) or 0)
     print(f"[HydraPot] on_device: {'loaded' if ondevice else 'DISABLED'}")
     print(f"[HydraPot] cloud: {'loaded' if cloud else 'DISABLED'}")
+
+    # Keep docker-compose publishing the port config.yaml connects to. Done on
+    # every run so hand-editing config.yaml is enough -- the two cannot drift.
+    if config.agents.cowrie.enabled and sync_compose_env(config.agents.cowrie.port):
+        print(f"[HydraPot] .env COWRIE_PORT -> {config.agents.cowrie.port} "
+              f"(restart the container: docker-compose up -d)")
 
     # Optional startup prune. Off unless logging.retention_on_start is true —
     # nothing should silently delete capture data just because the process
@@ -207,6 +247,11 @@ def main():
         )
     except KeyboardInterrupt:
         print("\n[HydraPot] Shutting down...")
+    except OSError as e:
+        # EADDRINUSE is 48 on macOS/BSD, 98 on Linux
+        if e.errno not in (48, 98):
+            raise
+        _exit_port_in_use(config.honeypot.host, config.honeypot.port)
     finally:
         plugins.flush_exporters()
         print("[HydraPot] Done.")
