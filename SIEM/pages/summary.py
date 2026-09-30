@@ -45,6 +45,30 @@ from SIEM.pages.mitre import _tactic_color
 RANGES = [("15m", 0), ("1h", 0), ("24h", 0), ("7d", 0), ("ALL", 0)]
 
 
+def _no_sessions_yet():
+    """Empty state that says what is actually true, and how to change it.
+
+    The honeypot can be running perfectly and still show this -- it only has
+    data once someone connects to it.
+    """
+    try:
+        from config_loader import load_config
+        cfg = load_config()
+        host, port = cfg.honeypot.host, cfg.honeypot.port
+    except Exception:
+        host, port = "127.0.0.1", 2222
+
+    return html.Div(className="empty-state", children=[
+        html.Div("No sessions captured yet."),
+        html.Div("The dashboard reads the capture database, so this is normal "
+                 "until someone connects to the honeypot.",
+                 style={"marginTop": "6px", "opacity": 0.75}),
+        html.Div("Try it yourself:", style={"marginTop": "14px"}),
+        html.Code(f"ssh root@{host} -p {port}",
+                  style={"display": "inline-block", "marginTop": "4px"}),
+    ])
+
+
 def _apply_range(df, rng):
     """Filter to the selected window. Returns (df, note) where note explains an
     empty result — a silently blank dashboard reads as 'broken', not 'quiet'."""
@@ -757,8 +781,10 @@ def build_summary_page(sensor_filter="all", rng="ALL", criterion="techniques"):
     ]) if all_sensors and len(all_sensors) > 1 else html.Span()
 
     if df_all.empty:
-        return [header, html.Div("No data yet. Start the honeypot with `hp --run`.",
-                                 className="empty-state")]
+        # "Start the honeypot" was wrong and sent people to the wrong fix: the
+        # dashboard reads the database, so this means "nothing captured yet",
+        # which is also what a running-but-unvisited honeypot looks like.
+        return [header, _no_sessions_yet()]
 
     if df.empty:
         return [header, sensor_chips,
