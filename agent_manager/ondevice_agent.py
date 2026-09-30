@@ -139,8 +139,16 @@ class OnDeviceAgent:
             import llama_cpp
             from llama_cpp import Llama
         except ImportError:
+            # Not shipped by default: it has no wheels and always compiles.
             print("\n[on_device] ✗ llama-cpp-python not installed.")
-            print("  Run: CMAKE_ARGS=\"-DGGML_CUDA=on\" pip install llama-cpp-python")
+            print("  Install the optional local-model extra:")
+            print("      pip install -e '.[local-model]'")
+            print("  It compiles from source, so a C++ toolchain is needed:")
+            print("      macOS   xcode-select --install")
+            print("      Debian  sudo apt install build-essential cmake")
+            print("  For a CUDA build:")
+            print("      CMAKE_ARGS=\"-DGGML_CUDA=on\" pip install llama-cpp-python")
+            print("  Or run without it: agents.on_device.enabled: false in config.yaml")
             sys.exit(1)
 
         gguf_path = _find_gguf_file(model, self.gguf_file)

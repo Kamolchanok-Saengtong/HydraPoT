@@ -20,8 +20,9 @@ dependencies = [
     "transformers>=4.40",
     "torch>=2.0",
     "accelerate>=0.27",
-    "bitsandbytes>=0.43",
-    "llama-cpp-python>=0.2.90",
+    # CUDA 4-bit/8-bit quantisation. Linux only: a macOS wheel exists but there
+    # is no CUDA there to quantise on, and the GGUF path never uses it.
+    "bitsandbytes>=0.43; sys_platform == 'linux'",
     "huggingface_hub>=0.23",
 
     # LLM (cloud)
@@ -55,6 +56,19 @@ dependencies = [
 ]
 
 
+
+# ─── Optional: the on-device GGUF responder ─────────────────────────────────
+# llama-cpp-python publishes NO wheels, on any platform -- pip always compiles
+# it, which needs a C++ toolchain (`xcode-select --install` on macOS,
+# build-essential on Debian). Requiring that to install the dashboard made
+# `pip install -e .` fail outright on a Mac, so it is opt-in:
+#
+#     pip install -e .                    dashboard, Cowrie, cloud agent
+#     pip install -e ".[local-model]"     also the local GGUF responder
+#
+# Without it, set agents.on_device.enabled: false in config.yaml.
+[project.optional-dependencies]
+local-model = ["llama-cpp-python>=0.2.90"]
 
 # ─── The `hp` command ───────────────────────────────────────────────────────
 # After `pip install -e .`, the user can type `hp` in their terminal.
