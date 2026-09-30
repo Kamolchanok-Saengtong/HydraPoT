@@ -43,7 +43,8 @@ def build_database_page():
     tables = storage.list_tables()
     if not tables:
         return [html.H3("🗄 Database"),
-                html.Div("No database yet — run the honeypot first (`hp --run`).",
+                html.Div("No database yet — it is created the first time the "
+                         "honeypot records a session.",
                          className="caption")]
 
     default_table = tables[0]["name"]
