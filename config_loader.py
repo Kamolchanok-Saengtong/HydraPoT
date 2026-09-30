@@ -211,7 +211,7 @@ class AIAssistantCfg:
     enabled: bool = False
     provider: str = "openai"
     model: str = "openai/gpt-5.6-luna"
-    base_url: Optional[str] = "https://ai.psu.blue/v1"
+    base_url: Optional[str] = None      # None = the provider's own endpoint
     temperature: float = 0.2            # analysis, not creative writing
     max_tokens: int = 4096
     # The assistant reaches HydraPoT only through the read-only v1 API -- never

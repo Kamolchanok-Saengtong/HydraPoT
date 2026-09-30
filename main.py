@@ -215,7 +215,7 @@ def main():
         cloud = CloudAgent(
             provider    = config.agents.cloud.provider,
             model       = config.agents.cloud.model,
-            base_url    = getattr(config.agents.cloud, "base_url", "https://ai.psu.blue/v1"),
+            base_url    = getattr(config.agents.cloud, "base_url", None),
             temperature = config.agents.cloud.temperature,
             max_tokens  = config.agents.cloud.max_tokens,
         ) if config.agents.cloud.enabled else None
