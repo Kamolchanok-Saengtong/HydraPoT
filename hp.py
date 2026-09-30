@@ -121,20 +121,25 @@ def _run(host, port):
 
 
 def _dash_pid():
-    """PID of a live background dashboard, or None (stale pidfile is cleaned)."""
+    """PID of a live background dashboard, or None (stale pidfile is cleaned).
+
+    psutil rather than os.kill(pid, 0): on Windows os.kill ignores the signal
+    and calls TerminateProcess, so the "does it exist" check would KILL the
+    dashboard instead of asking about it.
+    """
     try:
         pid = int(open(DASHBOARD_PID).read().strip())
     except Exception:
         return None
-    try:
-        os.kill(pid, 0)          # signal 0 = existence check, doesn't touch it
+
+    import psutil
+    if psutil.pid_exists(pid):
         return pid
+    try:
+        os.remove(DASHBOARD_PID)
     except OSError:
-        try:
-            os.remove(DASHBOARD_PID)
-        except OSError:
-            pass
-        return None
+        pass
+    return None
 
 
 def _serve_dashboard(host, port, debug):
@@ -239,6 +244,15 @@ def _dashboard(port, host, debug, foreground, i_accept_public_exposure):
     # detaches it from this terminal's process group, so closing the terminal
     # (or Ctrl+C in it) doesn't take the dashboard down with it.
     import subprocess
+    # start_new_session is POSIX-only and silently ignored on Windows, where
+    # detaching needs creationflags instead -- without them the dashboard dies
+    # with the terminal that launched it.
+    if sys.platform == "win32":
+        detach = {"creationflags": subprocess.DETACHED_PROCESS
+                                   | subprocess.CREATE_NEW_PROCESS_GROUP}
+    else:
+        detach = {"start_new_session": True}
+
     log = open(DASHBOARD_LOG, "ab", buffering=0)
     proc = subprocess.Popen(
         [sys.argv[0], "--dashboard", "--foreground",
@@ -246,7 +260,7 @@ def _dashboard(port, host, debug, foreground, i_accept_public_exposure):
         + (["--debug"] if debug else [])
         + (["--i-accept-public-exposure"] if i_accept_public_exposure else []),
         stdout=log, stderr=log, stdin=subprocess.DEVNULL,
-        start_new_session=True, cwd=_HP_DIR,
+        cwd=_HP_DIR, **detach,
     )
     # Wait until it's actually serving before reporting success. Without this
     # a child that dies immediately (port already in use, import error) still
@@ -291,27 +305,31 @@ def _dashboard(port, host, debug, foreground, i_accept_public_exposure):
 
 def _dashboard_stop():
     """Stop the background dashboard."""
-    import signal
-    import time as _time
+    import psutil
 
     pid = _dash_pid()
     if not pid:
         click.echo("No dashboard is running.")
         return
 
-    os.kill(pid, signal.SIGTERM)
-    # Give it a moment to close the socket; escalate if it ignores SIGTERM
-    # (asyncio/Flask servers sometimes do), otherwise the port stays bound and
-    # the next `hp --dashboard` fails with "address already in use".
-    for _ in range(20):
-        _time.sleep(0.1)
-        try:
-            os.kill(pid, 0)
-        except OSError:
-            break
-    else:
-        os.kill(pid, signal.SIGKILL)
-        click.echo(f"   (pid {pid} ignored SIGTERM — force-killed)")
+    try:
+        proc = psutil.Process(pid)
+    except psutil.NoSuchProcess:
+        click.echo("No dashboard is running.")
+        return
+
+    # psutil.terminate() is SIGTERM on Unix and TerminateProcess on Windows,
+    # so one call works on both. Escalate if it is ignored (asyncio/Flask
+    # servers sometimes are), otherwise the port stays bound and the next
+    # `hp --dashboard` fails with "address already in use".
+    proc.terminate()
+    try:
+        proc.wait(timeout=2)
+    except psutil.TimeoutExpired:
+        proc.kill()
+        click.echo(f"   (pid {pid} ignored terminate — force-killed)")
+    except psutil.NoSuchProcess:
+        pass
 
     try:
         os.remove(DASHBOARD_PID)

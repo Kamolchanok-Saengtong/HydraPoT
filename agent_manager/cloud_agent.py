@@ -57,13 +57,18 @@ class CloudAgent:
                 f"Run: export {CLOUD_API_KEY_ENV}=sk-..."
             )
         self._api_key = api_key
-        self._base_url = (base_url or "https://ai.psu.blue/v1").rstrip("/")
+        # None, not a fallback URL: an empty base_url means "use the provider's
+        # own endpoint", which is what the SDK does with None. Defaulting to
+        # someone's private proxy here would send a user's key and their
+        # captured sessions to a third party they never chose.
+        self._base_url = base_url.rstrip("/") if base_url else None
 
         self.client = OpenAI(
             api_key  = api_key,
-            base_url = base_url or "https://ai.psu.blue/v1",
+            base_url = self._base_url,
         )
-        print(f"[CloudAgent] Ready — {provider} / {model} @ {base_url or 'openai default'}")
+        print(f"[CloudAgent] Ready — {provider} / {model} "
+              f"@ {self._base_url or 'provider default'}")
 
     def _stream_chat(self, system_prompt: str, user_prompt: str, want_usage: bool = False):
         """

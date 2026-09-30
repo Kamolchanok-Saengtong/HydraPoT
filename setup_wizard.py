@@ -672,6 +672,19 @@ def _resolve_gguf_file(model_id: str, current: str = "") -> str:
                   choices, default=default)
     return files[idx - 1]
 
+def _keep_remote(existing: dict, block: dict) -> dict:
+    """Carry hand-edited remote settings through a wizard re-run.
+
+    The wizard never asks about mode/base_url -- running the model on an
+    external GPU box is set by hand. Rebuilding the block from the questions
+    alone silently deleted them, and on_device fell back to local.
+    """
+    for key in ("mode", "base_url"):
+        if existing.get(key) is not None:
+            block[key] = existing[key]
+    return block
+
+
 def ask_on_device(existing: dict) -> dict:
     """Section 4: On-device LLM."""
     od = existing.get("agents", {}).get("on_device", {})
@@ -699,8 +712,9 @@ def ask_on_device(existing: dict) -> dict:
     model_idx = _choice("[9] On-device LLM", model_choices, default=model_default)
 
     if model_idx == disable_idx:
-        return {"enabled": False, "model": "", "quantization": "4bit", "gguf_file": "",
-                "temperature": 0.7, "max_tokens": 256, "do_sample": True}
+        return _keep_remote(od, {
+            "enabled": False, "model": "", "quantization": "4bit", "gguf_file": "",
+            "temperature": 0.7, "max_tokens": 256, "do_sample": True})
 
     if model_idx == custom_idx:
         while True:
@@ -753,7 +767,7 @@ def ask_on_device(existing: dict) -> dict:
     temperature = float(_prompt("[11] Temperature", str(od.get("temperature", 0.7))))
     max_tokens  = int(_prompt("[12] Max tokens",   str(od.get("max_tokens", 256))))
 
-    return {
+    return _keep_remote(od, {
         "enabled":      True,
         "model":        model,
         "quantization": quantization,
@@ -761,7 +775,7 @@ def ask_on_device(existing: dict) -> dict:
         "temperature":  temperature,
         "max_tokens":   max_tokens,
         "do_sample":    True,
-    }
+    })
 
 
 def ask_cloud(existing: dict) -> dict:
@@ -801,8 +815,8 @@ def ask_cloud(existing: dict) -> dict:
 
     provider    = PROVIDER_MAP[prov_idx]
     model       = _prompt("[15] Model name",         cl.get("model", "gpt-4o-mini"))
-    base_url    = _prompt("[16] API base URL (blank = ai.psu.blue proxy default — "
-                          "e.g. https://api.deepseek.com for DeepSeek's own API)",
+    base_url    = _prompt("[16] API base URL (blank = your provider's own endpoint; "
+                          "set it for an OpenAI-compatible proxy or a self-hosted server)",
                           cl.get("base_url", ""))
     temperature = float(_prompt("[17] Temperature",   str(cl.get("temperature", 0.3))))
     max_tokens  = int(_prompt("[18] Max tokens",      str(cl.get("max_tokens", 512))))
@@ -1093,8 +1107,8 @@ def review_and_edit(config: dict) -> dict:
                 lambda c: _edit_cloud(c)),
             ("Cloud base_url",      cl.get("base_url", "(default)") if cl["enabled"] else "—",
                 lambda c: c["agents"]["cloud"].update(
-                    {"base_url": _prompt("Cloud base URL",
-                        c["agents"]["cloud"].get("base_url", "https://ai.psu.blue/v1"))})),
+                    {"base_url": _prompt("Cloud base URL (blank = provider default)",
+                        c["agents"]["cloud"].get("base_url", ""))})),
             ("Cloud temperature",   str(cl["temperature"]) if cl["enabled"] else "—",
                 lambda c: c["agents"]["cloud"].update(
                     {"temperature": float(_prompt("Cloud temperature",
