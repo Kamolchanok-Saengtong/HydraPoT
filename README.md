@@ -116,9 +116,9 @@ and the REST API are served by one process on one port.
 All Python dependencies are declared in `pyproject.toml` and installed by
 `pip`. There is no `requirements.txt`.
 
-The local responder uses `llama-cpp-python`, and `torch` is installed as part
-of the model stack. Both are large. A machine that will only run the dashboard
-does not need them, but the current dependency list installs them anyway.
+`llama-cpp-python` is not installed by default -- see the optional extra under
+[Installation](#installation). `bitsandbytes` is installed on Linux only; it
+provides CUDA quantisation, which has no macOS equivalent.
 
 Each responder is optional. Setting `enabled: false` for a responder in
 `config.yaml` means its dependencies are not exercised at runtime.
@@ -134,6 +134,29 @@ source .venv/bin/activate
 
 pip install -e .
 ```
+
+This installs the honeypot, the dashboard, and the cloud responder. It needs no
+compiler and works on Linux and macOS.
+
+### Optional: the local GGUF responder
+
+The on-device responder needs `llama-cpp-python`, which publishes no wheels and
+is always compiled from source:
+
+```bash
+pip install -e ".[local-model]"
+```
+
+That requires a C++ toolchain:
+
+| Platform | Command |
+|---|---|
+| macOS | `xcode-select --install` |
+| Debian/Ubuntu | `sudo apt install build-essential cmake` |
+| NVIDIA GPU | `CMAKE_ARGS="-DGGML_CUDA=on" pip install llama-cpp-python` |
+
+Without it, set `agents.on_device.enabled: false` in `config.yaml`; Cowrie and
+the cloud responder cover every command.
 
 This registers the `hp` command. Confirm it:
 
@@ -480,8 +503,8 @@ The script prints the installation commands rather than running them.
 - **The test suite has not been verified in this documentation.** `pytest` is
   not a declared dependency, and the tests were not run while writing this
   README.
-- **Dependencies are heavy.** Installing the project installs the full model
-  stack, including `torch`, even when only the dashboard will be used.
+- **`torch` is always installed**, even when only the dashboard will be used.
+  Only `llama-cpp-python` has been made optional so far.
 - **Cowrie requires Docker.** There is no alternative static responder.
 
 ## License
