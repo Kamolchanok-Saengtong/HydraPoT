@@ -88,6 +88,14 @@ def _exit_no_cloud_key() -> None:
     os._exit(1)
 
 
+def _port_open(host: str, port: int, timeout: float = 0.5) -> bool:
+    """Is anything listening there? Used to decide whether Cowrie needs starting."""
+    import socket
+    with socket.socket() as s:
+        s.settimeout(timeout)
+        return s.connect_ex((host or "127.0.0.1", port)) == 0
+
+
 def _compose_cmd() -> list | None:
     """['docker', 'compose'] or ['docker-compose'], whichever exists."""
     import shutil
@@ -131,7 +139,13 @@ def _recreate_cowrie(port: int) -> None:
             print(f"    {line}")
         print(f"    run it yourself: {' '.join(cmd)} up -d")
     else:
-        print(f"[HydraPot] Cowrie now published on 127.0.0.1:{port}")
+        import time
+        for _ in range(40):                       # up to ~20s
+            if _port_open("127.0.0.1", port):
+                print(f"[HydraPot] Cowrie up on 127.0.0.1:{port}")
+                return
+            time.sleep(0.5)
+        print(f"[HydraPot] ⚠ compose started but nothing is listening on {port} yet")
 
 
 def _exit_port_in_use(host: str, port: int) -> None:
@@ -218,11 +232,17 @@ def main():
     print(f"[HydraPot] on_device: {'loaded' if ondevice else 'DISABLED'}")
     print(f"[HydraPot] cloud: {'loaded' if cloud else 'DISABLED'}")
 
-    # Keep docker-compose publishing the port config.yaml connects to. Done on
-    # every run so hand-editing config.yaml is enough -- the two cannot drift.
-    if config.agents.cowrie.enabled and sync_compose_env(config.agents.cowrie.port):
-        print(f"[HydraPot] .env COWRIE_PORT -> {config.agents.cowrie.port}")
-        _recreate_cowrie(config.agents.cowrie.port)
+    # Keep docker-compose publishing the port config.yaml connects to, and make
+    # sure something is actually listening there. Done on every run so hand-
+    # editing config.yaml is enough -- the two cannot drift, and a stopped
+    # container does not silently degrade every cowrie-routed command.
+    if config.agents.cowrie.enabled:
+        _port = config.agents.cowrie.port
+        _moved = sync_compose_env(_port)
+        if _moved:
+            print(f"[HydraPot] .env COWRIE_PORT -> {_port}")
+        if _moved or not _port_open(config.agents.cowrie.host, _port):
+            _recreate_cowrie(_port)
 
     # Optional startup prune. Off unless logging.retention_on_start is true —
     # nothing should silently delete capture data just because the process
