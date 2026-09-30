@@ -16,6 +16,10 @@ Run with `hp --run`, or `python main.py`.
 import os
 import sys
 
+# docker-compose.yml lives beside this file; compose is run from here so it
+# finds both it and .env regardless of the caller's working directory.
+_HERE = os.path.dirname(os.path.abspath(__file__))
+
 from config_loader import load_config, sync_compose_env, CLOUD_API_KEY_ENV
 from agent_manager.cowrie_agent import CowrieAgent
 from agent_manager.ondevice_agent import OnDeviceAgent
@@ -82,6 +86,52 @@ def _exit_no_cloud_key() -> None:
     sys.stdout.flush()
     sys.stderr.flush()
     os._exit(1)
+
+
+def _compose_cmd() -> list | None:
+    """['docker', 'compose'] or ['docker-compose'], whichever exists."""
+    import shutil
+    import subprocess
+    if shutil.which("docker"):
+        probe = subprocess.run(["docker", "compose", "version"],
+                               capture_output=True, timeout=15)
+        if probe.returncode == 0:
+            return ["docker", "compose"]
+    if shutil.which("docker-compose"):
+        return ["docker-compose"]
+    return None
+
+
+def _recreate_cowrie(port: int) -> None:
+    """Republish the container on the new port.
+
+    `restart` is not enough: a port mapping is fixed when the container is
+    CREATED, so only `up -d` picks up a change. Never fatal -- Cowrie being
+    down degrades a session, it does not stop the honeypot.
+    """
+    import subprocess
+
+    cmd = _compose_cmd()
+    if cmd is None:
+        print("[HydraPot] docker compose not found — start Cowrie yourself "
+              f"once it publishes {port}")
+        return
+
+    print(f"[HydraPot] republishing Cowrie on {port}: {' '.join(cmd)} up -d")
+    try:
+        r = subprocess.run(cmd + ["up", "-d"], cwd=_HERE,
+                           capture_output=True, text=True, timeout=180)
+    except subprocess.TimeoutExpired:
+        print("[HydraPot] ⚠ compose timed out; start it yourself")
+        return
+    if r.returncode != 0:
+        tail = (r.stderr or r.stdout or "").strip().splitlines()[-3:]
+        print("[HydraPot] ⚠ compose failed — Cowrie may be unreachable:")
+        for line in tail:
+            print(f"    {line}")
+        print(f"    run it yourself: {' '.join(cmd)} up -d")
+    else:
+        print(f"[HydraPot] Cowrie now published on 127.0.0.1:{port}")
 
 
 def _exit_port_in_use(host: str, port: int) -> None:
@@ -171,8 +221,8 @@ def main():
     # Keep docker-compose publishing the port config.yaml connects to. Done on
     # every run so hand-editing config.yaml is enough -- the two cannot drift.
     if config.agents.cowrie.enabled and sync_compose_env(config.agents.cowrie.port):
-        print(f"[HydraPot] .env COWRIE_PORT -> {config.agents.cowrie.port} "
-              f"(restart the container: docker-compose up -d)")
+        print(f"[HydraPot] .env COWRIE_PORT -> {config.agents.cowrie.port}")
+        _recreate_cowrie(config.agents.cowrie.port)
 
     # Optional startup prune. Off unless logging.retention_on_start is true —
     # nothing should silently delete capture data just because the process
