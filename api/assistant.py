@@ -32,7 +32,7 @@ nothing to quote.
 import json
 import os
 
-from config_loader import load_config
+from config_loader import load_config, AI_API_KEY_ENV
 
 # ── tool surface ────────────────────────────────────────────────────────────
 # One entry per question an analyst actually asks. Deliberately NOT one per
@@ -393,7 +393,7 @@ class Assistant:
     def __init__(self, config=None):
         cfg = (config or load_config()).ai_assistant
         self.cfg = cfg
-        self.api_key = os.environ.get(cfg.api_key_env, "")
+        self.api_key = os.environ.get(AI_API_KEY_ENV, "")
         self._client = None
 
     @property
@@ -537,7 +537,7 @@ def unavailable_message() -> str:
     particularly annoying way to lose twenty minutes.
     """
     try:
-        key_env = load_config().ai_assistant.api_key_env
+        key_env = AI_API_KEY_ENV
     except Exception:
         key_env = "AI_API_KEY"
     return UNAVAILABLE_MESSAGE.format(key_env=key_env)
@@ -551,7 +551,7 @@ def is_available() -> bool:
     """
     try:
         cfg = load_config().ai_assistant
-        return bool(cfg.enabled) and bool(os.environ.get(cfg.api_key_env, ""))
+        return bool(cfg.enabled) and bool(os.environ.get(AI_API_KEY_ENV, ""))
     except Exception:
         return False
 

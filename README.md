@@ -109,7 +109,7 @@ and the REST API are served by one process on one port.
 | Requirement | Notes |
 |---|---|
 | Python 3.10 or newer | Declared in `pyproject.toml` |
-| Docker | Only for the Cowrie responder, started with `docker compose` |
+| Docker | Only for the Cowrie responder; Compose v1 or v2 |
 | A GGUF model file | Only for the local responder; downloaded by the setup wizard |
 | An API key | Only for the cloud responder; read from an environment variable |
 
@@ -144,16 +144,30 @@ hp --version
 To use the Cowrie responder, start its container:
 
 ```bash
-docker compose up -d
+docker-compose up -d          # Compose v2: docker compose up -d
 ```
 
-Cowrie binds `127.0.0.1:2222`. The container reads a filesystem image
-generated from `config.yaml`; regenerate it after changing the honeypot's
-identity:
+Cowrie binds `127.0.0.1:2222` and runs with its own built-in filesystem. No
+generated file is required, so this works immediately after cloning.
+
+### Using your own filesystem in Cowrie
+
+By default Cowrie shows its stock filesystem, which does not match the
+hostname, operating system and files declared in `config.yaml`. To make the
+container match:
 
 ```bash
 python plugins/cowrie_fs.py
+docker-compose down && docker-compose up -d
 ```
+
+This writes `plugins/cowrie/fs.pickle`, the identity files under
+`plugins/cowrie/honeyfs/`, and `docker-compose.override.yml`, which Compose
+merges automatically. Deleting the override returns the container to stock
+Cowrie.
+
+Re-run the same command after changing the honeypot's identity or declared
+files in `config.yaml`.
 
 ## Configuration
 
@@ -186,7 +200,6 @@ case the values derived from it are regenerated.
 | `agents.cloud.provider` | Cloud provider | `openai` |
 | `agents.cloud.model` | Model name at that provider | `your-model-name` |
 | `agents.cloud.base_url` | API endpoint, for OpenAI-compatible providers | `https://api.example.com/v1` |
-| `agents.cloud.api_key_env` | Environment variable holding the API key | `PSU_API_KEY` |
 | `routing.fi_routing` | Responder for each score from 0 to 4 | see below |
 | `routing.fallback` | Responder used when the chosen one fails | `cowrie` |
 | `logging.fi_threshold` | Minimum score for a session to be kept as notable | `2` |
@@ -214,12 +227,22 @@ cost and the realism of the honeypot together.
 
 ### API key
 
-The cloud responder reads its key from the environment variable named by
-`agents.cloud.api_key_env`. The key is never stored in `config.yaml`.
+Secrets are never stored in `config.yaml`. They are read from `.env` at the
+project root, or from the real environment, under fixed names:
+
+| Variable | Used by |
+|---|---|
+| `CLOUD_AGENT_API_KEY` | the cloud responder |
+| `AI_API_KEY` | the AI Security Analyst |
+| `HYDRAPOT_API_KEY` | the REST API, when you want it authenticated |
 
 ```bash
-export PSU_API_KEY=your_api_key_here
+cp .env.example .env
+$EDITOR .env
 ```
+
+A real environment variable overrides a line in `.env`, so a systemd unit or
+container secret always wins.
 
 ## Usage
 
@@ -239,7 +262,7 @@ action flag may be given per invocation.
 
 ```bash
 hp --init            # 1. configure
-docker compose up -d # 2. start Cowrie, if enabled
+docker-compose up -d # 2. start Cowrie, if enabled
 hp --run             # 3. start the honeypot
 hp --dashboard       # 4. inspect results
 ```

@@ -18,6 +18,15 @@ CONFIG_PATH = "config.yaml"
 _HERE = os.path.dirname(os.path.abspath(__file__))
 ENV_PATH = os.path.join(_HERE, ".env")
 
+# Secrets live in .env (or the real environment) under FIXED names, and these
+# are the only names HydraPoT reads. config.yaml used to carry `api_key_env`,
+# the NAME of a variable to look up; that indirection meant .env and
+# config.yaml had to agree, and when they disagreed the key simply appeared
+# unset with nothing pointing at why.
+CLOUD_API_KEY_ENV = "CLOUD_AGENT_API_KEY"   # cloud agent — answers the attacker
+AI_API_KEY_ENV    = "AI_API_KEY"            # security analyst — answers the operator
+ONDEVICE_KEY_ENV  = "ONDEVICE_KEY"          # local model served over HTTP (mode: remote)
+
 
 def load_dotenv(path: str = None, override: bool = False) -> dict:
     """Read KEY=VALUE lines from .env into the environment.
@@ -27,7 +36,7 @@ def load_dotenv(path: str = None, override: bool = False) -> dict:
     resolves through os.environ (see alert_channels.py, agent_manager). One
     convention, no new package.
 
-    A REAL environment variable always wins. `export PSU_API_KEY=...` in a
+    A REAL environment variable always wins. `export CLOUD_AGENT_API_KEY=...` in a
     shell, a systemd unit, or a container secret must not be silently replaced
     by a stale line in a checked-out file -- that is the failure mode where you
     rotate a key and nothing changes. Pass override=True only if you mean it.
@@ -141,14 +150,12 @@ class OnDeviceCfg:
     # on a separate GPU host -- see agent_manager/serve_ondevice.py.
     mode: str = "local"
     base_url: Optional[str] = None          # e.g. http://<gpu-host>:8000/v1 (remote only)
-    api_key_env: str = "ONDEVICE_KEY"       # NAME of env var holding the server's key (optional)
 
 @dataclass
 class CloudCfg:
     enabled: bool = False
     provider: str = "openai"
     model: str = "gpt-4o-mini"
-    api_key_env: str = "OPENAI_API_KEY"
     base_url: Optional[str] = None          # ← add this
     temperature: float = 0.3
     max_tokens: int = 512
@@ -167,7 +174,6 @@ class AIAssistantCfg:
     enabled: bool = False
     provider: str = "openai"
     model: str = "openai/gpt-5.6-luna"
-    api_key_env: str = "AI_API_KEY"     # the NAME; the value stays in the env
     base_url: Optional[str] = "https://ai.psu.blue/v1"
     temperature: float = 0.2            # analysis, not creative writing
     max_tokens: int = 4096
@@ -490,7 +496,7 @@ def load_config(path: str = CONFIG_PATH) -> Config:
     # Enabled by the KEY BEING PRESENT rather than by a separate flag: a
     # deployment with no key cannot run the assistant, and making someone set
     # two things to turn one thing on is how features end up mysteriously off.
-    if os.environ.get(ai_assistant.api_key_env):
+    if os.environ.get(AI_API_KEY_ENV):
         ai_assistant.enabled = True
 
     # Environment overrides for the LLM endpoint. config.yaml is the default;
@@ -498,9 +504,9 @@ def load_config(path: str = CONFIG_PATH) -> Config:
     # WITHOUT editing a tracked file -- which matters because config.yaml is
     # committed and an endpoint can be deployment-specific.
     #
-    # The api KEY is never read here: config carries only the NAME of the
-    # variable (api_key_env), and the value is resolved at the point of use, so
-    # a secret never lands in a Config object that might get logged or dumped.
+    # The api KEY is never read here: it is resolved from the environment at the
+    # point of use, so a secret never lands in a Config object that might get
+    # logged or dumped.
     # CLOUD_AGENT_*, not AI_*: AI_* now belongs to the analyst, and one
     # variable quietly reconfiguring the wrong model would be very hard to
     # notice -- the honeypot would still answer, just as the wrong thing.

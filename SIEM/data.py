@@ -448,7 +448,7 @@ def agent_health():
     import glob
     import os
     import socket
-    from config_loader import load_config as _load_config
+    from config_loader import load_config as _load_config, CLOUD_API_KEY_ENV
 
     rows = []
 
@@ -503,7 +503,7 @@ def agent_health():
     # Cloud LLM — enabled AND the API key is present in the environment
     try:
         cl = cfg.agents.cloud
-        keyed = bool(os.environ.get(getattr(cl, "api_key_env", "") or "", ""))
+        keyed = bool(os.environ.get(CLOUD_API_KEY_ENV, ""))
         rows.append(("Cloud LLM", bool(getattr(cl, "enabled", False)) and keyed,
                      getattr(cl, "model", "") if keyed else "no API key"))
     except Exception:

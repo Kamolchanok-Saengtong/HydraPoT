@@ -11,6 +11,8 @@ import threading
 import requests    # only used by the optional remote (external-GPU) mode
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
+from config_loader import ONDEVICE_KEY_ENV
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Serialises every call into the local model.
@@ -97,8 +99,7 @@ class OnDeviceAgent:
     def __init__(self, model: str, quantization: str = "4bit",
                  temperature: float = 0.7, max_tokens: int = 256,
                  do_sample: bool = True, gguf_file: str = "",
-                 mode: str = "local", base_url: str = None,
-                 api_key_env: str = "ONDEVICE_KEY"):
+                 mode: str = "local", base_url: str = None):
         self.model_name  = model
         self.temperature = temperature
         self.max_tokens  = max_tokens
@@ -116,7 +117,7 @@ class OnDeviceAgent:
                 raise ValueError(
                     "on_device mode=remote needs agents.on_device.base_url")
             self._base_url = base_url.rstrip("/")
-            self._api_key  = os.environ.get(api_key_env or "", "")
+            self._api_key  = os.environ.get(ONDEVICE_KEY_ENV, "")
             self.llm = self.model = self.tokenizer = None
             self.n_params = None
             print(f"[on_device] REMOTE — external GPU server {self._base_url} "

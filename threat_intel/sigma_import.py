@@ -298,7 +298,7 @@ def _get(url: str) -> bytes:
 
 
 def sync(sources: dict = None, verbose=True) -> dict:
-    """Download every .yml from each SigmaHQ directory into .sigma_cache/."""
+    """Download every .yml from each SigmaHQ directory into rules/upstream/."""
     sources = sources or SOURCES
     counts = {}
     for name, path in sources.items():

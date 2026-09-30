@@ -126,7 +126,6 @@ def build_agent(name: str, config):
         from agent_manager.cloud_agent import CloudAgent
         c = config.agents.cloud
         return CloudAgent(provider=c.provider, model=c.model,
-                          api_key_env=c.api_key_env,
                           base_url=getattr(c, "base_url", None)
                           or "https://ai.psu.blue/v1",
                           temperature=c.temperature,

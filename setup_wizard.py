@@ -16,6 +16,8 @@ import questionary
 from questionary import Style
 import readchar
 
+from config_loader import CLOUD_API_KEY_ENV
+
 WIZARD_STYLE = Style([
     ("qmark",       "fg:#ffaa00 bold"),
     ("question",    "bold"),
@@ -143,7 +145,6 @@ def _cloud_dict_with_base_url(cl: dict) -> dict:
         "enabled":     cl.get("enabled",     False),
         "provider":    cl.get("provider",    "openai"),
         "model":       cl.get("model",       "gpt-4o-mini"),
-        "api_key_env": cl.get("api_key_env", "OPENAI_API_KEY"),
         "temperature": cl.get("temperature", 0.3),
         "max_tokens":  cl.get("max_tokens",  512),
     }
@@ -246,7 +247,19 @@ _SQUID_TENTACLES = {
     "straight": " │ │ │ │ ",
     "left":     " ╲ │ │ ╱ ",
     "right":    " ╱ │ │ ╲ ",
+    "sad":      " ╲ ╲ ╱ ╱ ",
 }
+
+# Same squid, eyes down. Shown on a startup failure instead of a traceback.
+_SQUID_SAD_BODY = [
+    " ▄█████▄ ",
+    " █▄███▄█ ",
+    " ███████ ",
+]
+
+
+def sad_squid() -> str:
+    return "\n".join(_SQUID_SAD_BODY + [_SQUID_TENTACLES["sad"]])
 _SQUID_SEQUENCE = ["straight", "left", "straight", "right"]
 
 
@@ -765,8 +778,7 @@ def ask_cloud(existing: dict) -> dict:
             "enabled": False,
             "provider": cl.get("provider", "openai"),
             "model": cl.get("model", "gpt-4o-mini"),
-            "api_key_env": cl.get("api_key_env", "OPENAI_API_KEY"),
-            "temperature": cl.get("temperature", 0.3),
+                "temperature": cl.get("temperature", 0.3),
             "max_tokens": cl.get("max_tokens", 512),
         }
         if "base_url" in cl:
@@ -786,27 +798,24 @@ def ask_cloud(existing: dict) -> dict:
     prov_idx = _choice("[14] Cloud provider", provider_choices, default=prov_default)
 
     PROVIDER_MAP = {1: "openai", 2: "anthropic", 3: "google", 4: "other"}
-    KEY_ENV_MAP  = {1: "OPENAI_API_KEY", 2: "ANTHROPIC_API_KEY", 3: "GOOGLE_API_KEY", 4: "CLOUD_API_KEY"}
 
     provider    = PROVIDER_MAP[prov_idx]
     model       = _prompt("[15] Model name",         cl.get("model", "gpt-4o-mini"))
-    api_key_env = _prompt("[16] API key env var name", cl.get("api_key_env", KEY_ENV_MAP[prov_idx]))
-    base_url    = _prompt("[17] API base URL (blank = ai.psu.blue proxy default — "
+    base_url    = _prompt("[16] API base URL (blank = ai.psu.blue proxy default — "
                           "e.g. https://api.deepseek.com for DeepSeek's own API)",
                           cl.get("base_url", ""))
-    temperature = float(_prompt("[18] Temperature",   str(cl.get("temperature", 0.3))))
-    max_tokens  = int(_prompt("[19] Max tokens",      str(cl.get("max_tokens", 512))))
+    temperature = float(_prompt("[17] Temperature",   str(cl.get("temperature", 0.3))))
+    max_tokens  = int(_prompt("[18] Max tokens",      str(cl.get("max_tokens", 512))))
 
-    # check if the env var is actually set
-    if not os.environ.get(api_key_env):
-        _print(f"\n  ⚠️  Environment variable '{api_key_env}' is not set.", style="yellow")
-        _print(f"  Set it before running: export {api_key_env}=sk-...", style="dim")
+    # The name is fixed; .env is the only place the key comes from.
+    if not os.environ.get(CLOUD_API_KEY_ENV):
+        _print(f"\n  ⚠️  {CLOUD_API_KEY_ENV} is not set.", style="yellow")
+        _print(f"  Put it in .env or export it: {CLOUD_API_KEY_ENV}=sk-...", style="dim")
 
     d = {
         "enabled": True,
         "provider": provider,
         "model": model,
-        "api_key_env": api_key_env,
         "temperature": temperature,
         "max_tokens": max_tokens,
     }
@@ -1254,7 +1263,6 @@ def _edit_cloud(c: dict):
     cl["enabled"]     = True
     cl["provider"]    = _prompt("Provider",     cl["provider"])
     cl["model"]       = _prompt("Model",        cl["model"])
-    cl["api_key_env"] = _prompt("API key env",  cl["api_key_env"])
 
 # ─── Main wizard flow ────────────────────────────────────────────────────────
 def run_wizard():

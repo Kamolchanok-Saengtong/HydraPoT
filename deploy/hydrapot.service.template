@@ -24,7 +24,7 @@ Type=simple
 User=@USER@
 Group=@GROUP@
 WorkingDirectory=@DIR@
-ExecStart=@EXEC@ run
+ExecStart=@EXEC@ --run
 
 # Always come back, including after a clean non-zero exit. RestartSec spaces
 # retries so a config error does not spin the CPU restarting hundreds of times

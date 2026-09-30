@@ -24,8 +24,8 @@ User=@USER@
 Group=@GROUP@
 WorkingDirectory=@DIR@
 # --foreground: systemd supervises the process itself, so the CLI must not
-# fork and detach the way `hp dashboard` does interactively.
-ExecStart=@EXEC@ dashboard --foreground --host @DASHHOST@ --port @DASHPORT@
+# fork and detach the way `hp --dashboard` does interactively.
+ExecStart=@EXEC@ --dashboard --foreground --host @DASHHOST@ --port @DASHPORT@
 
 Restart=always
 RestartSec=5
