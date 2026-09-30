@@ -47,9 +47,11 @@ def _hp_executable() -> str:
     if found:
         print(f"[warn] no `hp` beside {sys.executable}; using {found} from PATH")
         return found
+    # Names the user's own interpreter rather than a hardcoded venv name
     sys.exit("Could not locate the `hp` executable. Run this with the "
-             "interpreter from the project virtualenv:\n"
-             "  honeypot_new/bin/python tools/install_service.py")
+             "interpreter from the virtualenv where HydraPoT is installed:\n"
+             "  <your-venv>/bin/python tools/install_service.py\n"
+             f"  (this ran under {sys.executable})")
 
 
 def main():

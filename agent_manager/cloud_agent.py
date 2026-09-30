@@ -6,6 +6,8 @@ import time
 import requests
 from openai import OpenAI
 
+from config_loader import CLOUD_API_KEY_ENV
+
 # Safety-net for "chatty" models. A real terminal NEVER emits a lone meta-note
 # like "<nothing>" or "(no output)" or "(empty response - command succeeded)"
 # as its ENTIRE stdout — it either prints real bytes or nothing. Some models
@@ -41,18 +43,18 @@ DEEPSEEK_PRICING = {
 
 
 class CloudAgent:
-    def __init__(self, provider: str, model: str, api_key_env: str,
+    def __init__(self, provider: str, model: str,
                  base_url: str = None, temperature: float = 0.3, max_tokens: int = 512):
         self.model       = model
         self.temperature = temperature
         self.max_tokens  = max_tokens
 
-        self.api_key_env = api_key_env
-        api_key = os.environ.get(api_key_env)
+        self.api_key_env = CLOUD_API_KEY_ENV
+        api_key = os.environ.get(CLOUD_API_KEY_ENV)
         if not api_key:
             raise EnvironmentError(
-                f"[CloudAgent] API key env var '{api_key_env}' is not set. "
-                f"Run: export {api_key_env}=sk-..."
+                f"[CloudAgent] API key env var '{CLOUD_API_KEY_ENV}' is not set. "
+                f"Run: export {CLOUD_API_KEY_ENV}=sk-..."
             )
         self._api_key = api_key
         self._base_url = (base_url or "https://ai.psu.blue/v1").rstrip("/")

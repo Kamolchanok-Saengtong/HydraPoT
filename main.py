@@ -16,7 +16,7 @@ Run with `hp --run`, or `python main.py`.
 import os
 import sys
 
-from config_loader import load_config
+from config_loader import load_config, CLOUD_API_KEY_ENV
 from agent_manager.cowrie_agent import CowrieAgent
 from agent_manager.ondevice_agent import OnDeviceAgent
 from agent_manager.cloud_agent import CloudAgent
@@ -50,6 +50,40 @@ def make_command_handler(cowrie, **kwargs):
 ALERT_SWEEP_SEC = sweeper.SWEEP_INTERVAL_SEC
 
 
+def _exit_no_cloud_key() -> None:
+    """Explain the missing key and stop, instead of a traceback."""
+    from setup_wizard import sad_squid
+
+    lines = [
+        "",
+        *[f"      {row}" for row in sad_squid().splitlines()],
+        "",
+        "  HydraPoT can't start: the cloud agent has no API key.",
+        "",
+        f"  Set one:      export {CLOUD_API_KEY_ENV}=sk-...   (in .env or your shell)",
+        "  Or turn it off in config.yaml:",
+        "                agents:",
+        "                  cloud:",
+        "                    enabled: false",
+        "",
+        "  The honeypot runs fine without it — Cowrie and the local model",
+        "  answer everything, per routing.fi_routing.",
+        "",
+    ]
+    try:
+        from rich.console import Console
+        Console().print("\n".join(lines), style="yellow", highlight=False)
+    except ImportError:
+        print("\n".join(lines))
+
+    # os._exit, not sys.exit: the local model may already be loaded, and
+    # llama_cpp's destructor runs after its own globals are gone, printing 15
+    # lines of teardown traceback that bury the message above.
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(1)
+
+
 def _start_alert_sweeper(plugins=None):
     sweeper.start(config, plugins=plugins)
 
@@ -77,17 +111,20 @@ def main():
         do_sample    = config.agents.on_device.do_sample,
         mode         = getattr(config.agents.on_device, "mode", "local"),
         base_url     = getattr(config.agents.on_device, "base_url", None),
-        api_key_env  = getattr(config.agents.on_device, "api_key_env", "ONDEVICE_KEY"),
     ) if config.agents.on_device.enabled else None
 
-    cloud = CloudAgent(
-        provider    = config.agents.cloud.provider,
-        model       = config.agents.cloud.model,
-        api_key_env = config.agents.cloud.api_key_env,
-        base_url    = getattr(config.agents.cloud, "base_url", "https://ai.psu.blue/v1"),
-        temperature = config.agents.cloud.temperature,
-        max_tokens  = config.agents.cloud.max_tokens,
-    ) if config.agents.cloud.enabled else None
+    try:
+        cloud = CloudAgent(
+            provider    = config.agents.cloud.provider,
+            model       = config.agents.cloud.model,
+            base_url    = getattr(config.agents.cloud, "base_url", "https://ai.psu.blue/v1"),
+            temperature = config.agents.cloud.temperature,
+            max_tokens  = config.agents.cloud.max_tokens,
+        ) if config.agents.cloud.enabled else None
+    except EnvironmentError:
+        # Shipped config enables cloud, so a first run with no key raised a
+        # traceback before the honeypot ever started.
+        _exit_no_cloud_key()
 
     if ondevice is not None:
         # Bounds how long a session waits for its turn at the serialised
@@ -173,3 +210,7 @@ def main():
     finally:
         plugins.flush_exporters()
         print("[HydraPot] Done.")
+
+
+if __name__ == "__main__":
+    main()
