@@ -45,7 +45,11 @@ except ImportError:
     console = None
     HAS_RICH = False
 
-VERSION = "0.1.0"
+try:
+    from importlib.metadata import version as _pkg_version
+    VERSION = _pkg_version("HydraPoT")
+except Exception:
+    VERSION = "1.0.0"      # not installed yet; keep in step with pyproject
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 try:

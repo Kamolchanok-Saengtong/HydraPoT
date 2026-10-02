@@ -1,9 +1,13 @@
 """
 guardrail/ — HydraPoT's prompt-injection guardrail.
 
-A standalone, modular protection layer for the honeypot's LLM responder. It is
-NOT wired into main.py: it is developed and benchmarked on its own first, and
-integrated only after its numbers are reviewed.
+A modular protection layer for the honeypot's LLM responder, wired in behind
+config.yaml's `guardrail.enabled`. prompt_manager.py calls sanitizer/isolation
+while building a prompt; session.py calls validator/detector on the response.
+
+OFF in v1.0.0. The published results were produced before this layer existed,
+so the shipped config keeps it disabled and the honeypot behaves as measured.
+Turn it on to use it; its own numbers are still being reviewed.
 
 Six responsibilities, each its own module, each independently testable:
 
