@@ -56,7 +56,7 @@ ALERT_SWEEP_SEC = sweeper.SWEEP_INTERVAL_SEC
 
 def _exit_no_cloud_key() -> None:
     """Explain the missing key and stop, instead of a traceback."""
-    from setup_wizard import sad_squid
+    from cli.setup_wizard import sad_squid
 
     lines = [
         "",
@@ -150,7 +150,7 @@ def _recreate_cowrie(port: int) -> None:
 
 def _exit_port_in_use(host: str, port: int) -> None:
     """Name the taken port and how to move, instead of a bind traceback."""
-    from setup_wizard import sad_squid
+    from cli.setup_wizard import sad_squid
 
     finder = ("lsof -nP -iTCP:%d -sTCP:LISTEN" % port if sys.platform == "darwin"
               else "ss -ltnp | grep :%d" % port)

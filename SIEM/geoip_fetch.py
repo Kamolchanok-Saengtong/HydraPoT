@@ -21,7 +21,9 @@ import urllib.request
 import urllib.error
 from datetime import datetime, timezone
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
+# Repo root, not SIEM/ -- data/ is a project directory, not a package one.
+_HERE = os.path.abspath(os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), ".."))
 
 # data/, not the repo root. This is a ~130 MB file fetched at runtime and
 # gitignored -- runtime state, exactly like data/hp_run.log and the SSH host

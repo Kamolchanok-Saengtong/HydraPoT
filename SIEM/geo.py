@@ -11,7 +11,7 @@ from SIEM.server import app
 # storage.py, so moving the database to data/ silently broke the map here while
 # the fetcher kept reporting success -- two copies of one path is how that
 # happens. geoip_fetch owns it; everyone else asks.
-from geoip_fetch import DEFAULT_MMDB as MMDB_PATH
+from SIEM.geoip_fetch import DEFAULT_MMDB as MMDB_PATH
 
 _geo_reader = None
 _geo_reader_loaded = False
