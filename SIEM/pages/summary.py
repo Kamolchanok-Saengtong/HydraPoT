@@ -46,10 +46,11 @@ RANGES = [("15m", 0), ("1h", 0), ("24h", 0), ("7d", 0), ("ALL", 0)]
 
 
 def _no_sessions_yet():
-    """Empty state that says what is actually true, and how to change it.
+    """Empty state that says which of the two reasons applies.
 
-    The honeypot can be running perfectly and still show this -- it only has
-    data once someone connects to it.
+    "Nothing captured" and "everything captured was your own testing" look
+    identical on screen but need opposite responses, and this panel used to
+    show the same sentence for both.
     """
     try:
         from config_loader import load_config
@@ -57,6 +58,27 @@ def _no_sessions_yet():
         host, port = cfg.honeypot.host, cfg.honeypot.port
     except Exception:
         host, port = "127.0.0.1", 2222
+
+    # Cheap COUNT, not the filtered DataFrame that already came back empty.
+    total = 0
+    try:
+        import sqlite3
+        import storage
+        with sqlite3.connect(storage.DB_PATH) as conn:
+            total = conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
+    except Exception:
+        pass
+
+    if total:
+        return html.Div(className="empty-state", children=[
+            html.Div(f"{total:,} command(s) recorded — none from the public internet."),
+            html.Div("This page counts real attacker traffic only. Loopback, "
+                     "private LAN and known test addresses are excluded so your "
+                     "own testing never reaches the results.",
+                     style={"marginTop": "6px", "opacity": 0.75}),
+            html.Div("Your sessions are on the Live Feed and Database pages.",
+                     style={"marginTop": "10px", "opacity": 0.75}),
+        ])
 
     return html.Div(className="empty-state", children=[
         html.Div("No sessions captured yet."),

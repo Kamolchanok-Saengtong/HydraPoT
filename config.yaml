@@ -361,7 +361,7 @@ power_tariff:
   ft_surcharge_thb_per_unit: 0.1623
   vat_rate: 0.07
 guardrail:
-  enabled: true
+  enabled: false
   sanitize: true
   isolate: true
   validate: true

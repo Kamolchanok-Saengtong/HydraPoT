@@ -72,3 +72,7 @@ measure.py
 
 # Superseded by threat_intel/rules/upstream/ (sigma_import.py: CACHE = UPSTREAM_DIR)
 threat_intel/.sigma_cache/
+
+# Generated router artifacts — weights, embeddings, identity vectors, state.
+# Regenerable with: python honeyrouter/cli.py --train
+honeyrouter/out/
