@@ -74,7 +74,7 @@ local-model = ["llama-cpp-python>=0.2.90"]
 # After `pip install -e .`, the user can type `hp` in their terminal.
 # It calls the `main()` function inside hp.py (root level).
 [project.scripts]
-hp = "hp:main"
+hp = "cli.hp:main"
 
 # ─── Build system ───────────────────────────────────────────────────────────
 [build-system]
@@ -90,25 +90,19 @@ build-backend = "setuptools.build_meta"
 # geolocation fetch would have failed on a real install.
 [tool.setuptools]
 py-modules = [
-    "hp",                 # the `hp` CLI entry point
     "main",               # honeypot responder
-    "setup_wizard",       # hp --init
     "config_loader",
     "ssh_server",
     "router",
     "storage",            # SQLite layer — imported by nearly everything
     "api_server",         # FastAPI + Dash host
-    "geoip_fetch",        # auto-fetch on dashboard start
-    "cost_model",
-    "power_cost",
-    "replay",
 ]
 # Found rather than listed: these have __init__.py and gain sub-packages
 # regularly (api/v1, api/services, SIEM/pages), and a hand-written list silently
 # drops a new one. Excludes keep test/experiment trees out of the wheel.
 [tool.setuptools.packages.find]
 include = ["agent_manager*", "prompt*", "plugins*", "threat_intel*",
-           "SIEM*", "api*", "guardrail*", "shell*"]
+           "SIEM*", "api*", "guardrail*", "shell*", "cost*", "cli*"]
 exclude = ["tests*", "threat_intel.tests*", "experiment_data*", "archive_code*",
            "evaluation*", "honeypot_new*", "dataset*", "models*", "var*"]
 # A real package is a directory with __init__.py. Left at the pyproject default

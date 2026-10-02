@@ -45,7 +45,7 @@ from collections import Counter, defaultdict
 from datetime import datetime, timedelta
 
 import storage
-import cost_model
+from cost import cost_model
 from config_loader import load_config
 from threat_intel.mitre_mapper import tag_all as _tag_all
 

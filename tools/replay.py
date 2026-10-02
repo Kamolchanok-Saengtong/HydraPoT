@@ -18,7 +18,9 @@ import os
 from datetime import datetime
 from collections import defaultdict
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
+# Repo root, not tools/ -- data/ lives beside the project, not beside this file.
+_HERE = os.path.abspath(os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), ".."))
 
 from rich.console import Console
 from rich.panel import Panel

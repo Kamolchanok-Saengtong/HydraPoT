@@ -50,7 +50,8 @@ console = Console() if HAS_RICH else None
 # working directory — otherwise running `hp --init` from any other directory
 # silently finds no config.yaml and falls back to generic wizard defaults
 # instead of your real, already-configured values.
-CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.yaml")
+CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__))), "config.yaml")
 
 
 # ─── Default system_state template ────────────────────────────────────────────
@@ -1056,7 +1057,7 @@ def what_now_menu():
                 # dashboard.py that no longer exists, and ModuleNotFoundError
                 # is not KeyboardInterrupt -- picking option 2 crashed the
                 # wizard outright.
-                from hp import _serve_dashboard
+                from cli.hp import _serve_dashboard
                 _serve_dashboard("127.0.0.1", 8050, False)
             except KeyboardInterrupt:
                 _print("\nDashboard closed.", style="yellow")

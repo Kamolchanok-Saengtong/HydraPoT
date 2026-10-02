@@ -31,7 +31,9 @@ import click
 # install's entry point (whose finder only exposes packages declared in
 # pyproject.toml). Lets local packages like threat_intel/ import without a
 # reinstall after being added.
-_ROOT = os.path.dirname(os.path.abspath(__file__))
+# Repo root, not cli/ -- this is what gets put on sys.path.
+_ROOT = os.path.abspath(os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), ".."))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
@@ -51,14 +53,16 @@ try:
 except Exception:
     VERSION = "1.0.0"      # not installed yet; keep in step with pyproject
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
+_HERE = os.path.abspath(os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), ".."))
 try:
     with open(os.path.join(_HERE, "license"), encoding="utf-8") as _f:
         LICENSE_TEXT = _f.read().strip()
 except FileNotFoundError:
     LICENSE_TEXT = ""
 
-_HP_DIR       = os.path.dirname(os.path.abspath(__file__))
+_HP_DIR       = os.path.abspath(os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), ".."))
 DASHBOARD_PID = os.path.join(_HP_DIR, "data", "dashboard.pid")
 DASHBOARD_LOG = os.path.join(_HP_DIR, "data", "dashboard.log")
 
@@ -81,7 +85,7 @@ class LicenseCommand(click.Command):
 
 def _init():
     """Run the setup wizard to configure HydraPoT."""
-    from setup_wizard import run_wizard
+    from cli.setup_wizard import run_wizard
     run_wizard()
 
 
@@ -151,7 +155,7 @@ def _serve_dashboard(host, port, debug):
     # out of the box. No-op if it's already present; never blocks startup on
     # failure (map just stays empty if offline).
     try:
-        from geoip_fetch import ensure_geoip
+        from SIEM.geoip_fetch import ensure_geoip
         ensure_geoip()
     except Exception:
         pass

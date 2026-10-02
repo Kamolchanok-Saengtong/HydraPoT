@@ -23,7 +23,7 @@ analysis script — two copies of one measurement, so re-measuring and updating
 only one made the dashboard and the thesis figure disagree about the same GPU.
 """
 try:
-    import cost_model as _cost
+    from cost import cost_model as _cost
     GPU_AVG_WATT             = _cost.gpu_avg_watt()
     CLOUD_COST_PER_CLOUD_CMD = _cost.cloud_usd_per_cmd()
 except Exception:
@@ -41,7 +41,7 @@ try:
     # which made the production dashboard depend on the sandbox — so moving or
     # renaming the sandbox silently broke the cost panel. Production code must
     # not reach into experiment_data at all.
-    from power_cost import kwh_to_thb as _kwh_to_thb
+    from cost.power_cost import kwh_to_thb as _kwh_to_thb
     from config_loader import load_config as _load_config
     _POWER_TARIFF = _load_config().power_tariff
 except Exception:

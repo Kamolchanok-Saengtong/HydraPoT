@@ -58,7 +58,7 @@ def energy_kwh(total_inference_ms: float, config=None) -> float:
 
 def energy_thb(total_inference_ms: float, config=None) -> float:
     """Electricity cost in baht for this much on-device inference."""
-    from power_cost import kwh_to_thb
+    from cost.power_cost import kwh_to_thb
     cfg = config or load_config()
     return kwh_to_thb(energy_kwh(total_inference_ms, cfg), cfg.power_tariff)["total_thb"]
 
