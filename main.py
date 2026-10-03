@@ -28,7 +28,7 @@ from plugins.plugin_loader import PluginManager
 from shell import session as _session
 from core.ssh_server import start_server
 from threat_intel import sweeper
-import storage
+from core import storage
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 

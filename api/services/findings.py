@@ -15,7 +15,7 @@ Nothing here re-implements aggregation, correlation, detection, severity or
 alerting.
 """
 
-import storage
+from core import storage
 from threat_intel.alert_records import alert_key
 
 from api.services.common import (page, pipeline, _inst, detection_id,

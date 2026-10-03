@@ -24,7 +24,7 @@ import sys
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(_HERE))
 
-import storage                      # noqa: E402
+from core import storage                      # noqa: E402
 from core.config_loader import load_config   # noqa: E402
 
 

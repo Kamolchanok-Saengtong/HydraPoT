@@ -11,7 +11,7 @@ import plotly.express as px
 from dash import html, dcc, dash_table, Input, Output, State, ctx, ALL
 from dash.exceptions import PreventUpdate
 
-import storage
+from core import storage
 from threat_intel.ioc_extractor import to_stix
 
 from SIEM.server import app

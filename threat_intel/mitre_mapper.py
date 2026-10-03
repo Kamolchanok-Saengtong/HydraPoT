@@ -639,7 +639,7 @@ def discover(limit: int = 40, min_count: int = 2, rows=None) -> list:
     if rows is None:
         import sys
         sys.path.insert(0, os.path.dirname(_HERE))
-        import storage
+        from core import storage
         rows = storage.query_all_df().to_dict("records")
 
     clusters = {}

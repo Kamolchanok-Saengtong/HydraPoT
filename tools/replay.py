@@ -91,7 +91,7 @@ def load_from_sqlite() -> list[dict]:
     scan. Rows already carry session_id/cmd/response/agent/fi_score/timestamp,
     which is exactly the shape the rest of this script expects."""
     try:
-        import storage
+        from core import storage
     except ImportError as e:
         console.print(f"[red]Cannot import storage.py: {e}[/red]")
         sys.exit(1)

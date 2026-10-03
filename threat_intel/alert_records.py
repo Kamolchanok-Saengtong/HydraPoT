@@ -214,7 +214,7 @@ def raise_alerts(detect_result: dict, instance: str = "default",
     made -- while still being rated and findable, which is what the suppressed
     bucket is for.
     """
-    import storage
+    from core import storage
     kw = {"path": db_path} if db_path else {}
 
     new, updated = [], []
@@ -268,7 +268,7 @@ def sweep(instance: str = "default", db_path: str = None,
     `exclude_row` is the caller's policy for what counts as real traffic, the
     same hook aggregate_overview takes.
     """
-    import storage
+    from core import storage
     from threat_intel import correlation, detection, severity
     from threat_intel.ioc_extractor import build_iocs
 
@@ -423,7 +423,7 @@ def route_alerts(alerts=None, instance: str = "default",
     delivery stays unrouted and is retried -- duplicate delivery is recoverable,
     a silently dropped alert is not.
     """
-    import storage
+    from core import storage
     kw = {"path": db_path} if db_path else {}
 
     if alerts is None:

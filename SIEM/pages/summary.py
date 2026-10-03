@@ -63,7 +63,7 @@ def _no_sessions_yet():
     total = 0
     try:
         import sqlite3
-        import storage
+        from core import storage
         with sqlite3.connect(storage.DB_PATH) as conn:
             total = conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
     except Exception:

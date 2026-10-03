@@ -108,7 +108,7 @@ def build_examples(rows, limit=0):
     # impactful. Replaying 1,489 turns would inject that much junk into the
     # dashboard's data under a fake src_ip. (This is exactly how the existing
     # `hrreplay_*` rows ended up in the production DB.) Prep is read-only.
-    import storage as _st
+    from core import storage as _st
     _st.insert_command = lambda *a, **k: None
     _st.insert_impactful = lambda *a, **k: None
 

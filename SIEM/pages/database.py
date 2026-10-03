@@ -11,7 +11,7 @@ import os
 from dash import html, dcc, dash_table, Input, Output, State, ctx, ALL
 from dash.exceptions import PreventUpdate
 
-import storage
+from core import storage
 
 from SIEM.server import app
 from SIEM.theme import TABLE_STYLE, INK

@@ -788,7 +788,7 @@ def _investigate_interact(_sel, _tabs, _flt, _acts, q, state, rng, sensor_filter
         # re-reads the pipeline; this records what a person decided, so it must
         # happen before the view is rebuilt or the page would show the old
         # state for a second and look like the click was lost.
-        import storage
+        from core import storage
         inst = None if sensor_filter in (None, "all") else sensor_filter
         try:
             storage.set_alert_state(trig.get("key"), trig.get("state"),
