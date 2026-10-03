@@ -1,5 +1,5 @@
 """
-power_cost.py — kWh -> THB conversion via Thailand's MEA/PEA
+cost/power_cost.py — kWh -> THB conversion via Thailand's MEA/PEA
 residential tariff (ประเภท 1.2).
 ─────────────────────────────────────────────────────────────────
 Progressive tier pricing + Ft surcharge + VAT, matching how a real MEA/PEA

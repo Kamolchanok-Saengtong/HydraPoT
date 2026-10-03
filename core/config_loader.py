@@ -1,5 +1,5 @@
 """
-config_loader.py — Reads config.yaml and returns a typed Config object.
+core/config_loader.py — Reads config.yaml and returns a typed Config object.
 
 Usage:
     from core.config_loader import load_config

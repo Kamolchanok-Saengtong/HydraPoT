@@ -1,5 +1,5 @@
 """
-storage.py — SQLite data layer for session command logs.
+core/storage.py — SQLite data layer for session command logs.
 
 Replaces "one JSON file per session, thousands of files per sensor". That
 layout had two scaling problems:

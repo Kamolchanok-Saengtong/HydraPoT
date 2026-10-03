@@ -1,5 +1,5 @@
 """
-setup_wizard.py — HydraPoT interactive setup wizard.
+cli/setup_wizard.py — HydraPoT interactive setup wizard.
 
 Run directly:   python setup_wizard.py
 Via CLI:         hp --init
