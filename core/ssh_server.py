@@ -1,5 +1,5 @@
 """
-ssh_server.py — asyncssh server for HydraPot.
+core/ssh_server.py — asyncssh server for HydraPot.
 
 The handler we receive from main.py has signature:
     handle(cmd, write_fn, read_fn) -> (response, new_prompt)

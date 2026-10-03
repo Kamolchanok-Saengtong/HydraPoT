@@ -1,5 +1,5 @@
 """
-replay.py — Animated SSH honeypot session replay viewer
+tools/replay.py — Animated SSH honeypot session replay viewer
 Usage:
     python replay.py                          # latest session (from sessions dir)
     python replay.py --session 20260603_161753  # specific session ID (= filename stem)

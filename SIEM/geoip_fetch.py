@@ -1,5 +1,5 @@
 """
-geoip_fetch.py — auto-download the DB-IP City Lite geolocation database.
+SIEM/geoip_fetch.py — auto-download the DB-IP City Lite geolocation database.
 
 The dashboard's world map needs an .mmdb geolocation DB. We use DB-IP's free
 "IP to City Lite" file (db-ip.com) — CC BY 4.0, NO account/key required, and

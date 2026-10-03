@@ -1,5 +1,5 @@
 """
-api_server.py — FastAPI front door for HydraPoT's dashboard.
+api/api_server.py — FastAPI front door for HydraPoT's dashboard.
 
 Replaces Flask's dev server as the thing that actually listens on the
 network. Dash itself is completely untouched -- dash_app.server is still

@@ -1,5 +1,5 @@
 """
-hp.py — HydraPoT CLI entry point.
+cli/hp.py — HydraPoT CLI entry point.
 
 Registered as `hp` command via pyproject.toml.
 

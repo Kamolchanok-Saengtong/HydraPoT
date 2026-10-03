@@ -1,5 +1,5 @@
 """
-cost_model.py — what a command costs to answer, in electricity and in cloud fees.
+cost/cost_model.py — what a command costs to answer, in electricity and in cloud fees.
 
 Production module. The dashboard uses it live; the experiment sandbox imports
 it too, so a measured constant is never written down in two places.
