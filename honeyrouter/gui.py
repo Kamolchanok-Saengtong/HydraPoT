@@ -318,7 +318,7 @@ def index():
 def api_config():
     from honeyrouter import routing_policy as RP
     try:
-        from config_loader import load_config
+        from core.config_loader import load_config
         cfg = load_config()
         agents = cfg.agents
     except Exception:                                       # noqa: BLE001

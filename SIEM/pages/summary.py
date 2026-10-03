@@ -53,7 +53,7 @@ def _no_sessions_yet():
     show the same sentence for both.
     """
     try:
-        from config_loader import load_config
+        from core.config_loader import load_config
         cfg = load_config()
         host, port = cfg.honeypot.host, cfg.honeypot.port
     except Exception:

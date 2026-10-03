@@ -14,7 +14,7 @@ import json
 import asyncssh
 from datetime import datetime
 
-from config_loader import load_config
+from core.config_loader import load_config
 import storage
 
 HOST_KEY_PATH = "data/hostkey_asyncssh.key"

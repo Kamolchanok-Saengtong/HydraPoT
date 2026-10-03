@@ -20,7 +20,7 @@ import sys
 # finds both it and .env regardless of the caller's working directory.
 _HERE = os.path.dirname(os.path.abspath(__file__))
 
-from config_loader import load_config, sync_compose_env, CLOUD_API_KEY_ENV
+from core.config_loader import load_config, sync_compose_env, CLOUD_API_KEY_ENV
 from agent_manager.cowrie_agent import CowrieAgent
 from agent_manager.ondevice_agent import OnDeviceAgent
 from agent_manager.cloud_agent import CloudAgent

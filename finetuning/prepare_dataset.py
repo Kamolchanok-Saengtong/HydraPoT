@@ -97,7 +97,7 @@ class _FakeChannel:
 def build_examples(rows, limit=0):
     """Replay sessions through the production pipeline, capturing each prompt."""
     import main as hp
-    from config_loader import load_config
+    from core.config_loader import load_config
 
     by_session = defaultdict(list)
     for r in rows:

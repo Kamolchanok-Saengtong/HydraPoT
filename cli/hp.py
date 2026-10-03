@@ -95,7 +95,7 @@ def _run(host, port):
         click.echo("❌ No config.yaml found. Run `hp --init` first.")
         sys.exit(1)
 
-    from config_loader import load_config
+    from core.config_loader import load_config
     config = load_config()
 
     # apply CLI overrides if given
@@ -357,7 +357,7 @@ def _config():
         click.echo("❌ No config.yaml found. Run `hp --init` first.")
         return
 
-    from config_loader import load_config
+    from core.config_loader import load_config
     cfg = load_config()
 
     if console:

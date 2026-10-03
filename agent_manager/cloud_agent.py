@@ -6,7 +6,7 @@ import time
 import requests
 from openai import OpenAI
 
-from config_loader import CLOUD_API_KEY_ENV
+from core.config_loader import CLOUD_API_KEY_ENV
 
 # Safety-net for "chatty" models. A real terminal NEVER emits a lone meta-note
 # like "<nothing>" or "(no output)" or "(empty response - command succeeded)"

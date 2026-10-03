@@ -46,7 +46,7 @@ from datetime import datetime, timedelta
 
 import storage
 from cost import cost_model
-from config_loader import load_config
+from core.config_loader import load_config
 from threat_intel.mitre_mapper import tag_all as _tag_all
 
 TS_FORMAT = "%Y-%m-%d %H:%M:%S"
