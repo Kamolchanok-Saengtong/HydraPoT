@@ -32,8 +32,7 @@ from datetime import datetime, timedelta
 import sqlite3
 import glob
 
-# Repo root, not core/ -- data/logs/hydrapot.db is the project database.
-# Getting this wrong starts a second, empty DB and hides every session.
+# Repo root, not core/ -- the wrong value starts a second, empty database.
 _HERE = os.path.abspath(os.path.join(
     os.path.dirname(os.path.abspath(__file__)), ".."))
 DB_PATH = os.path.join(_HERE, "data", "logs", "hydrapot.db")

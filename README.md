@@ -68,13 +68,17 @@ sections say which is which.
 | Event WebSocket | `/ws/events` pushes new events to connected clients | Available |
 | Threat intelligence | IOC extraction, MITRE ATT&CK mapping, detection rules, alerts | Available |
 | Setup wizard | Interactive configuration generator | Available |
-| Prompt-injection guardrail | Detection modules, benchmarked separately | Experimental, not connected |
+| Prompt-injection guardrail | Sanitises prompts, fences attacker text, checks replies | Off by default in v1.0.0 |
 | Reinforcement-learning router | Replaces the score-based policy with a learned one | Experimental, not connected |
 | Model fine-tuning | LoRA training scripts for the local responder | Development only |
 
-Experimental components can be run on their own but are not part of the
-running honeypot. The guardrail states this in `guardrail/__init__.py`, and
-the RL router in `honeyrouter/environment.py`.
+The guardrail is wired in but shipped **off**: the published results were
+produced before it existed, so `config.yaml` sets `guardrail.enabled: false`
+and the honeypot behaves as measured. Turn it on to use it.
+
+The reinforcement-learning router is not connected at all -- nothing outside
+`honeyrouter/` imports it. Routing uses `routing.fi_routing` from
+`config.yaml`.
 
 ## Architecture
 
@@ -82,24 +86,24 @@ the RL router in `honeyrouter/environment.py`.
 attacker
    │  SSH
    ▼
-ssh_server.py ──► shell/session.py ──► router.py
+core/ssh_server.py ─► shell/session.py ─► core/router.py
                                           │
                         ┌─────────────────┼─────────────────┐
                         ▼                 ▼                 ▼
                  cowrie (Docker)     local model       cloud model
                         └─────────────────┼─────────────────┘
                                           ▼
-                                     storage.py (SQLite)
+                                  core/storage.py (SQLite)
                                           │
                         ┌─────────────────┴─────────────────┐
                         ▼                                   ▼
-                 threat_intel/                      api_server.py
+                 threat_intel/                  api/api_server.py
             IOC, MITRE, detection, alerts        REST API + dashboard
 ```
 
 `main.py` connects these components and holds no honeypot behaviour itself.
 Command handling lives in `shell/`, and the choice of responder in
-`router.py`.
+`core/router.py`.
 
 The dashboard is a Dash application mounted underneath FastAPI, so the web UI
 and the REST API are served by one process on one port.
@@ -356,20 +360,23 @@ curl http://127.0.0.1:8050/api/v1/health
 
 ```
 HydraPoT/
-├── hp.py                CLI entry point
 ├── main.py              wires the running system together
-├── router.py            chooses a responder for each command
-├── storage.py           SQLite layer
-├── api_server.py        FastAPI host; mounts the dashboard
 ├── config.yaml          configuration
+├── core/                the honeypot itself
+│   ├── ssh_server.py      listens for SSH connections
+│   ├── router.py          chooses a responder for each command
+│   ├── storage.py         SQLite layer
+│   └── config_loader.py   reads config.yaml and .env
+├── cli/                 the `hp` command and the setup wizard
 ├── shell/               command handling and session state
 ├── agent_manager/       the three responders
 ├── prompt/              prompt templates for the language models
 ├── plugins/             scoring rules, static handlers, Cowrie filesystem
+├── cost/                API billing and GPU electricity
 ├── threat_intel/        IOC extraction, MITRE mapping, detection, alerts
-├── SIEM/                dashboard pages
-├── api/                 REST API
-├── guardrail/           prompt-injection guardrail (not connected)
+├── SIEM/                dashboard pages and geolocation
+├── api/                 REST API and the FastAPI host
+├── guardrail/           prompt-injection defences (off by default)
 ├── honeyrouter/         reinforcement-learning router (not connected)
 ├── finetuning/          LoRA training scripts
 ├── deploy/              systemd unit templates
@@ -490,12 +497,12 @@ The script prints the installation commands rather than running them.
 
 ## Limitations
 
-- **The guardrail is not connected.** The prompt-injection modules in
-  `guardrail/` are benchmarked separately and are not called by the running
-  honeypot.
+- **The guardrail is off by default.** It is wired into `prompt/prompt_manager.py`
+  and `shell/session.py`, but `config.yaml` ships it disabled so the honeypot
+  matches the published results.
 - **The reinforcement-learning router is not connected.** `honeyrouter/`
   replays recorded sessions offline. The running system uses the score-based
-  policy in `router.py`.
+  policy in `core/router.py`.
 - **The dashboard has no authentication.** It exposes a read-only SQL console
   over collected credentials, and binds loopback only for that reason.
 - **The REST API has no authentication.** It is reachable wherever the

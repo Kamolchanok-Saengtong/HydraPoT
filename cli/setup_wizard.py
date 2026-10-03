@@ -50,6 +50,7 @@ console = Console() if HAS_RICH else None
 # working directory — otherwise running `hp --init` from any other directory
 # silently finds no config.yaml and falls back to generic wizard defaults
 # instead of your real, already-configured values.
+# config.yaml lives at the project root, not in cli/
 CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))), "config.yaml")
 
