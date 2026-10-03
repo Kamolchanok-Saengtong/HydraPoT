@@ -115,7 +115,7 @@ def _instance() -> str:
     this endpoint exists for.
     """
     try:
-        from config_loader import load_config
+        from core.config_loader import load_config
         return getattr(load_config().honeypot, "instance_name", "default") or "default"
     except Exception:
         return "default"

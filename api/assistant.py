@@ -32,7 +32,7 @@ nothing to quote.
 import json
 import os
 
-from config_loader import load_config, AI_API_KEY_ENV
+from core.config_loader import load_config, AI_API_KEY_ENV
 
 # ── tool surface ────────────────────────────────────────────────────────────
 # One entry per question an analyst actually asks. Deliberately NOT one per

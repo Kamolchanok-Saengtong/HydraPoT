@@ -152,7 +152,7 @@ def main():
                     help="filename; written into guardrail/results/")
     a = ap.parse_args()
 
-    from config_loader import load_config
+    from core.config_loader import load_config
     config = load_config()
 
     from guardrail import eval_datasets as ds

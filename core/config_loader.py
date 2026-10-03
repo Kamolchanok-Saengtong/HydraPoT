@@ -2,7 +2,7 @@
 config_loader.py — Reads config.yaml and returns a typed Config object.
 
 Usage:
-    from config_loader import load_config
+    from core.config_loader import load_config
     config = load_config()
     print(config.honeypot.hostname)   # → "svr04"
     print(config.agents.on_device.model)  # → "Qwen/Qwen2.5-Coder-7B-Instruct"
@@ -15,7 +15,9 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 CONFIG_PATH = "config.yaml"
-_HERE = os.path.dirname(os.path.abspath(__file__))
+# Repo root, not core/ -- .env is a project file.
+_HERE = os.path.abspath(os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), ".."))
 ENV_PATH = os.path.join(_HERE, ".env")
 
 # Secrets live in .env (or the real environment) under FIXED names, and these

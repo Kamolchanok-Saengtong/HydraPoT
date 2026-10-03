@@ -467,7 +467,7 @@ def agent_health():
     import glob
     import os
     import socket
-    from config_loader import load_config as _load_config, CLOUD_API_KEY_ENV
+    from core.config_loader import load_config as _load_config, CLOUD_API_KEY_ENV
 
     rows = []
 

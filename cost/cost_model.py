@@ -29,7 +29,7 @@ can state its own without editing Python:
 Electricity is converted to baht by power_cost.kwh_to_thb(), which applies
 Thailand's MEA/PEA progressive tariff (tiers + Ft + VAT) from config.yaml.
 """
-from config_loader import load_config
+from core.config_loader import load_config
 
 # A single on-device inference cannot realistically exceed ~2 minutes of GPU
 # time. Some log rows carry a corrupt latency_ms (e.g. 1.7e9 ms ~ 495 hours,

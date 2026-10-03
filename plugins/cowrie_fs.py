@@ -59,7 +59,7 @@ import yaml
 
 sys.path.insert(0, os.path.abspath(
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")))
-from config_loader import load_config
+from core.config_loader import load_config
 
 _HERE = os.path.dirname(os.path.abspath(__file__))          # plugins/
 _ROOT = os.path.abspath(os.path.join(_HERE, ".."))          # repo root

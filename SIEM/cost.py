@@ -42,7 +42,7 @@ try:
     # renaming the sandbox silently broke the cost panel. Production code must
     # not reach into experiment_data at all.
     from cost.power_cost import kwh_to_thb as _kwh_to_thb
-    from config_loader import load_config as _load_config
+    from core.config_loader import load_config as _load_config
     _POWER_TARIFF = _load_config().power_tariff
 except Exception:
     _kwh_to_thb = None

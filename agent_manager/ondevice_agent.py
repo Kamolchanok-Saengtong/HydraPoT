@@ -11,7 +11,7 @@ import threading
 import requests    # only used by the optional remote (external-GPU) mode
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
-from config_loader import ONDEVICE_KEY_ENV
+from core.config_loader import ONDEVICE_KEY_ENV
 
 
 # ─────────────────────────────────────────────────────────────────────────────

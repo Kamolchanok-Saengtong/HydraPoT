@@ -16,7 +16,7 @@ import questionary
 from questionary import Style
 import readchar
 
-from config_loader import CLOUD_API_KEY_ENV, sync_compose_env
+from core.config_loader import CLOUD_API_KEY_ENV, sync_compose_env
 
 WIZARD_STYLE = Style([
     ("qmark",       "fg:#ffaa00 bold"),

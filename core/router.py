@@ -6,7 +6,7 @@ _HERE = os.path.abspath(os.path.join(
     os.path.dirname(os.path.abspath(__file__)), ".."))
 sys.path.insert(0, _HERE)
 from prompt.fi_manager import FIScorer
-from config_loader import load_config
+from core.config_loader import load_config
 
 # Single shared scorer — FIScorer.score() is a pure function of the command
 # text (hardcoded regex bands, no session state), so one module-level
