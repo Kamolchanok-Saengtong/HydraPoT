@@ -9,7 +9,7 @@ from datetime import datetime
 from dash import html, dcc, Input, Output, State, ctx, ALL
 from dash.exceptions import PreventUpdate
 
-import storage
+from core import storage
 
 from SIEM.server import app
 from SIEM.theme import SUCCESS, CRITICAL, Y_400

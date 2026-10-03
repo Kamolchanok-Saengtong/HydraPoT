@@ -24,7 +24,7 @@ OUT     = "#2f855a"     # everything that leaves
 
 def measure() -> dict:
     import yaml
-    import storage
+    from core import storage
     _R = os.path.join(os.path.dirname(__file__), "rules")
 
     def n_yaml(fn, key):

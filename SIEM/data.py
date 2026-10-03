@@ -15,7 +15,7 @@ import pandas as pd
 
 from threat_intel.mitre_mapper import tag as _mitre_tag, tag_all as _mitre_tag_all
 
-import storage
+from core import storage
 
 _cache = {"all_df": None, "all_ts": 0, "auth": None, "auth_ts": 0}
 # load_raw_session_rows() re-reads every individual session JSON file from
@@ -58,7 +58,7 @@ def _db_version() -> int:
     install invisible for five minutes, which reads as broken.
     """
     import sqlite3
-    import storage
+    from core import storage
     try:
         with sqlite3.connect(storage.DB_PATH) as conn:
             return conn.execute("SELECT COALESCE(MAX(id),0) FROM sessions").fetchone()[0]
@@ -343,7 +343,7 @@ def load_raw_session_rows() -> list:
 # layer that reads rows gets the same answer. It started here, which is why
 # /export and /threats/iocs never had it -- they do not import the dashboard.
 # Re-exported under the old names; SIEM/pages/summary.py imports them from here.
-from storage import (EXPERIMENT_SRC_PREFIXES, EXPERIMENT_SRC_EXACT,   # noqa: E402
+from core.storage import (EXPERIMENT_SRC_PREFIXES, EXPERIMENT_SRC_EXACT,   # noqa: E402
                      HARNESS_TOKEN_MAXLEN as _HARNESS_TOKEN_MAXLEN,
                      is_experiment_ip as _is_experiment_ip,
                      is_experiment_row, real_rows, _is_non_routable)

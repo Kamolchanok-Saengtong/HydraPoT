@@ -63,7 +63,7 @@ class Telemetry:
     def _insert(self, row):
         if self._writer is not None:
             return self._writer(row)
-        import storage
+        from core import storage
         return storage.insert_command(row)
 
     # ── the one entry point ─────────────────────────────────────────────────

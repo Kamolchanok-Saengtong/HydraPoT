@@ -14,7 +14,7 @@ import plotly.graph_objects as go
 from dash import html, dcc, dash_table, Input, Output, State, ctx, ALL, no_update
 from dash.exceptions import PreventUpdate
 
-import storage
+from core import storage
 from threat_intel.mitre_mapper import _load_catalog as _mitre_catalog
 
 from SIEM.server import app

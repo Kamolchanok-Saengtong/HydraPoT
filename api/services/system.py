@@ -18,7 +18,7 @@ alerting.
 import shutil
 from datetime import datetime
 
-import storage
+from core import storage
 from threat_intel import correlation, detection, severity
 
 # Above this, a honeypot that is "up" is not actually collecting anything, so

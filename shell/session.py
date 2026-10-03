@@ -297,7 +297,7 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
         """
         if store != "sqlite":
             return
-        import storage
+        from core import storage
         storage.bump_counter("cowrie_fallback", instance=INSTANCE)
 
     link = CowrieLink(cowrie, fallback=_answer_without_cowrie,

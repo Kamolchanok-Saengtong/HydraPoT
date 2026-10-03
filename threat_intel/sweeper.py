@@ -48,7 +48,7 @@ def start(config, plugins=None, interval=SWEEP_INTERVAL_SEC):
     _started = True
 
     def _loop():
-        import storage
+        from core import storage
         from threat_intel import alert_records
         while True:
             time.sleep(interval)

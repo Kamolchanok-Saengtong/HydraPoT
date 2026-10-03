@@ -15,7 +15,7 @@ import asyncssh
 from datetime import datetime
 
 from core.config_loader import load_config
-import storage
+from core import storage
 
 HOST_KEY_PATH = "data/hostkey_asyncssh.key"
 _cfg = load_config()

@@ -31,7 +31,7 @@ from a2wsgi import WSGIMiddleware
 
 from SIEM import app as dash_app
 from SIEM.theme import INK, PAPER, Y_400, Y_500
-import storage
+from core import storage
 
 # docs_url=None disables FastAPI's default (blue) /docs route so the
 # hand-themed one below can take over the same path -- /openapi.json and

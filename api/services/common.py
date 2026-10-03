@@ -19,7 +19,7 @@ import hashlib
 import time
 from datetime import timedelta
 
-import storage
+from core import storage
 from threat_intel.alert_records import alert_key
 
 _IOC_TTL = 300.0

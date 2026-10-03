@@ -228,7 +228,7 @@ class FILogManager:
     def _append_log(self, path: str, event: dict):
         if self.store == "sqlite":
             try:
-                import storage
+                from core import storage
                 storage.insert_impactful({**event, "instance": self.instance})
             except Exception as e:
                 print(f"[FILogManager] SQLite write error: {e}")
@@ -250,7 +250,7 @@ class FILogManager:
     def _count_log(self, path: str) -> int:
         if self.store == "sqlite":
             try:
-                import storage
+                from core import storage
                 return storage.count_impactful()
             except Exception:
                 return 0

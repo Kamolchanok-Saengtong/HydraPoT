@@ -32,7 +32,10 @@ from datetime import datetime, timedelta
 import sqlite3
 import glob
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
+# Repo root, not core/ -- data/logs/hydrapot.db is the project database.
+# Getting this wrong starts a second, empty DB and hides every session.
+_HERE = os.path.abspath(os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), ".."))
 DB_PATH = os.path.join(_HERE, "data", "logs", "hydrapot.db")
 
 # Column order used by insert_command(); kept in one place so the writer and

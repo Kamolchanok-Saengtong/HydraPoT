@@ -168,7 +168,7 @@ def build_investigation(detect_result, overview, instance=None) -> dict:
     # unfiltered lookup let an arbitrary row win -- the page showed one
     # sensor's state while the Acknowledge button wrote another's.
     try:
-        import storage
+        from core import storage
         alerts_by_key = {a["alert_key"]: a for a in
                          storage.query_alerts(instance=instance or "default",
                                               limit=2000)}

@@ -350,7 +350,7 @@ def corpus_stats() -> dict:
     A rule can score well on ART and never fire here (or the reverse); both
     facts matter when deciding whether to trust it.
     """
-    import storage
+    from core import storage
     rows = storage.query_all_df().to_dict("records")
     cmds = [(r.get("cmd") or "").strip() for r in rows]
     uniq = [c for c in dict.fromkeys(cmds) if c]

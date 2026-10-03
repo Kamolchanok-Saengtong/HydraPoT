@@ -16,7 +16,7 @@ Nothing here normalizes anything itself -- threat_intel/normalize.py owns every
 mapping, and this module only chooses which rows to feed it.
 """
 
-import storage
+from core import storage
 from threat_intel import normalize
 from threat_intel.alert_records import alert_key
 

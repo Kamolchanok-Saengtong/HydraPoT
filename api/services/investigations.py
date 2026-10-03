@@ -28,7 +28,7 @@ Nothing here re-implements aggregation, correlation, detection, severity or
 alerting.
 """
 
-import storage
+from core import storage
 
 from api.services.common import pipeline, iocs, overview, _inst, _evidence_id
 from api.services.findings import _detection_dto, _mitre_dto, get_alert
