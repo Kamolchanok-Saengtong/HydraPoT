@@ -26,7 +26,7 @@ from agent_manager.ondevice_agent import OnDeviceAgent
 from agent_manager.cloud_agent import CloudAgent
 from plugins.plugin_loader import PluginManager
 from shell import session as _session
-from ssh_server import start_server
+from core.ssh_server import start_server
 from threat_intel import sweeper
 import storage
 

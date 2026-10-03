@@ -19,7 +19,7 @@ What this file serves:
 
 Run via `hp --dashboard` (hp.py's _serve_dashboard calls uvicorn on this file)
 or directly for testing:
-    uvicorn api_server:api --host 127.0.0.1 --port 8050
+    uvicorn api.api_server:api --host 127.0.0.1 --port 8050
 """
 import asyncio
 import re

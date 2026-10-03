@@ -260,7 +260,7 @@ def check(m) -> int:
     REST surface does not have. Each is checked against a live source, never
     against a list kept here.
     """
-    from api_server import api
+    from api.api_server import api
     from api import services as svc
 
     drawn = {p for _, rows in m["files"] for p, _ in rows}
