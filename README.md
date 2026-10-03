@@ -3,6 +3,12 @@
   🍯 HydraPoT
 </h1>
 
+<p align="center">
+  <a href="https://hydrapot.vercel.app/page.html">
+    <img src="assets/demo_button.png" alt="Try the live demo" width="280">
+  </a>
+</p>
+
 ![CI](https://github.com/Kamolchanok-Saengtong/HydraPoT/actions/workflows/ci.yml/badge.svg?branch=main)
 ![Dependencies](https://github.com/Kamolchanok-Saengtong/HydraPoT/actions/workflows/dependencies.yml/badge.svg?branch=main)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
