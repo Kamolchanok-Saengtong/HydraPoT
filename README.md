@@ -1,11 +1,6 @@
-<h1 align="center">
-  <img src="assets/hydrapot_logo.png" alt="HydraPoT logo" width="50" valign="middle">
-  🍯 HydraPoT
-</h1>
-
 <p align="center">
   <a href="https://hydrapot.vercel.app/page.html">
-    <img src="assets/demo_button.png" alt="Try the live demo" width="280">
+    <img src="assets/demo_button.png" alt="HydraPoT — try the live demo" width="440">
   </a>
 </p>
 
