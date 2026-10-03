@@ -1,7 +1,9 @@
 import re
 
 import sys, os
-_HERE = os.path.dirname(os.path.abspath(__file__))
+# Repo root, not core/ -- this goes on sys.path and locates config.yaml.
+_HERE = os.path.abspath(os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), ".."))
 sys.path.insert(0, _HERE)
 from prompt.fi_manager import FIScorer
 from config_loader import load_config

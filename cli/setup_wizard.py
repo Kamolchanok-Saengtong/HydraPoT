@@ -1051,7 +1051,7 @@ def what_now_menu():
             _print("\nOpening dashboard...\n", style="bold green")
             try:
                 # Goes through hp's own server rather than a Dash app object:
-                # the dashboard is Dash mounted UNDER FastAPI (api_server:api),
+                # the dashboard is Dash mounted UNDER FastAPI (api.api_server:api),
                 # so running dash_app.run() directly would serve the UI without
                 # /api/* or /ws/events. This used to import a root-level
                 # dashboard.py that no longer exists, and ModuleNotFoundError

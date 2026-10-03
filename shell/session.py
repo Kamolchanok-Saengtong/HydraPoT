@@ -45,7 +45,7 @@ from agent_manager.static_handler import is_static, dispatch_static
 from prompt.fi_manager import FILogManager
 from prompt.prompt_manager import PromptManager
 from threat_intel.mitre_mapper import tag as mitre_tag
-from router import _is_cloud, classify
+from core.router import _is_cloud, classify
 
 from shell.fakefs import FakeFS
 from shell.software import Software

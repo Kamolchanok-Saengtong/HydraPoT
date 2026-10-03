@@ -178,7 +178,7 @@ def _serve_dashboard(host, port, debug):
     # before this change (the Threat Intel "Generate Intelligence" button's
     # ~11s regex extraction must not block every other request).
     import uvicorn
-    uvicorn.run("api_server:api", host=host, port=port, reload=debug)
+    uvicorn.run("api.api_server:api", host=host, port=port, reload=debug)
 
 
 def _is_loopback(host: str) -> bool:

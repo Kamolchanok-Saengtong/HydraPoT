@@ -44,7 +44,7 @@ def measure() -> dict:
         tables, st = [], {"rows": 0, "sessions": 0}
 
     try:
-        from api_server import api
+        from api.api_server import api
         endpoints = len([p for p in api.openapi()["paths"]
                          if p.startswith("/api/v1")])
     except Exception:

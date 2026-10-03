@@ -95,7 +95,7 @@ def build(path: str, n: int, seed: list):
 
 def footprint() -> dict:
     t = time.time()
-    import api_server            # noqa: F401  Dash + FastAPI + the pipeline
+    from api import api_server   # noqa: F401  Dash + FastAPI + the pipeline
     from api import services as svc     # noqa: F401
     return {"import_s": round(time.time() - t, 2), "rss_mb": round(rss_mb())}
 
