@@ -32,6 +32,9 @@ STALE_AFTER_SEC = 3600
 SWEEP_STALE_AFTER_SEC = 900
 
 DISK_WARN_PERCENT = 90
+MEMORY_WARN_PERCENT = 90
+# Load average per core. Above 100% the machine has more work than cores.
+LOAD_WARN_PERCENT = 100
 
 # Without these HydraPoT is not doing its job: no front door, nowhere to write,
 # or nothing turning findings into alerts.
@@ -96,6 +99,7 @@ def health() -> dict:
         "degraded_components": broken,
         "dependencies": deps,
         "disk": _disk(),
+        "resources": _resources(),
         "recent": {
             "cowrie_fallbacks_1h": storage.counter_total(
                 "cowrie_fallback", hours=1, instance=inst),
@@ -209,6 +213,31 @@ def _disk() -> dict:
         "percent_used": percent,
         "free_gb": round(usage.free / 1e9, 1),
         "warn": percent is not None and percent >= DISK_WARN_PERCENT,
+    }
+
+
+def _resources() -> dict:
+    """CPU and memory load, as PERCENTAGES ONLY — same reasoning as _disk().
+
+    cpu_percent is measured since the previous call rather than by sleeping:
+    this endpoint is polled, and a blocking sample would add that delay to
+    every request. The first call after start therefore reports 0.0.
+    """
+    try:
+        import psutil
+    except ImportError:
+        return {"cpu_percent": None, "memory_percent": None, "warn": False}
+    try:
+        cpu = psutil.cpu_percent(interval=None)
+        mem = psutil.virtual_memory().percent
+        load1 = round(psutil.getloadavg()[0] / (psutil.cpu_count() or 1) * 100, 1)
+    except Exception:
+        return {"cpu_percent": None, "memory_percent": None, "warn": False}
+    return {
+        "cpu_percent": round(cpu, 1),
+        "memory_percent": round(mem, 1),
+        "load1_percent": load1,
+        "warn": mem >= MEMORY_WARN_PERCENT or load1 >= LOAD_WARN_PERCENT,
     }
 
 
