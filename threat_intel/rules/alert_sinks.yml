@@ -28,7 +28,7 @@ sinks:
 
   - name: channels
     type: channels
-    enabled: false
+    enabled: true
     # OFF. Nothing is pushed anywhere until you turn this on.
     #
     # Delegates to threat_intel/alert_channels.py, which reads

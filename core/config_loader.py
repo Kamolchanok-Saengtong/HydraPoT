@@ -43,6 +43,9 @@ def sync_compose_env(port: int, path: str = None) -> bool:
     API keys.
     """
     path = path or ENV_PATH
+    # Marked as generated: hand-editing this value does nothing, because every
+    # `hp --run` rewrites it from config.yaml.
+    note = "# managed by hp --run -- change agents.cowrie.port in config.yaml\n"
     line = f"COWRIE_PORT={port}\n"
     try:
         with open(path, encoding="utf-8") as fh:
@@ -52,14 +55,16 @@ def sync_compose_env(port: int, path: str = None) -> bool:
 
     for i, existing in enumerate(lines):
         if existing.strip().startswith("COWRIE_PORT="):
-            if existing == line:
+            if existing == line and i and lines[i - 1] == note:
                 return False
             lines[i] = line
+            if not (i and lines[i - 1] == note):
+                lines.insert(i, note)
             break
     else:
         if lines and not lines[-1].endswith("\n"):
             lines.append("\n")
-        lines.append(line)
+        lines.extend(["\n", note, line])
 
     with open(path, "w", encoding="utf-8") as fh:
         fh.writelines(lines)

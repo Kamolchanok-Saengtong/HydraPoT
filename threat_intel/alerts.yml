@@ -62,7 +62,7 @@ channels:
   # POST the alert as JSON to any URL you control (your own API, n8n, Zapier…).
   #   export ALERT_WEBHOOK_URL="https://your-endpoint.example.com/hook"
   webhook:
-    enabled: false
+    enabled: true
     url_env: ALERT_WEBHOOK_URL
 
   # ── Email (SMTP) ───────────────────────────────────────────────────────────
