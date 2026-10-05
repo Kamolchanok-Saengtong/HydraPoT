@@ -88,12 +88,22 @@ def _exit_no_cloud_key() -> None:
     os._exit(1)
 
 
-def _port_open(host: str, port: int, timeout: float = 0.5) -> bool:
-    """Is anything listening there? Used to decide whether Cowrie needs starting."""
+def _ssh_ready(host: str, port: int, timeout: float = 1.5) -> bool:
+    """Does an SSH server answer there?
+
+    A plain TCP connect is not enough: Docker publishes a port the moment the
+    container is created, so it accepts and then closes while Cowrie inside is
+    still booting. That made "Cowrie up" print ~15s before it was true, and the
+    first session got EOF instead of a banner. SSH servers speak first, so the
+    banner is the real signal.
+    """
     import socket
-    with socket.socket() as s:
-        s.settimeout(timeout)
-        return s.connect_ex((host or "127.0.0.1", port)) == 0
+    try:
+        with socket.create_connection((host or "127.0.0.1", port), timeout) as s:
+            s.settimeout(timeout)
+            return s.recv(4).startswith(b"SSH-")
+    except OSError:
+        return False
 
 
 def _compose_cmd() -> list | None:
@@ -141,7 +151,7 @@ def _recreate_cowrie(port: int) -> None:
     else:
         import time
         for _ in range(40):                       # up to ~20s
-            if _port_open("127.0.0.1", port):
+            if _ssh_ready("127.0.0.1", port):
                 print(f"[HydraPot] Cowrie up on 127.0.0.1:{port}")
                 return
             time.sleep(0.5)
@@ -241,7 +251,7 @@ def main():
         _moved = sync_compose_env(_port)
         if _moved:
             print(f"[HydraPot] .env COWRIE_PORT -> {_port}")
-        if _moved or not _port_open(config.agents.cowrie.host, _port):
+        if _moved or not _ssh_ready(config.agents.cowrie.host, _port):
             _recreate_cowrie(_port)
 
     # Optional startup prune. Off unless logging.retention_on_start is true —
