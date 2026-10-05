@@ -147,13 +147,20 @@ compiler and works on Linux and macOS.
 ### Optional: the local GGUF responder
 
 The on-device responder needs `llama-cpp-python`, which publishes no wheels and
-is always compiled from source:
+is always compiled from source. Use the helper, which handles the macOS SDK
+problem described below:
+
+```bash
+sh tools/install_local_model.sh
+```
+
+Or install it directly if your toolchain is healthy:
 
 ```bash
 pip install -e ".[local-model]"
 ```
 
-That requires a C++ toolchain:
+Either way a C++ toolchain is required:
 
 | Platform | Command |
 |---|---|
@@ -161,8 +168,21 @@ That requires a C++ toolchain:
 | Debian/Ubuntu | `sudo apt install build-essential cmake` |
 | NVIDIA GPU | `CMAKE_ARGS="-DGGML_CUDA=on" pip install llama-cpp-python` |
 
-Without it, set `agents.on_device.enabled: false` in `config.yaml`; Cowrie and
-the cloud responder cover every command.
+**macOS:** a Command Line Tools update can leave an SDK newer than the linker
+that reads it, and then every C build fails with
+`ld: tapi error: malformed file ... unknown architecture`. The helper above
+finds an SDK that still links and sets `SDKROOT` for the build. To confirm the
+problem is your toolchain rather than this project:
+
+```bash
+echo 'int main(){return 0;}' > /tmp/t.c && clang /tmp/t.c -o /tmp/t && echo OK
+```
+
+If that fails, no Python package will build until the tools are repaired
+(`sudo rm -rf /Library/Developer/CommandLineTools && sudo xcode-select --install`).
+
+Without the local model, set `agents.on_device.enabled: false` in `config.yaml`;
+Cowrie and the cloud responder cover every command.
 
 This registers the `hp` command. Confirm it:
 
