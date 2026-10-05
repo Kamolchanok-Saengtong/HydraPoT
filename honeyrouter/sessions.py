@@ -42,7 +42,7 @@ import random
 
 _RESULTS = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..",
-    "experiment_data", "PartC", "results")
+    "experiment_data", "results", "partC")
 
 # Kept for callers that want the judge/honeyrouter files, which all live here.
 BASE_DIR = os.path.join(_RESULTS, "fidelity_full109_final")
