@@ -1,5 +1,5 @@
 """
-SIEM/clientside.py — all app.clientside_callback JS blocks: sidebar toggle,
+console/clientside.py — all app.clientside_callback JS blocks: sidebar toggle,
 live-feed scroll preservation, and the real-time WebSocket push.
 
 Kept as one module since these are small, self-contained JS snippets with no
@@ -8,7 +8,7 @@ short blocks across three files for no benefit.
 """
 from dash import Input, Output, State
 
-from SIEM.server import app
+from console.server import app
 
 # ── Sidebar toggle (clientside) ─────────────────────────────────────────────
 

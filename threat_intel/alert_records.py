@@ -254,16 +254,16 @@ def sweep(instance: str = "default", db_path: str = None,
     over everything currently in storage.
 
     EXISTS BECAUSE NOTIFICATIONS MUST NOT DEPEND ON THE DASHBOARD. Alert
-    records were only ever raised by SIEM/data.py's load_detections(), i.e. by
+    records were only ever raised by console/data.py's load_detections(), i.e. by
     someone having a browser open. That was fine while main.py also notified
     per command on FI -- there was always a live path. With that removed, a
     sensor running headless would have raised nothing and paged nobody, which
     is a worse failure than the FI behaviour it replaced.
 
-    Deliberately NOT importing SIEM/: that package pulls in Dash, and the
+    Deliberately NOT importing console/: that package pulls in Dash, and the
     honeypot process must not depend on a web framework to send an alert.
     The cost is a few lines of pipeline wiring duplicated from
-    SIEM/data.load_detections -- worth it to keep the dependency out.
+    console/data.load_detections -- worth it to keep the dependency out.
 
     `exclude_row` is the caller's policy for what counts as real traffic, the
     same hook aggregate_overview takes.

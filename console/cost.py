@@ -1,5 +1,5 @@
 """
-SIEM/cost.py — dashboard-local cost/energy estimation.
+console/cost.py — dashboard-local cost/energy estimation.
 
 This is NOT threat_intel/aggregator.py's real per-session cost (which reads
 actual measured numbers from replay data). Production session logs record

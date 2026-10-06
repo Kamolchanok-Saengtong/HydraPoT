@@ -29,8 +29,8 @@ from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.responses import HTMLResponse, JSONResponse
 from a2wsgi import WSGIMiddleware
 
-from SIEM import app as dash_app
-from SIEM.theme import INK, PAPER, Y_400, Y_500
+from console import app as dash_app
+from console.theme import INK, PAPER, Y_400, Y_500
 from core import storage
 
 # docs_url=None disables FastAPI's default (blue) /docs route so the
@@ -43,11 +43,11 @@ api = FastAPI(title="HydraPoT API", docs_url=None)
 def _warm():
     """Fill the dashboard's heavy caches on a daemon thread at boot, so the
     first click on a sensor is not the one that pays for it."""
-    from SIEM.data import warm_caches
+    from console.data import warm_caches
     warm_caches(background=True)
 
 # Swagger UI ships blue by default; this overrides just the color-bearing
-# rules with HydraPoT's real palette (SIEM/theme.py), not a copy of it.
+# rules with HydraPoT's real palette (console/theme.py), not a copy of it.
 _SWAGGER_THEME_CSS = f"""
 <style>
   body {{ background: {PAPER}; }}
@@ -74,7 +74,7 @@ async def hydrapot_docs():
 # ── REST ─────────────────────────────────────────────────────────────────
 # Five unversioned routes used to sit here -- /api/stats, /api/sessions,
 # /api/sessions/{id}, /api/windows, /api/feed. Removed: nothing referenced
-# them (the Dash dashboard calls SIEM/data.py directly, not over HTTP) and
+# them (the Dash dashboard calls console/data.py directly, not over HTTP) and
 # /api/v1 answers all five, with a version contract they never had:
 #
 #   /api/stats            -> /api/v1/health

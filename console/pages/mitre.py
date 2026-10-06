@@ -1,5 +1,5 @@
 """
-SIEM/pages/mitre.py — MITRE ATT&CK page: coverage cards, top techniques,
+console/pages/mitre.py — MITRE ATT&CK page: coverage cards, top techniques,
 attack chain analytics (Sankey/kill-chain flow/playbooks/session timeline).
 
 Kept as ONE module per explicit instruction — this is the single biggest
@@ -17,9 +17,9 @@ from dash.exceptions import PreventUpdate
 from core import storage
 from threat_intel.mitre_mapper import _load_catalog as _mitre_catalog
 
-from SIEM.server import app
-from SIEM.theme import theme_layout, GRAPH_CONFIG, TABLE_STYLE, INK, INK_3, PAPER, Y_50, LINE, AMBER_SCALE
-from SIEM.data import load_all, _cached_page
+from console.server import app
+from console.theme import theme_layout, GRAPH_CONFIG, TABLE_STYLE, INK, INK_3, PAPER, Y_50, LINE, AMBER_SCALE
+from console.data import load_all, _cached_page
 
 
 def _technique_name(tid):
@@ -313,7 +313,7 @@ def _chain_analytics(days):
     Invalidated by the same generation counter as load_all()'s cache, so a
     refresh that reloads the dataframe also drops these.
     """
-    from SIEM.data import _cache
+    from console.data import _cache
     key = (days, _cache.get("all_ts"))
     hit = _chain_cache.get(key)
     if hit is not None:

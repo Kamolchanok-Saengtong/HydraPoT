@@ -83,7 +83,7 @@ def _chain(cmd: str) -> list:
 
     Re-tagging at read time fixes both, applies retroactively to all history,
     and picks up rule-file edits with no migration -- the same reasoning
-    SIEM/data.py's load_all() already documents for the dashboard.
+    console/data.py's load_all() already documents for the dashboard.
     """
     if cmd not in _CHAIN_CACHE:
         _CHAIN_CACHE[cmd] = _tag_all(cmd) or []

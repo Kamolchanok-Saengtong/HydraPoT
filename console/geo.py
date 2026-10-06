@@ -1,17 +1,17 @@
 """
-SIEM/geo.py — GeoIP lookups + the sidebar's GeoIP status badge.
+console/geo.py — GeoIP lookups + the sidebar's GeoIP status badge.
 """
 import os
 
 from dash import html, Input, Output
 
-from SIEM.server import app
+from console.server import app
 
 # Imported, never re-derived. This used to build its own path next to
 # storage.py, so moving the database to data/ silently broke the map here while
 # the fetcher kept reporting success -- two copies of one path is how that
 # happens. geoip_fetch owns it; everyone else asks.
-from SIEM.geoip_fetch import DEFAULT_MMDB as MMDB_PATH
+from console.geoip_fetch import DEFAULT_MMDB as MMDB_PATH
 
 _geo_reader = None
 _geo_reader_loaded = False

@@ -169,7 +169,7 @@ def draw(m, out):
         ("exporters.py", "forwarding", ""),
     ], Y3, (0.03, 0.40), 0.030, OUT, face="#f0fff4")
     r4, w4 = _row(ax, [
-        ("SIEM/  Dash", "presentation", ""),
+        ("console/  Dash", "presentation", ""),
         ("api/v1  REST", "presentation", f"{L('endpoints')} endpoints"),
     ], Y3, (0.55, 0.89), 0.030, OUT, face="#f0fff4", join=False)
 
@@ -180,7 +180,7 @@ def draw(m, out):
            "one window of rows", (r1[3] + r2[0]) / 2, mid12 + 0.014)
 
     # The chain is a LIBRARY both consumers import and run in-process
-    # (SIEM/data.py:load_detections, api/services/*), so findings reach the UI
+    # (console/data.py:load_detections, api/services/*), so findings reach the UI
     # directly. Only alerts persist.
     # A COLLECTOR under the whole row, not one line off the last chip: every
     # stage is read by the UI, not just the alerting one. load_all() uses the
