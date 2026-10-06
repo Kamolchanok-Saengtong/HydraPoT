@@ -1,5 +1,5 @@
 """
-SIEM/ioc.py — Threat Intel: on-demand snapshot generation (SIEM-style, not
+console/ioc.py — Threat Intel: on-demand snapshot generation (SIEM-style, not
 live).
 
 build_iocs() runs regex extraction over every session row (~11s at 130k+
@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 
 from threat_intel.ioc_extractor import build_iocs
 
-from SIEM.data import load_raw_session_rows, load_auth_log
+from console.data import load_raw_session_rows, load_auth_log
 
 
 def _scope_filter_rows(session_rows, auth_rows, scope="all", **scope_kwargs):

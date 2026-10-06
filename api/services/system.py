@@ -149,7 +149,7 @@ def _dependencies(db_ok: bool, instance: str = "default") -> dict:
     model is loaded. Reporting the probe alongside the verdict is what stops
     this becoming the hardcoded green light it replaced.
     """
-    from SIEM.data import agent_health
+    from console.data import agent_health
 
     probes = {
         "Honeypot":    ("honeypot", "ssh port accepting connections"),

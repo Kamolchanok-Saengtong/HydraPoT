@@ -880,7 +880,7 @@ def stats(path: str = DB_PATH) -> dict:
 # tables. Harnesses put a run label in src_ip ("hrreplay_27765", "eval_sync_on")
 # where real traffic has an IP, so the label is what separates them.
 #
-# THIS LIVES HERE, not in SIEM/data.py where it started, because it is not a
+# THIS LIVES HERE, not in console/data.py where it started, because it is not a
 # presentation rule. Every layer that reads rows needs the same answer, and the
 # ones that did not have it were shipping 83% harness traffic: /export sent
 # replayed corpus to external SIEMs as observed telemetry, and /threats/iocs

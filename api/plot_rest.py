@@ -42,8 +42,8 @@ def _service_deps() -> list:
     """What the service layer actually imports -- read, not remembered.
 
     The first draft of this figure listed mitre_mapper here. No service file
-    imports it: ATT&CK names come from SIEM/investigation.py and the tagging
-    happens further in, inside SIEM/data.py and the aggregator.
+    imports it: ATT&CK names come from console/investigation.py and the tagging
+    happens further in, inside console/data.py and the aggregator.
     """
     import ast
     import pathlib
@@ -67,7 +67,7 @@ def _service_deps() -> list:
 
 # What a service function ends up running. Read out of its source, one level
 # deep, because that is where the call actually appears: `pipeline()` is
-# SIEM/data.load_detections (correlation -> detection -> severity), `iocs()`
+# console/data.load_detections (correlation -> detection -> severity), `iocs()`
 # is ioc_extractor.build_iocs, `overview()` is aggregator.aggregate_overview.
 _ENGINES = (("normalize",       r"normalize\."),
             ("alert table",     r"query_alerts|get_alert\(|alert_counts\("),

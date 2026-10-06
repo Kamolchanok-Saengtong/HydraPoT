@@ -22,7 +22,7 @@ from api.services.common import page, pipeline, iocs, overview, _inst, detection
 def mitre_activity(since=None, instance=None) -> dict:
     o = overview(since, instance)
     m = o.get("mitre") or {}
-    from SIEM.investigation import technique_tactic, technique_url
+    from console.investigation import technique_tactic, technique_url
     return {
         "tactics": m.get("tactics") or {},
         "techniques": [{

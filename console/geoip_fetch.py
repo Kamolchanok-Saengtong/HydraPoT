@@ -1,5 +1,5 @@
 """
-SIEM/geoip_fetch.py — auto-download the DB-IP City Lite geolocation database.
+console/geoip_fetch.py — auto-download the DB-IP City Lite geolocation database.
 
 The dashboard's world map needs an .mmdb geolocation DB. We use DB-IP's free
 "IP to City Lite" file (db-ip.com) — CC BY 4.0, NO account/key required, and
@@ -21,7 +21,7 @@ import urllib.request
 import urllib.error
 from datetime import datetime, timezone
 
-# Repo root, not SIEM/ -- data/ is a project directory, not a package one.
+# Repo root, not console/ -- data/ is a project directory, not a package one.
 _HERE = os.path.abspath(os.path.join(
     os.path.dirname(os.path.abspath(__file__)), ".."))
 

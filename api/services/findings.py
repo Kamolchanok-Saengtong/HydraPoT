@@ -68,7 +68,7 @@ def _detection_dto(det, include_evidence=True) -> dict:
 def _mitre_dto(technique_ids=None, tactics=None) -> dict:
     """Technique IDs with their human-readable names, from the ATT&CK catalog
     the MITRE layer already loads."""
-    from SIEM.investigation import technique_name, technique_url
+    from console.investigation import technique_name, technique_url
     tids = list(technique_ids or [])
     return {
         "tactics": list(tactics or []),
@@ -112,7 +112,7 @@ def detection_evidence(det) -> list:
             "severity": r.get("severity"),
         })
     for tid in (ev.get("technique_ids") or []):
-        from SIEM.investigation import technique_name
+        from console.investigation import technique_name
         out.append({
             "evidence_id": _evidence_id(did, "mitre", tid),
             "type": "mitre", "source": "mitre_mapper",

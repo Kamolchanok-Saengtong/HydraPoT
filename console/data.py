@@ -1,10 +1,10 @@
 """
-SIEM/data.py — dashboard-facing data-access/cache layer (Dash has no
+console/data.py — dashboard-facing data-access/cache layer (Dash has no
 st.cache_data, so this is a simple TTL cache).
 
 THIN on purpose: this module only fetches and caches raw rows from
 storage.py. It does not compute security summaries or costs — those live in
-threat_intel/aggregator.py and SIEM/cost.py respectively, imported by the
+threat_intel/aggregator.py and console/cost.py respectively, imported by the
 pages that need them.
 """
 import functools
@@ -342,7 +342,7 @@ def load_raw_session_rows() -> list:
 # The definition of "real attacker traffic" now lives in storage.py, so every
 # layer that reads rows gets the same answer. It started here, which is why
 # /export and /threats/iocs never had it -- they do not import the dashboard.
-# Re-exported under the old names; SIEM/pages/summary.py imports them from here.
+# Re-exported under the old names; console/pages/summary.py imports them from here.
 from core.storage import (EXPERIMENT_SRC_PREFIXES, EXPERIMENT_SRC_EXACT,   # noqa: E402
                      HARNESS_TOKEN_MAXLEN as _HARNESS_TOKEN_MAXLEN,
                      is_experiment_ip as _is_experiment_ip,

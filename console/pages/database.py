@@ -1,5 +1,5 @@
 """
-SIEM/pages/database.py — Database browser.
+console/pages/database.py — Database browser.
 
 Every read here goes through storage.connect_readonly(): mode=ro blocks
 writes at the engine level and an authorizer blocks ATTACH, so nothing
@@ -13,8 +13,8 @@ from dash.exceptions import PreventUpdate
 
 from core import storage
 
-from SIEM.server import app
-from SIEM.theme import TABLE_STYLE, INK
+from console.server import app
+from console.theme import TABLE_STYLE, INK
 
 DB_PAGE_SIZE = 50
 

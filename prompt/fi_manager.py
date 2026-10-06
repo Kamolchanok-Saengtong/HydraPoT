@@ -188,7 +188,7 @@ class FILogManager:
         main.py scores once per command and routes on that number. Re-scoring
         `command` here produced a SECOND score from a different string --
         main.py routes on the sudo-stripped form, this saw the raw one -- so the
-        impactful log could disagree with the row the SIEM got for the same
+        impactful log could disagree with the stored row for the same
         command. Scoring twice was also pure waste on the hot path.
 
         Falls back to scoring itself when not given, so a caller that has no

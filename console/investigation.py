@@ -1,5 +1,5 @@
 """
-SIEM/investigation.py — view model for the investigation page.
+console/investigation.py — view model for the investigation page.
 
 Turns Correlation -> Detection output into the shape an ANALYST reads, without
 touching either layer. Nothing here re-derives a fact, re-groups a
@@ -13,7 +13,7 @@ alter what a detection claims.
 
 SEVERITY IS READ, NEVER COMPUTED HERE.
 threat_intel/severity.py rates each relationship before this file sees it
-(SIEM/data.py runs Detection then Severity as separate passes). This module
+(console/data.py runs Detection then Severity as separate passes). This module
 copies the rating and the rules that produced it; it never decides a severity
 of its own. A relationship with no shared command sequence -- an indicator or
 source-address link -- comes back unrated, and stays unrated in the UI rather

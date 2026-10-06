@@ -1,5 +1,5 @@
 """
-SIEM/pages/summary.py — Summary page (SOC layout).
+console/pages/summary.py — Summary page (SOC layout).
 
 Composition: attacker map + critical alert, KPI strip, events chart, then the
 three analysis panels. The map leads because "who is hitting us, from where"
@@ -20,8 +20,8 @@ import plotly.graph_objects as go
 from dash import html, dcc, Input, Output, State, ctx, ALL, no_update
 from dash.exceptions import PreventUpdate
 
-from SIEM.server import app
-from SIEM.theme import (
+from console.server import app
+from console.theme import (
     theme_layout, GRAPH_CONFIG, GEO_CONFIG, empty_geo_fig,
     INK, INK_2, INK_3, Y_100, Y_200, Y_300, Y_400, Y_700, CARD, LINE, LINE_STRONG,
     ORANGE, CRITICAL, SUCCESS, AMBER_SCALE, AGENT_LABEL, AGENT_COLOR,
@@ -30,14 +30,14 @@ from SIEM.theme import (
     # this page's call sites unchanged.
     panel as _panel, kpi as _kpi, bars as _bars,
 )
-from SIEM.data import (load_all, load_auth_log, get_sensor_summary,
+from console.data import (load_all, load_auth_log, get_sensor_summary,
                        is_experiment_row, load_overview, load_alerts,
                        load_alert_counts)
-from SIEM.cost import estimate_savings
-from SIEM.geo import geolocate, _load_geo_reader
+from console.cost import estimate_savings
+from console.geo import geolocate, _load_geo_reader
 # Same tactic->colour mapping the MITRE page uses, so a tactic never changes
 # colour depending on which page you are looking at.
-from SIEM.pages.mitre import _tactic_color
+from console.pages.mitre import _tactic_color
 
 # Window presets. ALL is the default on purpose: this capture spans 2019 to
 # today, so every real duration preset lands on a nearly-empty window and a
@@ -116,7 +116,7 @@ ALERT_ROWS = 12
 
 def _alert_state(instance=None):
     """(counts, open alerts worst-first). One place decides "worst"."""
-    from SIEM.investigation import SEVERITY_RANK, UNRATED_RANK
+    from console.investigation import SEVERITY_RANK, UNRATED_RANK
     counts = load_alert_counts(instance)
     open_alerts = [a for a in load_alerts(instance)
                    if a.get("state") in ("new", "acknowledged")]
