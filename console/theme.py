@@ -1,5 +1,5 @@
 """
-SIEM/theme.py — color palette, Plotly/Dash chrome, and the app's CSS.
+console/theme.py — color palette, Plotly/Dash chrome, and the app's CSS.
 
 Shared across pages/*.py: colors, TABLE_STYLE, theme_layout()/GRAPH_CONFIG,
 FI_LABEL/FI_COLOR/THREAT_LEVEL, AGENT_LABEL/AGENT_COLOR. Importing this module
@@ -8,7 +8,7 @@ object somewhere, and this is the "how things look" module).
 """
 import plotly.graph_objects as go
 
-from SIEM.server import app
+from console.server import app
 
 INK         = "#171512"   # primary text / borders
 INK_2       = "#3A342C"

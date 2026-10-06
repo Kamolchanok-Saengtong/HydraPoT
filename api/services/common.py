@@ -93,7 +93,7 @@ def _inst(instance):
 
 def overview(since=None, instance=None) -> dict:
     """aggregate_overview(), unchanged. THE existing aggregation result."""
-    from SIEM.data import load_overview
+    from console.data import load_overview
     return load_overview(preset=resolve_since(since), instance=_inst(instance))
 
 
@@ -105,7 +105,7 @@ def pipeline(since=None, instance=None) -> dict:
     it, and an API that returned only `detections` would quietly assert
     otherwise.
     """
-    from SIEM.data import load_detections
+    from console.data import load_detections
     return load_detections(preset=resolve_since(since), instance=_inst(instance))
 
 

@@ -5,7 +5,7 @@ One command produces two records, and they are NOT the same shape:
 
     the row      what the attacker did, including the full response.
                  Goes to SQLite (or JSON Lines), and is what the dashboard,
-                 the SIEM pipeline and every later analysis read.
+                 the detection pipeline and every later analysis read.
     the event    the same facts WITHOUT the response, handed to the SIEM
                  exporters. Smaller on purpose: a forwarded stream does not
                  need every byte a model generated.

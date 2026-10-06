@@ -1,7 +1,7 @@
 """
-SIEM/layout.py — overall page shell: sidebar, top-level nav, and the single
+console/layout.py — overall page shell: sidebar, top-level nav, and the single
 page router. Imports every page module's build_*_page() to route to it, so
-this is deliberately the LAST SIEM module imported (see SIEM/__init__.py) --
+this is deliberately the LAST console module imported (see console/__init__.py) --
 everything it depends on must already exist.
 """
 from datetime import datetime
@@ -11,18 +11,18 @@ from dash.exceptions import PreventUpdate
 
 from core import storage
 
-from SIEM.server import app
-from SIEM.theme import SUCCESS, CRITICAL, Y_400
-from SIEM.data import clear_caches, agent_health, _cached_page
-from SIEM.geo import MMDB_PATH
-from SIEM.ioc import build_ioc_snapshot
-from SIEM.pages.summary import build_summary_page
-from SIEM.pages.live_feed import build_live_page
-from SIEM.pages.assistant import widget as assistant_widget
-from SIEM.pages.mitre import build_mitre_page
-from SIEM.pages.investigate import build_investigate_page
-from SIEM.pages.database import build_database_page
-from SIEM.pages.threat_intel import build_threat_intel_page
+from console.server import app
+from console.theme import SUCCESS, CRITICAL, Y_400
+from console.data import clear_caches, agent_health, _cached_page
+from console.geo import MMDB_PATH
+from console.ioc import build_ioc_snapshot
+from console.pages.summary import build_summary_page
+from console.pages.live_feed import build_live_page
+from console.pages.assistant import widget as assistant_widget
+from console.pages.mitre import build_mitre_page
+from console.pages.investigate import build_investigate_page
+from console.pages.database import build_database_page
+from console.pages.threat_intel import build_threat_intel_page
 
 REFRESH_MS   = 1000    # safe again: the tick now refreshes ONLY the live feed
 # For state that changes at human speed (alert acknowledgements), not machine
@@ -143,7 +143,7 @@ app.layout = html.Div(className="app-shell", children=[
     # page's open-alerts card. App-level so it survives the navigation that
     # consumes it.
     dcc.Store(id="iv-focus", data=None),
-    # Written by the clientside WebSocket handler (SIEM/clientside.py's
+    # Written by the clientside WebSocket handler (console/clientside.py's
     # real-time push callback) every time a new command lands -- purely a
     # trigger value (a counter), not the row itself. pages/live_feed.py's
     # _refresh_live_feed still does the actual fetch+render through

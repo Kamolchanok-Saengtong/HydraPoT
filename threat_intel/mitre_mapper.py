@@ -383,7 +383,7 @@ def _match_rules_cached(cmd: str) -> tuple:
     835,494 predicate evaluations, 2.0s of a 2.5s page build. The same command
     strings were being re-matched by several callers that each kept their own
     higher-level cache (aggregator._chain, ioc_extractor's per-IOC tagging,
-    SIEM/data.load_all), so none of them shared the work. Caching HERE fixes
+    console/data.load_all), so none of them shared the work. Caching HERE fixes
     every caller at once instead of adding a fourth private cache.
 
     Invalidated by load_rules(force=True) — see the cache_clear there — so

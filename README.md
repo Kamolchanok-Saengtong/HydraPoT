@@ -396,7 +396,7 @@ HydraPoT/
 ├── plugins/             scoring rules, static handlers, Cowrie filesystem
 ├── cost/                API billing and GPU electricity
 ├── threat_intel/        IOC extraction, MITRE mapping, detection, alerts
-├── SIEM/                dashboard pages and geolocation
+├── console/             dashboard pages and geolocation
 ├── api/                 REST API and the FastAPI host
 ├── guardrail/           prompt-injection defences (off by default)
 ├── honeyrouter/         reinforcement-learning router (not connected)

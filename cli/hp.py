@@ -155,7 +155,7 @@ def _serve_dashboard(host, port, debug):
     # out of the box. No-op if it's already present; never blocks startup on
     # failure (map just stays empty if offline).
     try:
-        from SIEM.geoip_fetch import ensure_geoip
+        from console.geoip_fetch import ensure_geoip
         ensure_geoip()
     except Exception:
         pass

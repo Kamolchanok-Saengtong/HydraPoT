@@ -74,7 +74,7 @@ def get_session(session_id, instance=None) -> dict:
         return None
     rows = storage.query_session(session_id, instance=_inst(instance))
 
-    from SIEM.investigation import technique_name
+    from console.investigation import technique_name
     commands = [{
         "sequence": i + 1,
         "timestamp": r.get("timestamp"),

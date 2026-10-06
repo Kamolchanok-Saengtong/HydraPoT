@@ -89,7 +89,7 @@ class AlertManager:
         consult min_fi: the routing metric has nothing to do with whether a
         correlated finding deserves a page. That judgement lives in
         session_severity.yml (how bad) and alert_rules.yml (worth waking
-        someone), which is where the rest of the SIEM already looks.
+        someone), which is where the rest of the system already looks.
 
         `alert` is a row from the alerts table: severity, title, the rule that
         raised it, and how far the behaviour spread.
