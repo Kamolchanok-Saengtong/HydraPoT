@@ -1,0 +1,1 @@
+{"session_id": "20261012_162322", "src_ip": "patch_cloud_16334", "public_ip": "patch_cloud_16334", "timestamp": "2026-10-12 16:23:26", "cmd": "cd /tmp || cd /var/run || cd /mnt || cd /root || cd /", "agent": "cloud", "response": "bash: ^X: command not found\nbash: ^C^Z^V^B^F^A^D: command not found", "fi_score": 2, "latency_ms": 4535.24, "instance": "default"}

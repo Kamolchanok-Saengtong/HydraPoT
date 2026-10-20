@@ -1,0 +1,36 @@
+{
+  "trial": 0,
+  "experiment": "B2_sync_overhead",
+  "ok": true,
+  "session_sync_on_ms": 188632.07,
+  "session_sync_off_ms": 180411.85,
+  "overhead_ms": 8220.22,
+  "overhead_pct": 4.56,
+  "session_sync_on_cost": 0.040426,
+  "session_sync_off_cost": 0.007947
+}
+
+{
+  "trial": 1,
+  "experiment": "B2_sync_overhead",
+  "ok": true,
+  "session_sync_on_ms": 198686.98,
+  "session_sync_off_ms": 177198.34,
+  "overhead_ms": 21488.64,
+  "overhead_pct": 12.13,
+  "session_sync_on_cost": 0.040455,
+  "session_sync_off_cost": 0.007832
+}
+
+{
+  "trial": 2,
+  "experiment": "B2_sync_overhead",
+  "ok": true,
+  "session_sync_on_ms": 196107.13,
+  "session_sync_off_ms": 180664.47,
+  "overhead_ms": 15442.66,
+  "overhead_pct": 8.55,
+  "session_sync_on_cost": 0.040009,
+  "session_sync_off_cost": 0.007924
+}
+

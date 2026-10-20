@@ -1,0 +1,1 @@
+{"session_id": "20261012_162950", "src_ip": "patch_cloud_227932", "public_ip": "patch_cloud_227932", "timestamp": "2026-10-12 16:29:51", "cmd": "cd /tmp || cd /var/run || cd /mnt || cd /root || cd /", "agent": "cloud", "response": "", "fi_score": 2, "latency_ms": 1244.25, "instance": "default"}

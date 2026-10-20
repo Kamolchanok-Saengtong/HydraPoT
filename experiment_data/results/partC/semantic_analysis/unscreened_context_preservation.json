@@ -1,0 +1,214 @@
+{
+  "total_pairs": 23,
+  "matched": 7,
+  "success_rate_pct": 30.43,
+  "pairs": [
+    {
+      "session_id": "27765",
+      "path": "/.nippon",
+      "creator_cmd": "/bin/busybox echo -e '\\x47\\x72\\x6f\\x70/' > //.nippon",
+      "creator_pos": 5,
+      "reader_cmd": "/bin/busybox cat //.nippon",
+      "reader_pos": 6,
+      "reader_state_has_path": false
+    },
+    {
+      "session_id": "27765",
+      "path": "/.nippon",
+      "creator_cmd": "/bin/busybox echo -e '\\x47\\x72\\x6f\\x70/' > //.nippon",
+      "creator_pos": 5,
+      "reader_cmd": "/bin/busybox rm -f //.nippon",
+      "reader_pos": 7,
+      "reader_state_has_path": false
+    },
+    {
+      "session_id": "27765",
+      "path": "/tmp/.nippon",
+      "creator_cmd": "/bin/busybox echo -e '\\x47\\x72\\x6f\\x70/tmp' > /tmp/.nippon",
+      "creator_pos": 8,
+      "reader_cmd": "/bin/busybox cat /tmp/.nippon",
+      "reader_pos": 9,
+      "reader_state_has_path": false
+    },
+    {
+      "session_id": "27765",
+      "path": "/tmp/.nippon",
+      "creator_cmd": "/bin/busybox echo -e '\\x47\\x72\\x6f\\x70/tmp' > /tmp/.nippon",
+      "creator_pos": 8,
+      "reader_cmd": "/bin/busybox rm -f /tmp/.nippon",
+      "reader_pos": 10,
+      "reader_state_has_path": false
+    },
+    {
+      "session_id": "27765",
+      "path": "/var/tmp/.nippon",
+      "creator_cmd": "/bin/busybox echo -e '\\x47\\x72\\x6f\\x70/var/tmp' > /var/tmp/.nippon",
+      "creator_pos": 11,
+      "reader_cmd": "/bin/busybox cat /var/tmp/.nippon",
+      "reader_pos": 12,
+      "reader_state_has_path": false
+    },
+    {
+      "session_id": "27765",
+      "path": "/var/tmp/.nippon",
+      "creator_cmd": "/bin/busybox echo -e '\\x47\\x72\\x6f\\x70/var/tmp' > /var/tmp/.nippon",
+      "creator_pos": 11,
+      "reader_cmd": "/bin/busybox rm -f /var/tmp/.nippon",
+      "reader_pos": 13,
+      "reader_state_has_path": false
+    },
+    {
+      "session_id": "27765",
+      "path": "/.nippon",
+      "creator_cmd": "/bin/busybox echo -e '\\x47\\x72\\x6f\\x70/' > //.nippon",
+      "creator_pos": 14,
+      "reader_cmd": "/bin/busybox cat //.nippon",
+      "reader_pos": 15,
+      "reader_state_has_path": false
+    },
+    {
+      "session_id": "27765",
+      "path": "/.nippon",
+      "creator_cmd": "/bin/busybox echo -e '\\x47\\x72\\x6f\\x70/' > //.nippon",
+      "creator_pos": 14,
+      "reader_cmd": "/bin/busybox rm -f //.nippon",
+      "reader_pos": 16,
+      "reader_state_has_path": false
+    },
+    {
+      "session_id": "27765",
+      "path": "/dev/.nippon",
+      "creator_cmd": "/bin/busybox echo -e '\\x47\\x72\\x6f\\x70/dev' > /dev/.nippon",
+      "creator_pos": 20,
+      "reader_cmd": "/bin/busybox cat /dev/.nippon",
+      "reader_pos": 21,
+      "reader_state_has_path": false
+    },
+    {
+      "session_id": "27765",
+      "path": "/dev/.nippon",
+      "creator_cmd": "/bin/busybox echo -e '\\x47\\x72\\x6f\\x70/dev' > /dev/.nippon",
+      "creator_pos": 20,
+      "reader_cmd": "/bin/busybox rm -f /dev/.nippon",
+      "reader_pos": 22,
+      "reader_state_has_path": false
+    },
+    {
+      "session_id": "27765",
+      "path": "/dev/mqueue/.nippon",
+      "creator_cmd": "/bin/busybox echo -e '\\x47\\x72\\x6f\\x70/dev/mqueue' > /dev/mqueue/.nippon",
+      "creator_pos": 68,
+      "reader_cmd": "/bin/busybox cat /dev/mqueue/.nippon",
+      "reader_pos": 69,
+      "reader_state_has_path": false
+    },
+    {
+      "session_id": "27765",
+      "path": "/dev/mqueue/.nippon",
+      "creator_cmd": "/bin/busybox echo -e '\\x47\\x72\\x6f\\x70/dev/mqueue' > /dev/mqueue/.nippon",
+      "creator_pos": 68,
+      "reader_cmd": "/bin/busybox rm -f /dev/mqueue/.nippon",
+      "reader_pos": 70,
+      "reader_state_has_path": false
+    },
+    {
+      "session_id": "27765",
+      "path": "/dev/shm/.nippon",
+      "creator_cmd": "/bin/busybox echo -e '\\x47\\x72\\x6f\\x70/dev/shm' > /dev/shm/.nippon",
+      "creator_pos": 80,
+      "reader_cmd": "/bin/busybox cat /dev/shm/.nippon",
+      "reader_pos": 81,
+      "reader_state_has_path": false
+    },
+    {
+      "session_id": "27765",
+      "path": "/dev/shm/.nippon",
+      "creator_cmd": "/bin/busybox echo -e '\\x47\\x72\\x6f\\x70/dev/shm' > /dev/shm/.nippon",
+      "creator_pos": 80,
+      "reader_cmd": "/bin/busybox rm -f /dev/shm/.nippon",
+      "reader_pos": 82,
+      "reader_state_has_path": false
+    },
+    {
+      "session_id": "6028",
+      "path": "/.nippon",
+      "creator_cmd": "echo -e '\\x47\\x72\\x6f\\x70/' > //.nippon",
+      "creator_pos": 8,
+      "reader_cmd": "cat //.nippon",
+      "reader_pos": 9,
+      "reader_state_has_path": true
+    },
+    {
+      "session_id": "6028",
+      "path": "/tmp/.nippon",
+      "creator_cmd": "echo -e '\\x47\\x72\\x6f\\x70/tmp' > /tmp/.nippon",
+      "creator_pos": 11,
+      "reader_cmd": "cat /tmp/.nippon",
+      "reader_pos": 12,
+      "reader_state_has_path": true
+    },
+    {
+      "session_id": "6028",
+      "path": "/var/tmp/.nippon",
+      "creator_cmd": "echo -e '\\x47\\x72\\x6f\\x70/var/tmp' > /var/tmp/.nippon",
+      "creator_pos": 14,
+      "reader_cmd": "cat /var/tmp/.nippon",
+      "reader_pos": 15,
+      "reader_state_has_path": true
+    },
+    {
+      "session_id": "6028",
+      "path": "/.nippon",
+      "creator_cmd": "echo -e '\\x47\\x72\\x6f\\x70/' > //.nippon",
+      "creator_pos": 17,
+      "reader_cmd": "cat //.nippon",
+      "reader_pos": 18,
+      "reader_state_has_path": true
+    },
+    {
+      "session_id": "6028",
+      "path": "/lib/init/rw/.nippon",
+      "creator_cmd": "echo -e '\\x47\\x72\\x6f\\x70/lib/init/rw' > /lib/init/rw/.nippon",
+      "creator_pos": 20,
+      "reader_cmd": "cat /lib/init/rw/.nippon",
+      "reader_pos": 21,
+      "reader_state_has_path": true
+    },
+    {
+      "session_id": "6028",
+      "path": "/dev/.nippon",
+      "creator_cmd": "echo -e '\\x47\\x72\\x6f\\x70/dev' > /dev/.nippon",
+      "creator_pos": 29,
+      "reader_cmd": "cat /dev/.nippon",
+      "reader_pos": 30,
+      "reader_state_has_path": true
+    },
+    {
+      "session_id": "6028",
+      "path": "/dev/shm/.nippon",
+      "creator_cmd": "echo -e '\\x47\\x72\\x6f\\x70/dev/shm' > /dev/shm/.nippon",
+      "creator_pos": 32,
+      "reader_cmd": "cat /dev/shm/.nippon",
+      "reader_pos": 33,
+      "reader_state_has_path": true
+    },
+    {
+      "session_id": "6028",
+      "path": "usb_ver",
+      "creator_cmd": "echo -ne '\\x00\\x00\\x00\\x00\\x01\\x00\\x00\\x00\\x00\\x00\\x00\\x00' >> usb_ver",
+      "creator_pos": 106,
+      "reader_cmd": "chmod 777 usb_ver",
+      "reader_pos": 114,
+      "reader_state_has_path": false
+    },
+    {
+      "session_id": "27661",
+      "path": "/root/.ssh",
+      "creator_cmd": "LC_ALL=C mkdir -p ~/.ssh",
+      "creator_pos": 16,
+      "reader_cmd": "LC_ALL=C chmod 700 ~/.ssh",
+      "reader_pos": 17,
+      "reader_state_has_path": false
+    }
+  ]
+}

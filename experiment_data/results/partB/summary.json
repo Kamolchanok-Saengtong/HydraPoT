@@ -1,0 +1,664 @@
+{
+  "B1_context_preservation": {
+    "sync_off": {
+      "cloud→cloud": {
+        "propagation_rate_pct": 0.0,
+        "propagated": 0,
+        "output_match_rate_pct": 12.64,
+        "success_rate_pct": 12.64,
+        "matched": 11,
+        "total": 87,
+        "trials": 3,
+        "by_trial": {
+          "0": {
+            "success_rate_pct": 10.34,
+            "matched": 3,
+            "total": 29
+          },
+          "1": {
+            "success_rate_pct": 6.9,
+            "matched": 2,
+            "total": 29
+          },
+          "2": {
+            "success_rate_pct": 20.69,
+            "matched": 6,
+            "total": 29
+          }
+        },
+        "by_fi": {
+          "1": {
+            "success_rate_pct": 12.64,
+            "matched": 11,
+            "total": 87
+          }
+        }
+      },
+      "cloud→cowrie": {
+        "propagation_rate_pct": 100.0,
+        "propagated": 87,
+        "output_match_rate_pct": 13.79,
+        "success_rate_pct": 13.79,
+        "matched": 12,
+        "total": 87,
+        "trials": 3,
+        "by_trial": {
+          "0": {
+            "success_rate_pct": 24.14,
+            "matched": 7,
+            "total": 29
+          },
+          "1": {
+            "success_rate_pct": 13.79,
+            "matched": 4,
+            "total": 29
+          },
+          "2": {
+            "success_rate_pct": 3.45,
+            "matched": 1,
+            "total": 29
+          }
+        },
+        "by_fi": {
+          "1": {
+            "success_rate_pct": 13.79,
+            "matched": 12,
+            "total": 87
+          }
+        }
+      },
+      "cloud→on_device": {
+        "propagation_rate_pct": 0.0,
+        "propagated": 0,
+        "output_match_rate_pct": 3.45,
+        "success_rate_pct": 3.45,
+        "matched": 3,
+        "total": 87,
+        "trials": 3,
+        "by_trial": {
+          "0": {
+            "success_rate_pct": 3.45,
+            "matched": 1,
+            "total": 29
+          },
+          "1": {
+            "success_rate_pct": 3.45,
+            "matched": 1,
+            "total": 29
+          },
+          "2": {
+            "success_rate_pct": 3.45,
+            "matched": 1,
+            "total": 29
+          }
+        },
+        "by_fi": {
+          "1": {
+            "success_rate_pct": 3.45,
+            "matched": 3,
+            "total": 87
+          }
+        }
+      },
+      "cowrie→cloud": {
+        "propagation_rate_pct": 0.0,
+        "propagated": 0,
+        "output_match_rate_pct": 14.94,
+        "success_rate_pct": 14.94,
+        "matched": 13,
+        "total": 87,
+        "trials": 3,
+        "by_trial": {
+          "0": {
+            "success_rate_pct": 10.34,
+            "matched": 3,
+            "total": 29
+          },
+          "1": {
+            "success_rate_pct": 17.24,
+            "matched": 5,
+            "total": 29
+          },
+          "2": {
+            "success_rate_pct": 17.24,
+            "matched": 5,
+            "total": 29
+          }
+        },
+        "by_fi": {
+          "1": {
+            "success_rate_pct": 14.94,
+            "matched": 13,
+            "total": 87
+          }
+        }
+      },
+      "cowrie→cowrie": {
+        "propagation_rate_pct": 100.0,
+        "propagated": 87,
+        "output_match_rate_pct": 100.0,
+        "success_rate_pct": 100.0,
+        "matched": 87,
+        "total": 87,
+        "trials": 3,
+        "by_trial": {
+          "0": {
+            "success_rate_pct": 100.0,
+            "matched": 29,
+            "total": 29
+          },
+          "1": {
+            "success_rate_pct": 100.0,
+            "matched": 29,
+            "total": 29
+          },
+          "2": {
+            "success_rate_pct": 100.0,
+            "matched": 29,
+            "total": 29
+          }
+        },
+        "by_fi": {
+          "1": {
+            "success_rate_pct": 100.0,
+            "matched": 87,
+            "total": 87
+          }
+        }
+      },
+      "cowrie→on_device": {
+        "propagation_rate_pct": 0.0,
+        "propagated": 0,
+        "output_match_rate_pct": 3.45,
+        "success_rate_pct": 3.45,
+        "matched": 3,
+        "total": 87,
+        "trials": 3,
+        "by_trial": {
+          "0": {
+            "success_rate_pct": 3.45,
+            "matched": 1,
+            "total": 29
+          },
+          "1": {
+            "success_rate_pct": 3.45,
+            "matched": 1,
+            "total": 29
+          },
+          "2": {
+            "success_rate_pct": 3.45,
+            "matched": 1,
+            "total": 29
+          }
+        },
+        "by_fi": {
+          "1": {
+            "success_rate_pct": 3.45,
+            "matched": 3,
+            "total": 87
+          }
+        }
+      },
+      "on_device→cloud": {
+        "propagation_rate_pct": 0.0,
+        "propagated": 0,
+        "output_match_rate_pct": 10.34,
+        "success_rate_pct": 10.34,
+        "matched": 9,
+        "total": 87,
+        "trials": 3,
+        "by_trial": {
+          "0": {
+            "success_rate_pct": 10.34,
+            "matched": 3,
+            "total": 29
+          },
+          "1": {
+            "success_rate_pct": 10.34,
+            "matched": 3,
+            "total": 29
+          },
+          "2": {
+            "success_rate_pct": 10.34,
+            "matched": 3,
+            "total": 29
+          }
+        },
+        "by_fi": {
+          "1": {
+            "success_rate_pct": 10.34,
+            "matched": 9,
+            "total": 87
+          }
+        }
+      },
+      "on_device→cowrie": {
+        "propagation_rate_pct": 100.0,
+        "propagated": 87,
+        "output_match_rate_pct": 3.45,
+        "success_rate_pct": 3.45,
+        "matched": 3,
+        "total": 87,
+        "trials": 3,
+        "by_trial": {
+          "0": {
+            "success_rate_pct": 3.45,
+            "matched": 1,
+            "total": 29
+          },
+          "1": {
+            "success_rate_pct": 3.45,
+            "matched": 1,
+            "total": 29
+          },
+          "2": {
+            "success_rate_pct": 3.45,
+            "matched": 1,
+            "total": 29
+          }
+        },
+        "by_fi": {
+          "1": {
+            "success_rate_pct": 3.45,
+            "matched": 3,
+            "total": 87
+          }
+        }
+      },
+      "on_device→on_device": {
+        "propagation_rate_pct": 0.0,
+        "propagated": 0,
+        "output_match_rate_pct": 3.45,
+        "success_rate_pct": 3.45,
+        "matched": 3,
+        "total": 87,
+        "trials": 3,
+        "by_trial": {
+          "0": {
+            "success_rate_pct": 3.45,
+            "matched": 1,
+            "total": 29
+          },
+          "1": {
+            "success_rate_pct": 3.45,
+            "matched": 1,
+            "total": 29
+          },
+          "2": {
+            "success_rate_pct": 3.45,
+            "matched": 1,
+            "total": 29
+          }
+        },
+        "by_fi": {
+          "1": {
+            "success_rate_pct": 3.45,
+            "matched": 3,
+            "total": 87
+          }
+        }
+      }
+    },
+    "sync_on": {
+      "cloud→cloud": {
+        "propagation_rate_pct": 0.0,
+        "propagated": 0,
+        "output_match_rate_pct": 100.0,
+        "success_rate_pct": 100.0,
+        "matched": 87,
+        "total": 87,
+        "trials": 3,
+        "by_trial": {
+          "0": {
+            "success_rate_pct": 100.0,
+            "matched": 29,
+            "total": 29
+          },
+          "1": {
+            "success_rate_pct": 100.0,
+            "matched": 29,
+            "total": 29
+          },
+          "2": {
+            "success_rate_pct": 100.0,
+            "matched": 29,
+            "total": 29
+          }
+        },
+        "by_fi": {
+          "1": {
+            "success_rate_pct": 100.0,
+            "matched": 87,
+            "total": 87
+          }
+        }
+      },
+      "cloud→cowrie": {
+        "propagation_rate_pct": 100.0,
+        "propagated": 87,
+        "output_match_rate_pct": 100.0,
+        "success_rate_pct": 100.0,
+        "matched": 87,
+        "total": 87,
+        "trials": 3,
+        "by_trial": {
+          "0": {
+            "success_rate_pct": 100.0,
+            "matched": 29,
+            "total": 29
+          },
+          "1": {
+            "success_rate_pct": 100.0,
+            "matched": 29,
+            "total": 29
+          },
+          "2": {
+            "success_rate_pct": 100.0,
+            "matched": 29,
+            "total": 29
+          }
+        },
+        "by_fi": {
+          "1": {
+            "success_rate_pct": 100.0,
+            "matched": 87,
+            "total": 87
+          }
+        }
+      },
+      "cloud→on_device": {
+        "propagation_rate_pct": 0.0,
+        "propagated": 0,
+        "output_match_rate_pct": 88.51,
+        "success_rate_pct": 88.51,
+        "matched": 77,
+        "total": 87,
+        "trials": 3,
+        "by_trial": {
+          "0": {
+            "success_rate_pct": 89.66,
+            "matched": 26,
+            "total": 29
+          },
+          "1": {
+            "success_rate_pct": 86.21,
+            "matched": 25,
+            "total": 29
+          },
+          "2": {
+            "success_rate_pct": 89.66,
+            "matched": 26,
+            "total": 29
+          }
+        },
+        "by_fi": {
+          "1": {
+            "success_rate_pct": 88.51,
+            "matched": 77,
+            "total": 87
+          }
+        }
+      },
+      "cowrie→cloud": {
+        "propagation_rate_pct": 0.0,
+        "propagated": 0,
+        "output_match_rate_pct": 98.85,
+        "success_rate_pct": 98.85,
+        "matched": 86,
+        "total": 87,
+        "trials": 3,
+        "by_trial": {
+          "0": {
+            "success_rate_pct": 100.0,
+            "matched": 29,
+            "total": 29
+          },
+          "1": {
+            "success_rate_pct": 100.0,
+            "matched": 29,
+            "total": 29
+          },
+          "2": {
+            "success_rate_pct": 96.55,
+            "matched": 28,
+            "total": 29
+          }
+        },
+        "by_fi": {
+          "1": {
+            "success_rate_pct": 98.85,
+            "matched": 86,
+            "total": 87
+          }
+        }
+      },
+      "cowrie→cowrie": {
+        "propagation_rate_pct": 100.0,
+        "propagated": 87,
+        "output_match_rate_pct": 100.0,
+        "success_rate_pct": 100.0,
+        "matched": 87,
+        "total": 87,
+        "trials": 3,
+        "by_trial": {
+          "0": {
+            "success_rate_pct": 100.0,
+            "matched": 29,
+            "total": 29
+          },
+          "1": {
+            "success_rate_pct": 100.0,
+            "matched": 29,
+            "total": 29
+          },
+          "2": {
+            "success_rate_pct": 100.0,
+            "matched": 29,
+            "total": 29
+          }
+        },
+        "by_fi": {
+          "1": {
+            "success_rate_pct": 100.0,
+            "matched": 87,
+            "total": 87
+          }
+        }
+      },
+      "cowrie→on_device": {
+        "propagation_rate_pct": 0.0,
+        "propagated": 0,
+        "output_match_rate_pct": 85.06,
+        "success_rate_pct": 85.06,
+        "matched": 74,
+        "total": 87,
+        "trials": 3,
+        "by_trial": {
+          "0": {
+            "success_rate_pct": 86.21,
+            "matched": 25,
+            "total": 29
+          },
+          "1": {
+            "success_rate_pct": 82.76,
+            "matched": 24,
+            "total": 29
+          },
+          "2": {
+            "success_rate_pct": 86.21,
+            "matched": 25,
+            "total": 29
+          }
+        },
+        "by_fi": {
+          "1": {
+            "success_rate_pct": 85.06,
+            "matched": 74,
+            "total": 87
+          }
+        }
+      },
+      "on_device→cloud": {
+        "propagation_rate_pct": 0.0,
+        "propagated": 0,
+        "output_match_rate_pct": 98.85,
+        "success_rate_pct": 98.85,
+        "matched": 86,
+        "total": 87,
+        "trials": 3,
+        "by_trial": {
+          "0": {
+            "success_rate_pct": 100.0,
+            "matched": 29,
+            "total": 29
+          },
+          "1": {
+            "success_rate_pct": 100.0,
+            "matched": 29,
+            "total": 29
+          },
+          "2": {
+            "success_rate_pct": 96.55,
+            "matched": 28,
+            "total": 29
+          }
+        },
+        "by_fi": {
+          "1": {
+            "success_rate_pct": 98.85,
+            "matched": 86,
+            "total": 87
+          }
+        }
+      },
+      "on_device→cowrie": {
+        "propagation_rate_pct": 100.0,
+        "propagated": 87,
+        "output_match_rate_pct": 100.0,
+        "success_rate_pct": 100.0,
+        "matched": 87,
+        "total": 87,
+        "trials": 3,
+        "by_trial": {
+          "0": {
+            "success_rate_pct": 100.0,
+            "matched": 29,
+            "total": 29
+          },
+          "1": {
+            "success_rate_pct": 100.0,
+            "matched": 29,
+            "total": 29
+          },
+          "2": {
+            "success_rate_pct": 100.0,
+            "matched": 29,
+            "total": 29
+          }
+        },
+        "by_fi": {
+          "1": {
+            "success_rate_pct": 100.0,
+            "matched": 87,
+            "total": 87
+          }
+        }
+      },
+      "on_device→on_device": {
+        "propagation_rate_pct": 0.0,
+        "propagated": 0,
+        "output_match_rate_pct": 89.66,
+        "success_rate_pct": 89.66,
+        "matched": 78,
+        "total": 87,
+        "trials": 3,
+        "by_trial": {
+          "0": {
+            "success_rate_pct": 89.66,
+            "matched": 26,
+            "total": 29
+          },
+          "1": {
+            "success_rate_pct": 89.66,
+            "matched": 26,
+            "total": 29
+          },
+          "2": {
+            "success_rate_pct": 89.66,
+            "matched": 26,
+            "total": 29
+          }
+        },
+        "by_fi": {
+          "1": {
+            "success_rate_pct": 89.66,
+            "matched": 78,
+            "total": 87
+          }
+        }
+      }
+    },
+    "comparison": {
+      "cloud→cloud": {
+        "sync_on_pct": 100.0,
+        "sync_off_pct": 12.64,
+        "delta_pct": 87.36
+      },
+      "cloud→cowrie": {
+        "sync_on_pct": 100.0,
+        "sync_off_pct": 13.79,
+        "delta_pct": 86.21
+      },
+      "cloud→on_device": {
+        "sync_on_pct": 88.51,
+        "sync_off_pct": 3.45,
+        "delta_pct": 85.06
+      },
+      "cowrie→cloud": {
+        "sync_on_pct": 98.85,
+        "sync_off_pct": 14.94,
+        "delta_pct": 83.91
+      },
+      "cowrie→cowrie": {
+        "sync_on_pct": 100.0,
+        "sync_off_pct": 100.0,
+        "delta_pct": 0.0
+      },
+      "cowrie→on_device": {
+        "sync_on_pct": 85.06,
+        "sync_off_pct": 3.45,
+        "delta_pct": 81.61
+      },
+      "on_device→cloud": {
+        "sync_on_pct": 98.85,
+        "sync_off_pct": 10.34,
+        "delta_pct": 88.51
+      },
+      "on_device→cowrie": {
+        "sync_on_pct": 100.0,
+        "sync_off_pct": 3.45,
+        "delta_pct": 96.55
+      },
+      "on_device→on_device": {
+        "sync_on_pct": 89.66,
+        "sync_off_pct": 3.45,
+        "delta_pct": 86.21
+      }
+    }
+  },
+  "B2_sync_overhead": {
+    "trials": 3,
+    "mean_session_sync_on_ms": 194475.39,
+    "mean_session_sync_off_ms": 179424.89,
+    "mean_overhead_ms": 15050.51,
+    "mean_overhead_pct": 8.41,
+    "stdev_overhead_ms": 6642.9,
+    "min_overhead_ms": 8220.22,
+    "max_overhead_ms": 21488.64,
+    "per_trial_overhead_ms": [
+      8220.22,
+      21488.64,
+      15442.66
+    ]
+  }
+}

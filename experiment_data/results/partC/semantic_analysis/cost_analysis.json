@@ -1,0 +1,33 @@
+{
+  "routing": {
+    "cowrie": 1478,
+    "on_device": 236,
+    "cloud": 465
+  },
+  "per_arm": {
+    "cowrie": {
+      "cloud_usd": 0.0,
+      "elec_kwh": 0.0,
+      "elec_thb": 0.0,
+      "total_usd": 0.0
+    },
+    "on_device": {
+      "cloud_usd": 0.0,
+      "elec_kwh": 0.2201385906773331,
+      "elec_thb": 0.5915,
+      "total_usd": 0.016900000000000002
+    },
+    "cloud": {
+      "cloud_usd": 1.2743360377999982,
+      "elec_kwh": 0.0,
+      "elec_thb": 0.0,
+      "total_usd": 1.2743360377999982
+    },
+    "honeyrouter": {
+      "cloud_usd": 0.27876164760000033,
+      "elec_kwh": 0.02389927867125001,
+      "elec_thb": 0.0642,
+      "total_usd": 0.28059593331428606
+    }
+  }
+}
