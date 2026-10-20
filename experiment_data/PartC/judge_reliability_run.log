@@ -1,0 +1,117 @@
+[llm_judge] 7 key(s) for API_KEY
+[llm_judge] reliability check: 2124 to judge (55 already done, resuming into experiment_data/results/partC/fidelity/judge/judge_reliability_openai_gpt-6-luna.jsonl)
+[llm_judge] 20/2124 judged
+[llm_judge] 40/2124 judged
+[llm_judge] 60/2124 judged
+[llm_judge] 80/2124 judged
+[llm_judge] 100/2124 judged
+[llm_judge] 120/2124 judged
+[llm_judge] 140/2124 judged
+[llm_judge] 160/2124 judged
+[llm_judge] 180/2124 judged
+[llm_judge] 200/2124 judged
+[llm_judge] 220/2124 judged
+[llm_judge] 240/2124 judged
+[llm_judge] 260/2124 judged
+[llm_judge] 280/2124 judged
+[llm_judge] 300/2124 judged
+[llm_judge] 320/2124 judged
+[llm_judge] 340/2124 judged
+[llm_judge] 360/2124 judged
+[llm_judge] 380/2124 judged
+[llm_judge] 400/2124 judged
+[llm_judge] 420/2124 judged
+[llm_judge] 440/2124 judged
+[llm_judge] 460/2124 judged
+[llm_judge] 480/2124 judged
+[llm_judge] 500/2124 judged
+[llm_judge] 520/2124 judged
+[llm_judge] 540/2124 judged
+[llm_judge] 560/2124 judged
+[llm_judge] 580/2124 judged
+[llm_judge] 600/2124 judged
+[llm_judge] 620/2124 judged
+[llm_judge] 640/2124 judged
+[llm_judge] 660/2124 judged
+[llm_judge] 680/2124 judged
+[llm_judge] 700/2124 judged
+[llm_judge] 720/2124 judged
+[llm_judge] 740/2124 judged
+[llm_judge] 760/2124 judged
+[llm_judge] 780/2124 judged
+[llm_judge] 800/2124 judged
+[llm_judge] 820/2124 judged
+[llm_judge] 840/2124 judged
+[llm_judge] 860/2124 judged
+[llm_judge] 880/2124 judged
+[llm_judge] 900/2124 judged
+[llm_judge] 920/2124 judged
+[llm_judge] 940/2124 judged
+[llm_judge] 960/2124 judged
+[llm_judge] 980/2124 judged
+[llm_judge] 1000/2124 judged
+[llm_judge] 1020/2124 judged
+[llm_judge] 1040/2124 judged
+[llm_judge] 1060/2124 judged
+[llm_judge] 1080/2124 judged
+[llm_judge] 1100/2124 judged
+[llm_judge] 1120/2124 judged
+[llm_judge] 1140/2124 judged
+[llm_judge] 1160/2124 judged
+[llm_judge] 1180/2124 judged
+[llm_judge] 1200/2124 judged
+[llm_judge] 1220/2124 judged
+[llm_judge] 1240/2124 judged
+[llm_judge] 1260/2124 judged
+[llm_judge] 1280/2124 judged
+[llm_judge] 1300/2124 judged
+[llm_judge] 1320/2124 judged
+[llm_judge] 1340/2124 judged
+[llm_judge] 1360/2124 judged
+[llm_judge] 1380/2124 judged
+[llm_judge] 1400/2124 judged
+[llm_judge] 1420/2124 judged
+[llm_judge] 1440/2124 judged
+[llm_judge] 1460/2124 judged
+[llm_judge] 1480/2124 judged
+[llm_judge] 1500/2124 judged
+[llm_judge] 1520/2124 judged
+[llm_judge] 1540/2124 judged
+[llm_judge] 1560/2124 judged
+[llm_judge] 1580/2124 judged
+[llm_judge] 1600/2124 judged
+[llm_judge] 1620/2124 judged
+[llm_judge] 1640/2124 judged
+[llm_judge] 1660/2124 judged
+[llm_judge] 1680/2124 judged
+[llm_judge] 1700/2124 judged
+[llm_judge] 1720/2124 judged
+[llm_judge] 1740/2124 judged
+[llm_judge] 1760/2124 judged
+[llm_judge] 1780/2124 judged
+[llm_judge] 1800/2124 judged
+[llm_judge] 1820/2124 judged
+[llm_judge] 1840/2124 judged
+[llm_judge] 1860/2124 judged
+[llm_judge] 1880/2124 judged
+[llm_judge] 1900/2124 judged
+[llm_judge] 1920/2124 judged
+[llm_judge] 1940/2124 judged
+[llm_judge] 1960/2124 judged
+[llm_judge] 1980/2124 judged
+[llm_judge] 2000/2124 judged
+[llm_judge] 2020/2124 judged
+[llm_judge] 2040/2124 judged
+[llm_judge] 2060/2124 judged
+[llm_judge] 2080/2124 judged
+[llm_judge] 2100/2124 judged
+[llm_judge] 2120/2124 judged
+
+[llm_judge] RELIABILITY CHECK — judge: openai/gpt-6-luna, n=2174
+  mean score: 4.70 / 5
+  1: ###################################################################### (70)
+  2: ######################################################################## (72)
+  3: ###################################### (38)
+  4: ####################################################################### (71)
+  5: ################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################### (1923)
+  -> if mean is well below ~4.5, treat this judge's `score` mode results with caution.
