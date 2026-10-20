@@ -2,7 +2,6 @@ archive_code/
 data/
 evaluation/
 production/
-experiment_data/
 
 # Now lives at data/geoip.mmdb, already covered by the data/ rule above. Kept
 # so an old checkout's root-level copy stays ignored until it is migrated.
@@ -76,3 +75,13 @@ threat_intel/.sigma_cache/
 # Generated router artifacts — weights, embeddings, identity vectors, state.
 # Regenerable with: python honeyrouter/cli.py --train
 honeyrouter/out/
+feedback/
+
+# Third-party clones — own git history, not ours to track. Re-clone with:
+# git clone https://github.com/Bashfuscator/Bashfuscator.git third_party/Bashfuscator
+third_party/
+
+# Scripts confirmed unused by the current pipeline/results — kept for
+# history, not published
+experiment_data/archive/
+

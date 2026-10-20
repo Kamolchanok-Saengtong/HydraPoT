@@ -1,0 +1,186 @@
+[partC] run_id=20261010_113359  sessions_file=/mnt/data-partition/honeypot/dataset/partC_stateful_sessions.json  trials=1  arms=('cowrie', 'on_device', 'cloud', 'honeyrouter')
+[partC] workload: 109 sessions, 2179 commands  breakdown={'ml4net_full.json': 2769}
+[partC] cloud arm -> deepseek/deepseek-v4.1-flash @ https://ai.psu.blue/anthropic  (7 key(s) pooled)
+[partC] run_id=20261010_120011  sessions_file=/mnt/data-partition/honeypot/dataset/partC_stateful_sessions.json  trials=1  arms=('cowrie', 'on_device', 'cloud', 'honeyrouter')
+[partC] workload: 109 sessions, 2179 commands  breakdown={'ml4net_full.json': 2769}
+[partC] cloud arm -> deepseek/deepseek-v4-flash-0731 @ https://ai.psu.blue/v1  (7 key(s) pooled)
+[partC] 10/109 sessions (trial 0)  elapsed=8944s  cloud_cost_so_far=$0.4751
+[partC] 20/109 sessions (trial 0)  elapsed=12746s  cloud_cost_so_far=$0.6260
+[partC] 30/109 sessions (trial 0)  elapsed=16121s  cloud_cost_so_far=$0.7638
+[partC] 40/109 sessions (trial 0)  elapsed=19016s  cloud_cost_so_far=$0.8824
+[partC] 50/109 sessions (trial 0)  elapsed=22365s  cloud_cost_so_far=$1.0582
+[partC] 60/109 sessions (trial 0)  elapsed=23543s  cloud_cost_so_far=$1.1312
+[partC] arm error on './': list index out of range
+[partC] 70/109 sessions (trial 0)  elapsed=26412s  cloud_cost_so_far=$1.2403
+[partC] 80/109 sessions (trial 0)  elapsed=29252s  cloud_cost_so_far=$1.3716
+[partC] 90/109 sessions (trial 0)  elapsed=32147s  cloud_cost_so_far=$1.5415
+[partC] 100/109 sessions (trial 0)  elapsed=32815s  cloud_cost_so_far=$1.5848
+
+========================================================================
+  Part C Summary — run_id: 20261010_120011
+========================================================================
+  sessions: 109   commands: 2179   trials: 1
+
+  arm           records     ok     avg_ms       tokens       cost
+  --------------------------------------------------------------
+  cowrie           2179   2179     525.3ms            0 $   0.0000
+  on_device        2179   2179    3221.7ms    9,450,279 $   0.0000
+  cloud            2179   2179   10167.2ms   12,126,956 $   1.4594
+  honeyrouter      2179   2178    1255.0ms    2,327,212 $   0.1406
+
+  total cloud cost: $1.5999
+  results -> /mnt/data-partition/honeypot/experiment_data/PartC/../results/partC/fidelity
+========================================================================
+
+[partC] run_id=20261011_112031  sessions_file=/mnt/data-partition/honeypot/dataset/partC_stateful_sessions.json  trials=1  arms=('cloud', 'honeyrouter')
+[partC] workload: 109 sessions, 2179 commands  breakdown={'ml4net_full.json': 2769}
+[partC] cloud arm -> openai/gpt-4o-mini @ https://ai.psu.blue/v1  (7 key(s) pooled)
+[partC] 10/109 sessions (trial 0)  elapsed=1875s  cloud_cost_so_far=$0.3221
+[partC] 20/109 sessions (trial 0)  elapsed=2498s  cloud_cost_so_far=$0.4177
+[partC] 30/109 sessions (trial 0)  elapsed=2957s  cloud_cost_so_far=$0.5025
+[partC] 40/109 sessions (trial 0)  elapsed=3373s  cloud_cost_so_far=$0.5894
+[partC] 50/109 sessions (trial 0)  elapsed=3889s  cloud_cost_so_far=$0.7177
+[partC] 60/109 sessions (trial 0)  elapsed=4110s  cloud_cost_so_far=$0.7585
+[partC] arm error on './': list index out of range
+[partC] 70/109 sessions (trial 0)  elapsed=4407s  cloud_cost_so_far=$0.8173
+[partC] 80/109 sessions (trial 0)  elapsed=4832s  cloud_cost_so_far=$0.8852
+[partC] 90/109 sessions (trial 0)  elapsed=5245s  cloud_cost_so_far=$0.9861
+[partC] 100/109 sessions (trial 0)  elapsed=5355s  cloud_cost_so_far=$1.0130
+
+========================================================================
+  Part C Summary — run_id: 20261011_112031
+========================================================================
+  sessions: 109   commands: 2179   trials: 1
+
+  arm           records     ok     avg_ms       tokens       cost
+  --------------------------------------------------------------
+  cloud            2179   2179    1730.9ms    8,675,407 $   0.9595
+  honeyrouter      2179   2178     744.0ms    1,603,184 $   0.0548
+
+  total cloud cost: $1.0143
+  results -> /mnt/data-partition/honeypot/experiment_data/PartC/../results/partC/fidelity
+========================================================================
+
+[partC] run_id=20261011_155235  sessions_file=/mnt/data-partition/honeypot/dataset/partC_stateful_sessions.json  trials=1  arms=('cloud', 'honeyrouter')
+[partC] workload: 109 sessions, 2179 commands  breakdown={'ml4net_full.json': 2769}
+[partC] cloud arm -> openai/gpt-4o-mini @ https://ai.psu.blue/v1  (7 key(s) pooled)
+[partC] run_id=20261011_155417  sessions_file=/mnt/data-partition/honeypot/dataset/partC_stateful_sessions.json  trials=1  arms=('cloud', 'honeyrouter')
+[partC] workload: 109 sessions, 2179 commands  breakdown={'ml4net_full.json': 2769}
+[partC] cloud arm -> deepseek/deepseek-v4.1-flash @ https://ai.psu.blue/v1  (7 key(s) pooled)
+[partC] 10/109 sessions (trial 0)  elapsed=2713s  cloud_cost_so_far=$0.3317
+[partC] 20/109 sessions (trial 0)  elapsed=3516s  cloud_cost_so_far=$0.4378
+[partC] 30/109 sessions (trial 0)  elapsed=4210s  cloud_cost_so_far=$0.5340
+[partC] 40/109 sessions (trial 0)  elapsed=4822s  cloud_cost_so_far=$0.6152
+[partC] 50/109 sessions (trial 0)  elapsed=5577s  cloud_cost_so_far=$0.7420
+[partC] 60/109 sessions (trial 0)  elapsed=6065s  cloud_cost_so_far=$0.7903
+[partC] arm error on './': list index out of range
+[partC] 70/109 sessions (trial 0)  elapsed=6719s  cloud_cost_so_far=$0.8544
+[partC] 80/109 sessions (trial 0)  elapsed=7525s  cloud_cost_so_far=$0.9408
+[partC] 90/109 sessions (trial 0)  elapsed=8249s  cloud_cost_so_far=$1.0522
+[partC] 100/109 sessions (trial 0)  elapsed=8444s  cloud_cost_so_far=$1.0809
+
+========================================================================
+  Part C Summary — run_id: 20261011_155417
+========================================================================
+  sessions: 109   commands: 2179   trials: 1
+
+  arm           records     ok     avg_ms       tokens       cost
+  --------------------------------------------------------------
+  cloud            2179   2179    3155.1ms    6,582,455 $   0.9974
+  honeyrouter      2179   2178     743.3ms    1,277,927 $   0.0936
+
+  total cloud cost: $1.0910
+  results -> /mnt/data-partition/honeypot/experiment_data/PartC/../results/partC/fidelity
+========================================================================
+
+[partC] run_id=20261011_205300  sessions_file=/mnt/data-partition/honeypot/dataset/partC_stateful_sessions.json  trials=1  arms=('honeyrouter',)
+[partC] workload: 109 sessions, 2179 commands  breakdown={'ml4net_full.json': 2769}
+[partC] cloud arm -> deepseek/deepseek-v4.1-flash @ https://ai.psu.blue/v1  (7 key(s) pooled)
+[partC] run_id=20261011_205353  sessions_file=/mnt/data-partition/honeypot/dataset/partC_stateful_sessions.json  trials=1  arms=('honeyrouter',)
+[partC] workload: 109 sessions, 2179 commands  breakdown={'ml4net_full.json': 2769}
+[partC] cloud arm -> deepseek/deepseek-v4.1-flash @ https://ai.psu.blue/v1  (7 key(s) pooled)
+[partC] 10/109 sessions (trial 0)  elapsed=622s  cloud_cost_so_far=$0.0019
+[partC] 20/109 sessions (trial 0)  elapsed=775s  cloud_cost_so_far=$0.0077
+[partC] 30/109 sessions (trial 0)  elapsed=948s  cloud_cost_so_far=$0.0200
+[partC] 40/109 sessions (trial 0)  elapsed=1090s  cloud_cost_so_far=$0.0267
+[partC] 50/109 sessions (trial 0)  elapsed=1177s  cloud_cost_so_far=$0.0290
+[partC] 60/109 sessions (trial 0)  elapsed=1285s  cloud_cost_so_far=$0.0383
+[partC] arm error on './': list index out of range
+[partC] 70/109 sessions (trial 0)  elapsed=1369s  cloud_cost_so_far=$0.0479
+[partC] 80/109 sessions (trial 0)  elapsed=1499s  cloud_cost_so_far=$0.0566
+[partC] 90/109 sessions (trial 0)  elapsed=1666s  cloud_cost_so_far=$0.0755
+[partC] 100/109 sessions (trial 0)  elapsed=1722s  cloud_cost_so_far=$0.0805
+
+========================================================================
+  Part C Summary — run_id: 20261011_205353
+========================================================================
+  sessions: 109   commands: 2179   trials: 1
+
+  arm           records     ok     avg_ms       tokens       cost
+  --------------------------------------------------------------
+  honeyrouter      2179   2178     798.5ms    1,530,942 $   0.0830
+
+  total cloud cost: $0.0830
+  results -> /mnt/data-partition/honeypot/experiment_data/PartC/../results/partC/fidelity
+========================================================================
+
+[partC] run_id=20261012_124319  sessions_file=/mnt/data-partition/honeypot/dataset/partC_stateful_sessions.json  trials=1  arms=('cloud', 'honeyrouter')
+[partC] workload: 109 sessions, 2179 commands  breakdown={'ml4net_full.json': 2769}
+[partC] cloud arm -> deepseek/deepseek-v4.1-flash @ https://ai.psu.blue/v1  (7 key(s) pooled)
+[partC] run_id=20261012_124414  sessions_file=/mnt/data-partition/honeypot/dataset/partC_stateful_sessions.json  trials=1  arms=('cloud', 'honeyrouter')
+[partC] workload: 109 sessions, 2179 commands  breakdown={'ml4net_full.json': 2769}
+[partC] cloud arm -> deepseek/deepseek-v4.1-flash @ https://ai.psu.blue/v1  (7 key(s) pooled)
+[partC] 10/109 sessions (trial 0)  elapsed=2701s  cloud_cost_so_far=$0.3971
+[partC] 20/109 sessions (trial 0)  elapsed=3621s  cloud_cost_so_far=$0.5178
+[partC] 30/109 sessions (trial 0)  elapsed=4392s  cloud_cost_so_far=$0.6245
+[partC] 40/109 sessions (trial 0)  elapsed=5079s  cloud_cost_so_far=$0.7151
+[partC] 50/109 sessions (trial 0)  elapsed=5901s  cloud_cost_so_far=$0.8404
+[partC] 60/109 sessions (trial 0)  elapsed=6289s  cloud_cost_so_far=$0.8933
+[partC] arm error on './': list index out of range
+[partC] 70/109 sessions (trial 0)  elapsed=6806s  cloud_cost_so_far=$0.9612
+[partC] 80/109 sessions (trial 0)  elapsed=7607s  cloud_cost_so_far=$1.0552
+[partC] 90/109 sessions (trial 0)  elapsed=8304s  cloud_cost_so_far=$1.1659
+[partC] 100/109 sessions (trial 0)  elapsed=8511s  cloud_cost_so_far=$1.1972
+
+========================================================================
+  Part C Summary — run_id: 20261012_124414
+========================================================================
+  sessions: 109   commands: 2179   trials: 1
+
+  arm           records     ok     avg_ms       tokens       cost
+  --------------------------------------------------------------
+  cloud            2179   2179    3041.8ms    6,771,440 $   1.1027
+  honeyrouter      2179   2178     887.8ms    1,536,556 $   0.1027
+
+  total cloud cost: $1.2054
+  results -> /mnt/data-partition/honeypot/experiment_data/PartC/../results/partC/fidelity
+========================================================================
+
+[partC] run_id=20261012_175258  sessions_file=/mnt/data-partition/honeypot/dataset/partC_stateful_sessions.json  trials=1  arms=('honeyrouter',)
+[partC] workload: 109 sessions, 2179 commands  breakdown={'ml4net_full.json': 2769}
+[partC] cloud arm -> deepseek/deepseek-v4.1-flash @ https://ai.psu.blue/v1  (7 key(s) pooled)
+[partC] 10/109 sessions (trial 0)  elapsed=983s  cloud_cost_so_far=$0.0243
+[partC] 20/109 sessions (trial 0)  elapsed=1218s  cloud_cost_so_far=$0.0530
+[partC] 30/109 sessions (trial 0)  elapsed=1575s  cloud_cost_so_far=$0.0952
+[partC] 40/109 sessions (trial 0)  elapsed=1809s  cloud_cost_so_far=$0.1233
+[partC] 50/109 sessions (trial 0)  elapsed=1955s  cloud_cost_so_far=$0.1259
+[partC] 60/109 sessions (trial 0)  elapsed=2114s  cloud_cost_so_far=$0.1481
+[partC] arm error on './': list index out of range
+[partC] 70/109 sessions (trial 0)  elapsed=2246s  cloud_cost_so_far=$0.1629
+[partC] 80/109 sessions (trial 0)  elapsed=2480s  cloud_cost_so_far=$0.1913
+[partC] 90/109 sessions (trial 0)  elapsed=2882s  cloud_cost_so_far=$0.2495
+[partC] 100/109 sessions (trial 0)  elapsed=2977s  cloud_cost_so_far=$0.2596
+
+========================================================================
+  Part C Summary — run_id: 20261012_175258
+========================================================================
+  sessions: 109   commands: 2179   trials: 1
+
+  arm           records     ok     avg_ms       tokens       cost
+  --------------------------------------------------------------
+  honeyrouter      2179   2178    1376.1ms    2,916,498 $   0.2632
+
+  total cloud cost: $0.2632
+  results -> /mnt/data-partition/honeypot/experiment_data/PartC/../results/partC/fidelity
+========================================================================
+

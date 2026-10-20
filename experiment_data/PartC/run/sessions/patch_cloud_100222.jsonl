@@ -1,0 +1,2 @@
+{"session_id": "20261012_162904", "src_ip": "patch_cloud_100222", "public_ip": "patch_cloud_100222", "timestamp": "2026-10-12 16:29:06", "cmd": "cd /tt", "agent": "cloud", "response": "bash: cd: /tt: No such file or directory", "fi_score": 2, "latency_ms": 1531.39, "instance": "default"}
+{"session_id": "20261012_162906", "src_ip": "patch_cloud_100222", "public_ip": "patch_cloud_100222", "timestamp": "2026-10-12 16:29:07", "cmd": "cd .ICE-unix/", "agent": "cloud", "response": "", "fi_score": 2, "latency_ms": 1575.41, "instance": "default"}

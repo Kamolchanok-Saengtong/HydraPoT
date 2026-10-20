@@ -1,0 +1,112 @@
+# NSC/PartB/Dockerfile.ground_truth
+# ─────────────────────────────────────────────────────────────────
+# Ground-truth container for Part B/C fidelity scoring — built to actually
+# match what config.yaml + main.py declare the honeypot to be, instead of a
+# bare `ubuntu:22.04` that silently lacked most of system_state.base_tools
+# (confirmed earlier: crontab/busybox/wget all showed "command not found"
+# in ground truth even though config.yaml lists them as always-available).
+#
+# Packages below are grouped to match config.yaml's system_state.base_tools
+# list. coreutils/util-linux/procps/findutils/diffutils/grep/tar/gzip are
+# NOT listed explicitly — they ship with ubuntu:22.04 by default and cover
+# the large majority of base_tools (ls, cat, ps, top, free, fdisk, lsblk,
+# find, diff, grep, tar, ...) with no extra install needed.
+#
+# NOT installed here on purpose (matches main.py's TOOL_TO_PACKAGE / empty
+# system_state.pre_installed — these tools are gated behind an explicit
+# "installed" check in the honeypot and should default to "command not
+# found" unless an attacker installs them mid-session): vim (only vim-tiny,
+# for a bare /usr/bin/vi — "vi" is base_tools, "vim" is not), nmap, gcc/g++/
+# make/gdb, python (python3 IS base_tools, python2 is not), nginx, apache2,
+# mysql, redis-cli, docker, git, htop, screen, tmux, zip/unzip/7z, jq, tree.
+#
+# Known, deliberately-unaddressed gap: kernel version. Containers share the
+# host kernel (this host reports 5.15.0-139-generic) — config.yaml declares
+# 5.15.0-91-generic, which can't be matched without fragile uname()-spoofing
+# hooks. Left as-is per explicit decision, not attempted here.
+#
+# A handful of base_tools entries are desktop/GUI-oriented tools that don't
+# meaningfully apply to a headless server at all (gsettings, ibus, listres,
+# pactl, laptop-detect, cupsctl) — installed where a package exists so the
+# binary is at least present, but don't expect fully realistic output from
+# them; that's a base_tools list issue, not something a Docker image can fix.
+
+FROM ubuntu:22.04
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Core packages — high-confidence real jammy package names, must all
+# succeed (one bad name here should fail the build loudly, not hide it).
+RUN apt-get update -qq && apt-get install -y --no-install-recommends \
+    # networking — ifconfig/netstat/route/arp (net-tools), ip/ss/bridge/tc (iproute2)
+    net-tools iproute2 \
+    # ping/tracepath (iputils-ping), traceroute, arping
+    iputils-ping traceroute iputils-arping \
+    # dig/nslookup/host
+    dnsutils \
+    # crontab/cron daemon — the actual gap found earlier
+    cron \
+    # ssh/scp/sftp/ssh-keygen
+    openssh-client \
+    # gpg/gpgconf
+    gnupg \
+    # curl/wget/openssl — usually present but pin explicitly
+    curl wget openssl \
+    # strace/ltrace
+    strace ltrace \
+    # busybox binary itself (declared base_tool)
+    busybox-static \
+    # lspci/lsusb
+    pciutils usbutils \
+    # rpcinfo
+    rpcbind \
+    # getfacl/getcap
+    acl libcap2-bin \
+    # kmod (insmod/rmmod/lsmod family, modinfo)
+    kmod \
+    # iostat/pidstat
+    sysstat \
+    # lshw
+    lshw \
+    # finger
+    finger \
+    # nano, vi (vim-tiny only — real "vim" stays gated behind TOOL_TO_PACKAGE)
+    nano vim-tiny \
+    # less
+    less \
+    # bzip2/xz — tar/gzip ship by default, these don't
+    bzip2 xz-utils \
+    # sudo
+    sudo \
+    # perl (perl-base ships by default but lacks some common modules)
+    perl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Lower-confidence / fringe packages — best-effort, `|| true` so a renamed
+# or dropped package in this list can't take down the whole build. cal/
+# column/rev/hexdump (bsdmainutils), xxd (vim-common), and the desktop/GUI
+# tools that barely apply to a headless server anyway (gsettings, pactl,
+# cupsctl) live here.
+RUN apt-get update -qq && ( apt-get install -y --no-install-recommends \
+    bsdmainutils vim-common libglib2.0-bin pulseaudio-utils cups-client \
+    || true ) && rm -rf /var/lib/apt/lists/*
+
+# Declared users from main.py's SYSTEM_STATE["users"] — daemon/bin/www-data/
+# nobody/sshd already exist by default via base-passwd; only "phil" (the
+# uid=1000 human user) needs explicit creation. root already exists.
+RUN useradd -m -u 1000 -d /home/phil -s /bin/bash phil
+
+# Starting files from config.yaml's system_state.starting_files — matched by
+# permissions and approximate size (exact byte content was never specified,
+# only perms/size, so content here is realistic Ubuntu-default-style filler
+# padded/trimmed to match).
+RUN printf '# ~/.bashrc: executed by bash(1) for non-login shells.\n%.0s' {1..60} \
+        | head -c 3789 > /root/.bashrc && \
+    chmod 644 /root/.bashrc && \
+    printf '# ~/.profile: executed by the command interpreter for login shells.\n%.0s' {1..3} \
+        | head -c 161 > /root/.profile && \
+    chmod 644 /root/.profile && \
+    : > /root/.bash_history && \
+    chmod 600 /root/.bash_history && \
+    mkdir -p /var/log && chmod 755 /var/log
+
+CMD ["sleep", "infinity"]
