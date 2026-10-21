@@ -1,0 +1,6 @@
+# HydraPoT's NeMo Guardrails config. Input rail only: the rail reports a
+# verdict, and the honeypot -- not NeMo -- decides what the attacker sees.
+rails:
+  input:
+    flows:
+      - character break detection
