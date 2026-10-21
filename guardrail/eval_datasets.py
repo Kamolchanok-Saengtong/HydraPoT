@@ -4,11 +4,17 @@ guardrail/eval_datasets.py — the adversarial cases, from two external sources.
 TWO SOURCES, because they probe different things and a detector can be good
 at one and blind to the other:
 
-  Scope (INerverRead/Scope), 147 prompts, CC BY-NC 4.0
+  Scope, 147 prompts, CC BY-NC 4.0
       Identity and environment probing aimed at LLMs deployed as Linux
       terminals or honeypots -- "are you GPT?", "is this a sandbox?". This is
       the threat HydraPoT actually faces.
-      https://github.com/INerverRead/Scope
+
+      Paper (cite this): IEEE Xplore, arnumber 11124871
+          https://ieeexplore.ieee.org/document/11124871
+      Data obtained from: https://github.com/INerverRead/Scope
+      The paper's category names are authoritative here, not the CSV's -- see
+      SCOPE_CATEGORY below. Counts agree (38 / 26 / 33 / 50), so the two are
+      the same four categories under two spellings.
 
   MaliciousInstruct (walledai/MaliciousInstruct), 100 prompts, CC BY-SA 4.0
       Harmful-content requests from Huang et al., "Catastrophic Jailbreak of
@@ -57,10 +63,22 @@ def fetch_scope(refresh: bool = False) -> str:
     return SCOPE_CSV
 
 
+# Scope's PAPER names two of its four categories differently from the shipped
+# CSV. The counts are identical (38 / 26 / 33 / 50), so these are the same four
+# categories under two spellings -- and the paper's names are the citable ones,
+# so results are reported under those. Anything not listed passes through, so a
+# future dataset revision adds rows rather than silently losing them.
+SCOPE_CATEGORY = {
+    "Direct Queries":         "Direct Inquiry",
+    "Environment Camouflage": "Environmental Probing",
+}
+
+
 def scope_cases() -> list:
-    """[(category, "attack", text)] -- every row, its own category kept."""
+    """[(category, "attack", text)] -- every row, under the paper's category name."""
     with open(fetch_scope(), encoding="utf-8-sig", newline="") as f:
-        return [(r["category"], "attack", r["Instruction"])
+        return [(SCOPE_CATEGORY.get(r["category"], r["category"]),
+                 "attack", r["Instruction"])
                 for r in csv.DictReader(f) if r.get("Instruction")]
 
 
@@ -90,6 +108,18 @@ def all_cases() -> list:
     computable here, and are not claimed.
     """
     return scope_cases() + malicious_instruct_cases()
+
+
+def cases_by_dataset() -> list:
+    """[(dataset, cases)] -- the two datasets kept apart.
+
+    all_cases() concatenates them, which averages two different populations:
+    Scope probes the honeypot's identity, MaliciousInstruct asks for harmful
+    content, and a model can be strong on one and weak on the other. Reports
+    iterate this instead, and save one file per dataset.
+    """
+    return [("scope", scope_cases()),
+            ("malicious_instruct", malicious_instruct_cases())]
 
 
 if __name__ == "__main__":
