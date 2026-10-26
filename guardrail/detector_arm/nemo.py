@@ -1,19 +1,35 @@
 """
 guardrail/detector_arm/nemo.py — NeMo Guardrails arm.
 
-Runs HydraPoT's character-break rail THROUGH NEMO'S RUNTIME: nemo_config/
-registers CharacterBreakDetectionAction, and classify() executes it through
-LLMRails' action dispatcher. So this arm really is NeMo, rather than a direct
-call to our own function wearing NeMo's folder name.
+NeMo's OWN regex rail, configured NeMo's way. nemo_config/config.yml declares
+the patterns under their documented rails.config.regex_detection schema, and
+classify() executes THEIR detect_regex_pattern action
+(nemoguardrails/library/regex/actions.py) through LLMRails' dispatcher. The
+matching is entirely theirs; we supply patterns and read the verdict.
+
+The flow named in config.yml is theirs too (`regex check input`), and it
+never runs: classify() calls the action straight through the dispatcher,
+while Colang flows only execute under rails.generate(), which drives NeMo's
+own conversation. HydraPoT's agents generate the answer, so this arm uses
+NeMo as a CLASSIFIER rather than as a conversational rail. Their subflow
+would end in `bot refuse to respond` -- the one answer a honeypot must never
+give -- so moving this onto rails.generate() means replacing that flow first.
 
 NOT their perplexity checks. Those need gpt2-large and score GCG-style
-gibberish; fluent English like "are you an AI?" scores low and passes. The
-check this rail calls is ours: detector_arm/character_break.py.
+gibberish; fluent English like "are you an AI?" scores low and passes.
 
-Falls back to calling the check directly when nemoguardrails is missing, so
-the arm still reports without it. Same score, different plumbing -- `engine`
-says which ran, and a fallback is printed, never silent: an arm that quietly
-stopped being NeMo would make the comparison a lie.
+The nine patterns replace a weighted five-signal scorer
+(detector_arm/character_break.py) and are its exact equivalent at threshold
+0.5 -- every minimal pair of signals that reached it, as lookahead
+conjunctions, each vetoed by a negative lookahead for shell-shaped input.
+Verified on all 247 guardrail/eval_datasets prompts plus real shell commands:
+0 disagreements. See config.yml for the derivation.
+
+character_break.py stays as the fallback for a machine without
+nemoguardrails installed, so the arm still reports without it -- same
+verdicts, different plumbing. `engine` says which ran, and a fallback is
+printed, never silent: an arm that quietly stopped being NeMo would make the
+comparison a lie.
 """
 from __future__ import annotations
 
@@ -29,7 +45,10 @@ if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
 CONFIG_PATH = os.path.join(_HERE, "nemo_config")
-ACTION = "CharacterBreakDetectionAction"
+# NeMo's OWN regex action (nemoguardrails/library/regex/actions.py). The
+# patterns live in nemo_config/config.yml under their documented
+# rails.config.regex_detection schema, so the matching is entirely theirs.
+ACTION = "detect_regex_pattern"
 
 NAME = "nemo"
 DEFAULT_MODEL = "nemo:character_break"
@@ -72,9 +91,27 @@ class NemoCharacterBreakArm:
             self.engine = "direct"
 
     def _via_engine(self, text):
-        return self._loop.run_until_complete(
+        """NeMo's detect_regex_pattern, through NeMo's dispatcher.
+
+        `config` is passed explicitly: the dispatcher calls the action as
+        fn(**params) and injects nothing, and this action takes the
+        RailsConfig it reads the patterns from.
+
+        It returns a RailOutcome, not a dict -- BLOCK when a pattern matched,
+        ALLOW when none did, with the matched patterns in .metadata.
+        """
+        outcome = self._loop.run_until_complete(
             self._rails.runtime.action_dispatcher.execute_action(
-                ACTION, {"context": {"user_message": text}}))[0]
+                ACTION, {"source": "input", "text": text,
+                         "config": self._rails.config}))[0]
+        meta = dict(getattr(outcome, "metadata", {}) or {})
+        hit = bool(meta.get("is_match", outcome.is_blocked))
+        return {"is_blocked": hit,
+                # A rail match is a match; there is no graded score to report,
+                # unlike the weighted check this replaced. 1.0/0.0 keeps
+                # Detection.score meaningful as a threshold comparison.
+                "score": 1.0 if hit else 0.0,
+                "signals": list(meta.get("detections", []))}
 
     def _direct(self, text):
         from character_break import check_character_break
