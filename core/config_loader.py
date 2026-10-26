@@ -148,6 +148,19 @@ class HoneypotCfg:
     kernel: str = "5.15.0-91-generic"          # uname -r
     kernel_build: str = "#101-Ubuntu SMP Tue Nov 14 13:30:08 UTC 2023"   # uname -v
     arch: str = "x86_64"                       # uname -m / -p / -i
+    # ── SSH identity, the FIRST thing an attacker sees ───────────────────
+    # asyncssh defaults to advertising "AsyncSSH_<version>", which nmap reads
+    # back as `AsyncSSH sshd 2.22.0` -- no production Linux host runs asyncssh
+    # as its sshd, so the banner alone identifies this as an emulation before
+    # a single command is typed. Vetterl & Clayton (USENIX WOOT '18) make the
+    # general point: a honeypot on an off-the-shelf transport library speaks
+    # subtly unlike the system it impersonates.
+    #
+    # Must stay CONSISTENT WITH `os` above, same reasoning as the kernel keys:
+    # OpenSSH 8.9p1 is what Ubuntu 22.04 ships, so claiming 22.04 while
+    # advertising some other OpenSSH release is its own contradiction. Change
+    # `os` and this needs changing with it.
+    ssh_version: str = "OpenSSH_8.9p1 Ubuntu-3ubuntu0.4"
     # ── Concurrency bounds ───────────────────────────────────────────────
     # Calls into the local model are serialised (see ondevice_agent's
     # _MODEL_LOCK — concurrent access aborts the process), so sessions QUEUE
@@ -237,6 +250,7 @@ class AgentsCfg:
 @dataclass
 class RoutingCfg:
     fallback: str = "cowrie"
+    fi_fallback: int = 3   # FI band assigned when no pattern matches (e.g. garbled obfuscation output)
     fi_routing: dict = field(default_factory=lambda: {
         0: "cowrie",
         1: "cowrie",
@@ -304,6 +318,10 @@ class GuardrailCfg:
     isolate: bool = True       # fence attacker text as untrusted data
     validate: bool = True      # check the model's OUTPUT for persona breaks
     retry_on_break: bool = True    # re-roll once before falling back to Cowrie
+    # Fencing costs prompt space, so it can wait for the detector's verdict.
+    # Sanitising cannot: a forged chat-template token is a forgery whatever the
+    # detector scored, so it has no on_detect twin.
+    fence_on_detect: bool = False
     detector: GuardrailDetectorCfg = field(default_factory=GuardrailDetectorCfg)
 
 
@@ -325,6 +343,33 @@ class Config:
     cost_model: dict = field(default_factory=lambda: {
         "gpu_avg_watt": 112.89,
         "cloud_usd_per_cmd": 0.0301 / 67,
+    })
+    # The ground-truth container Parts B/C and the guardrail score against.
+    # Plain dict for the same reason as cost_model above. Everything else about
+    # that container is DERIVED, not declared: the base image comes from
+    # honeypot.os, the hostname from honeypot.hostname, the accounts from
+    # system_state.users and the files from system_state.starting_files -- a
+    # hand-written Dockerfile had drifted to a user (`phil`) that appears
+    # nowhere in config. Only the apt package names live here, because mapping
+    # base_tools' ~400 COMMANDS onto Debian package names cannot be done
+    # without an apt-file index.
+    ground_truth: dict = field(default_factory=lambda: {
+        "image": "hydrapot-ground-truth:latest",
+        "container": "hydrapot_partb_bench",
+        # Must all install: a bad name here should fail the build loudly.
+        "packages": [
+            "net-tools", "iproute2", "iputils-ping", "traceroute",
+            "iputils-arping", "dnsutils", "cron", "openssh-client", "gnupg",
+            "curl", "wget", "openssl", "strace", "ltrace", "busybox-static",
+            "pciutils", "usbutils", "rpcbind", "acl", "libcap2-bin", "kmod",
+            "sysstat", "lshw", "finger", "nano", "vim-tiny", "less", "bzip2",
+            "xz-utils", "sudo", "perl",
+        ],
+        # Fringe/renamed packages — best effort, never fail the build.
+        "best_effort_packages": [
+            "bsdmainutils", "vim-common", "libglib2.0-bin",
+            "pulseaudio-utils", "cups-client",
+        ],
     })
     # See config.yaml's aggregation section for what each key means.
     aggregation: dict = field(default_factory=lambda: {

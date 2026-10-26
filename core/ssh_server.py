@@ -391,11 +391,19 @@ async def _shell_session(process, handler_factory, hostname, os_banner):
         process.exit(0)
 
 
-async def _run_server(handler_factory, host, port, hostname, os_banner):
+async def _run_server(handler_factory, host, port, hostname, os_banner,
+                      ssh_version=None):
     host_key = get_host_key()
 
     async def process_factory(process):
         await _shell_session(process, handler_factory, hostname, os_banner)
+
+    # server_version is the identity string in the SSH handshake, sent before
+    # authentication -- the first thing a scanner reads. Unset, asyncssh sends
+    # "AsyncSSH_<version>" and nmap reports `AsyncSSH sshd`, which no real host
+    # would run. Passed as bytes-safe printable ASCII; asyncssh prepends
+    # "SSH-2.0-" itself, so this is just the software part.
+    kwargs = {"server_version": ssh_version} if ssh_version else {}
 
     await asyncssh.create_server(
         HoneypotServer, host, port,
@@ -404,6 +412,7 @@ async def _run_server(handler_factory, host, port, hostname, os_banner):
         encoding="utf-8",
         line_editor=True,
         line_echo=True,
+        **kwargs,
     )
     print(f"[HydraPot] SSH server listening on {host}:{port}")
     print(f"[HydraPot] Test with: ssh root@{host} -p {port}")
@@ -411,7 +420,7 @@ async def _run_server(handler_factory, host, port, hostname, os_banner):
 
 def start_server(handler_factory, host="127.0.0.1", port=2223,
                  hostname="svr04", os_banner="Ubuntu 12.04 LTS",
-                 max_sessions=0):
+                 max_sessions=0, ssh_version=None):
     global MAX_SESSIONS
     MAX_SESSIONS = int(max_sessions or 0)
     if MAX_SESSIONS:
@@ -444,7 +453,8 @@ def start_server(handler_factory, host="127.0.0.1", port=2223,
 
     try:
         loop.run_until_complete(
-            _run_server(handler_factory, host, port, hostname, os_banner)
+            _run_server(handler_factory, host, port, hostname, os_banner,
+                        ssh_version)
         )
         loop.run_forever()
     except (KeyboardInterrupt, SystemExit):
