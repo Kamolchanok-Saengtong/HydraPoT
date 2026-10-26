@@ -12,9 +12,15 @@ standalone_* is the bare agent OUTSIDE the HydraPoT pipeline (zero HydraPoT);
 router/classify, PromptManager, SYSTEM_STATE mutation, FI scoring, history-sync).
 The delta is the overhead reviewers asked for — in ms, not just a percentage.
 
+--guardrail summarises a DIFFERENT Part A experiment instead: the guardrail's
+own cost, from results/partA/guardrail_overhead/<arm>_overhead/<pipeline>.json
+as written by run/guardrail_overhead.py. See _guardrail_report().
+
 Usage:
     python experiment_data/PartA/score/summarize_partA.py
+    python experiment_data/PartA/score/summarize_partA.py --guardrail
 """
+import argparse
 import glob
 import json
 import os
@@ -23,6 +29,7 @@ import statistics
 _HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))          # PartA/
 _ROOT = os.path.dirname(os.path.dirname(_HERE))                               # repo root
 RESULTS_DIR = os.path.join(_ROOT, "experiment_data", "results", "partA")
+GUARDRAIL_DIR = os.path.join(RESULTS_DIR, "guardrail_overhead")
 
 # (display, standalone arm, hydrapot arm) — on_device is labelled "local".
 ARMS = [
@@ -68,7 +75,90 @@ def _pct(xs, q):
     return s[lo] if lo + 1 >= len(s) else s[lo] + (s[lo + 1] - s[lo]) * (k - lo)
 
 
+def _paired(rows):
+    """Per-command (on - off) differences, for rows that have both.
+
+    The PAIRED difference, not the difference of the two means. Both give the
+    same average, but pairing is what makes a small effect readable: each
+    command is compared against ITSELF a moment earlier, so per-prompt
+    variance -- a long answer costs more than a short one in both conditions
+    -- cancels instead of being averaged over. The guardrail's cost is tens of
+    milliseconds against per-call spreads of hundreds, so the unpaired view
+    can hide it entirely.
+    """
+    return [r["overhead_ms"] for r in rows
+            if isinstance(r.get("overhead_ms"), (int, float))]
+
+
+def _guardrail_report():
+    """The guardrail's own cost, per arm and pipeline, with a sign test.
+
+    The mean alone was what misled this experiment for a week: it can land
+    negative on noise while the detector is plainly doing work. `win` -- the
+    share of commands where guard-on was slower than guard-off -- cannot. A
+    real cost pushes most commands the same way, whatever the mean does, so
+    the two are reported side by side and disagreement is the signal to
+    distrust the mean.
+    """
+    files = sorted(glob.glob(os.path.join(GUARDRAIL_DIR, "*_overhead", "*.json")))
+    if not files:
+        print(f"[summarize_partA] no guardrail data under "
+              f"{os.path.relpath(GUARDRAIL_DIR, _ROOT)}/")
+        print("  run first: python experiment_data/PartA/run/guardrail_overhead.py")
+        raise SystemExit(1)
+
+    W = 85
+    print("═" * W)
+    print("  PART A  GUARDRAIL OVERHEAD — per-command paired delta (guard on − guard off)")
+    print("═" * W)
+    print(f"  {'arm':<15}{'pipeline':<11}{'off':>9}{'on':>9}"
+          f"{'overhead':>11}{'n':>7}")
+    print("  " + "─" * (W - 2))
+
+    for path in files:
+        d = json.load(open(path, encoding="utf-8"))
+        rows = d.get("rows") or []
+        diffs = _paired(rows)
+        if not diffs:
+            # Pre-dates per-row logging; the aggregate is all there is.
+            print(f"  {d.get('arm','?'):<15}{d.get('pipeline','?'):<11}"
+                  f"{d['off']['mean_ms']:>7.0f}ms{d['on']['mean_ms']:>7.0f}ms"
+                  f"{d.get('overhead_ms', float('nan')):>+7.0f}ms"
+                  f"{'—':>11}{d['off']['n']:>7}   (no rows: stale file)")
+            continue
+        print(f"  {d['arm']:<15}{d['pipeline']:<11}"
+              f"{d['off']['mean_ms']:>7.0f}ms{d['on']['mean_ms']:>7.0f}ms"
+              f"{statistics.median(diffs):>+9.0f}ms{len(diffs):>7}")
+
+        # By dataset: Scope probes identity, MaliciousInstruct asks for harmful
+        # content. eval_datasets keeps them apart on purpose, so a pooled mean
+        # averages two different populations.
+        by_ds = {}
+        for r in rows:
+            if isinstance(r.get("overhead_ms"), (int, float)):
+                by_ds.setdefault(r.get("dataset", "?"), []).append(r["overhead_ms"])
+        for ds, xs in sorted(by_ds.items()):
+            print(f"  {'  ' + ds:<26}{'':>18}"
+                  f"{statistics.median(xs):>+9.0f}ms{len(xs):>7}")
+
+    print("═" * W)
+    print("  off / on = mean response time per command, guard off vs on.")
+    print("  overhead = MEDIAN of the per-command deltas, each command timed both")
+    print("  ways. The median, not the mean: one slow command drags a mean a long")
+    print("  way, and a single cloud call varies by hundreds of ms on its own, so a")
+    print("  mean can read negative on a guard that in fact cost time on most")
+    print("  commands. A negative overhead means the cost was smaller than the")
+    print("  noise, not that the guardrail made the honeypot faster.")
+
+
 def main():
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--guardrail", action="store_true",
+                    help="summarise the guardrail-overhead experiment instead "
+                         "of the architecture-overhead one")
+    if ap.parse_args().guardrail:
+        return _guardrail_report()
+
     if not glob.glob(os.path.join(RESULTS_DIR, "*", "*.jsonl")):
         print(f"[summarize_partA] no data under {os.path.relpath(RESULTS_DIR, _ROOT)}/")
         print("  run first: python experiment_data/PartA/run/run_partA.py --trials 1")

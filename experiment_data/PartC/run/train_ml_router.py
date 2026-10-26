@@ -1,41 +1,52 @@
 """
-experiment_data/PartC/run/train_ml_router.py — IRT + NN router vs the regex HoneyRouter.
+experiment_data/PartC/run/train_ml_router.py — replay Part C through the
+HoneyRouter's OWN trained policy, swept over the preference weight omega.
 
-Trains a routing policy from Part C's ALREADY-COLLECTED real responses -- no new
-agent calls. cowrie.jsonl / on_device.jsonl / cloud.jsonl are the same 2179
-commands, index-aligned (verified: same session_id/position/trial/cmd at every
-row), each with that arm's REAL recorded answer against the SAME ground truth.
+THE ROUTING LOGIC IS honeyrouter/'s, NOT THIS FILE'S. The arm for each command
+comes from honeyrouter.cli._picks() -- the policy trained by
+honeyrouter/cli.py --train through the paper's three stages (variational IRT ->
+preference-conditioned SetTransformer policy -> multi-objective PPO):
 
-Pipeline:
+    Yang Li, "LLM Bandit: Cost-Efficient LLM Generation via
+    Preference-Conditioned Dynamic Routing", arXiv:2502.02743
+
+This file used to fit its OWN router instead -- a Rasch (1PL) IRT plus a
+TF-IDF -> MLP difficulty net, routed by argmax(fidelity - lambda*cost). None of
+that is in the paper: no variational IRT, no policy network, no PPO, no
+preference vector. It was a second, simpler router standing in for the real
+one, so its numbers did not describe the method being published. Removed.
+
+Pipeline now:
   1. Score every arm's real response against ground truth (score_all_metrics.py's
      own _fast_metrics, so numbers line up with the rest of Part C) -> a
-     2179 x 3 correctness matrix.
-  2. Fit a Rasch (1PL) IRT model on that matrix: P(correct) = sigmoid(theta_arm -
-     b_item). Only 3 respondents (the arms), so discrimination (2PL's `a`) is
-     not identifiable -- Rasch is the honest fit here, not a simplification of
-     convenience.
-  3. Train a small NN (TF-IDF char n-grams -> MLP) to predict b_item from the
-     command TEXT alone. This is what lets it route commands outside the 2179;
-     b_item itself only exists for rows already scored.
-  4. Router: for a command, predict b_hat, combine with each arm's theta and
-     real per-arm cost (same formula as cost_analysis.py: cloud $/call for
-     cloud, GPU_AVG_WATT x latency for on_device, 0 for cowrie) into a utility
-     fidelity(arm) - lambda*cost(arm), argmax picks the arm.
-  5. REPLAY: for every command, the response actually served is the stored real
-     response from whichever arm was picked -- same mechanism replay_honeyrouter.py
-     uses for the regex router, just a different routing function.
-  6. Scored and costed by CALLING score_all_metrics.py's _fast_metrics and
+     2179 x 3 correctness matrix. REPORTED ONLY -- nothing is fitted on it here;
+     the policy was trained in honeyrouter/.
+  2. Real per-arm cost, same formula as cost_analysis.py: cloud $/call for
+     cloud, GPU_AVG_WATT x latency for on_device, 0 for cowrie. Reported, and
+     used by no routing decision -- the policy weighs cost itself through omega.
+  3. For each omega in the sweep, honeyrouter's policy picks the arm per
+     command (cli._picks, the same call cli.py --review uses).
+  4. REPLAY: the response served is the stored real response from the picked
+     arm -- same mechanism replay_honeyrouter.py uses, no new agent calls.
+  5. Scored and costed by CALLING score_all_metrics.py's _fast_metrics and
      cost_analysis.py's own cost primitives (cost.cost_model.gpu_avg_watt,
-     cost.power_cost.kwh_to_thb) -- nothing re-derived, one file.
+     cost.power_cost.kwh_to_thb) -- nothing re-derived.
+
+SHARED HELPERS LIVE HERE, imported by score/eval_irt_sweep.py and
+score/summarize_irt_router.py: ARMS, FIDELITY, score_vs_partc(),
+rows_in_build_order(), arm_lookup(). One direction only -- score/ imports from
+run/, never the reverse -- so there is no cycle.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import subprocess
 import sys
+import time
 
 import numpy as np
-import torch
 
 _HERE = os.path.dirname(os.path.abspath(__file__))                       # .../PartC/run
 _PARTC = os.path.dirname(_HERE)                                          # .../PartC
@@ -47,6 +58,74 @@ sys.path.insert(0, os.path.join(_PARTC, "score"))
 FIDELITY = os.path.join(_ROOT, "experiment_data", "results", "partC", "fidelity")
 OUT_DIR = os.path.join(_ROOT, "experiment_data", "results", "partC_ml_router")
 ARMS = ("cowrie", "on_device", "cloud")
+
+# Training lengths come from cli.py, NOT from this file -- one source of truth,
+# and they are the paper's own values (arXiv:2502.02743, appendix E.3-E.5). A
+# bare run here therefore trains exactly what production trains, so any
+# difference is a flag you passed and it shows up in config.json.
+#
+# Safe to import at module level: cli.py imports nothing from honeyrouter
+# itself at import time (every one of its honeyrouter imports is inside a
+# function), so the stage modules stay unimported until main() has set
+# HONEYROUTER_OUT and they can resolve their paths to this run's folder.
+from honeyrouter import cli as HRCLI                        # noqa: E402
+
+DEFAULTS = HRCLI.DEFAULTS
+STAGES = {
+    "p1": os.path.join(_ROOT, "honeyrouter", "predictor.py"),
+    "p2": os.path.join(_ROOT, "honeyrouter", "routing_policy.py"),
+    "p3": os.path.join(_ROOT, "honeyrouter", "reinforcement.py"),
+}
+
+
+# ── 0. train the three phases from scratch, into THIS run's folder ──────────
+
+def config_hash(cfg: dict) -> str:
+    """Short digest of the hyperparameters alone, so a config maps to a folder.
+
+    Sorted keys, and nothing but the hyperparameters: fold in a timestamp and
+    every run looks new, so a repeat could never be recognised.
+    """
+    blob = json.dumps(cfg, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(blob.encode()).hexdigest()[:12]
+
+
+def train_phases(cfg: dict, out_dir: str) -> str:
+    """Run the paper's three phases from scratch into out_dir.
+
+    The same three scripts cli.py --train runs, with the same flags -- the
+    training logic is honeyrouter's, this only chooses where it lands.
+    HONEYROUTER_OUT is what redirects it: predictor.py, routing_policy.py and
+    reinforcement.py all resolve their artifact paths through it, so the
+    writes AND the cross-stage reads stay in out_dir and PRODUCTION in
+    honeyrouter/out/ is never touched.
+
+    Returns the policy to evaluate: "rl" when phase 3 ran, else "policy".
+    """
+    env = dict(os.environ, HONEYROUTER_OUT=out_dir)
+
+    print(f"[phase 1/3] IRT predictor · {cfg['p1_epochs']} epochs", flush=True)
+    subprocess.run([sys.executable, "-u", STAGES["p1"],
+                    "--epochs", str(cfg["p1_epochs"])],
+                   cwd=_ROOT, env=env, check=True)
+
+    print(f"[phase 2/3] policy pretraining · {cfg['p2_steps']} steps, "
+          f"batch {cfg['p2_batch']}", flush=True)
+    subprocess.run([sys.executable, "-u", STAGES["p2"],
+                    "--steps", str(cfg["p2_steps"]),
+                    "--batch", str(cfg["p2_batch"])],
+                   cwd=_ROOT, env=env, check=True)
+
+    if not cfg["run_rl"]:
+        print("[phase 3/3] skipped (--no-rl)", flush=True)
+        return "policy"
+
+    print(f"[phase 3/3] multi-objective PPO · {cfg['p3_steps']} steps", flush=True)
+    cmd = [sys.executable, "-u", STAGES["p3"], "--steps", str(cfg["p3_steps"])]
+    if not cfg["mixup"]:
+        cmd.append("--no-mixup")
+    subprocess.run(cmd, cwd=_ROOT, env=env, check=True)
+    return "rl"
 
 
 # ── 1. score every arm's real response against ground truth ────────────────
@@ -80,71 +159,38 @@ def load_matrix():
     return cmds, scores, meta, rows
 
 
-# ── 2. Rasch (1PL) fit by gradient descent ──────────────────────────────────
+# ── 2. row alignment for honeyrouter's policy ───────────────────────────────
+# These two live here, not in score/eval_irt_sweep.py, so the import runs one
+# way only: score/ imports from run/, never the reverse. Putting them in the
+# scorer and importing score_vs_partc back out of this file would be a cycle.
 
-def fit_rasch(scores, epochs=2000, lr=0.1, l2=1e-3):
-    """theta_arm (3,), b_item (n,) minimizing BCE between sigmoid(theta-b) and
-    the continuous correctness score, treated as a soft target in [0,1] --
-    with 3 respondents per item there is no discrete trial count to be exact
-    about, so this is the honest reading of "probability of a correct answer".
+def rows_in_build_order():
+    """(session_id, position_in_session) per row, in EXACTLY the order
+    routing_policy.build_pairwise_dataset() iterates -- sessions.py's
+    load_sessions() dict order, then each session's command order.
+
+    The policy returns one arm index per row in that order and nothing else
+    carries the mapping, so a mismatch here would silently serve the wrong
+    command's response.
     """
-    n = scores.shape[0]
-    y = torch.tensor(scores, dtype=torch.float32)
-    theta = torch.zeros(3, requires_grad=True)
-    b = torch.zeros(n, requires_grad=True)
-    opt = torch.optim.Adam([theta, b], lr=lr)
-    for _ in range(epochs):
-        opt.zero_grad()
-        p = torch.sigmoid(theta.unsqueeze(0) - b.unsqueeze(1))       # (n, 3)
-        loss = torch.nn.functional.binary_cross_entropy(p, y) + l2 * (b ** 2).mean()
-        loss.backward()
-        opt.step()
-    return theta.detach().numpy(), b.detach().numpy()
+    from honeyrouter.sessions import load_sessions
+    sess = load_sessions()
+    return [(sid, c["position"]) for sid, cmds in sess.items() for c in cmds]
 
 
-# ── 3. NN: command text -> predicted difficulty ─────────────────────────────
-
-class DifficultyNet(torch.nn.Module):
-    def __init__(self, in_dim, hidden=64):
-        super().__init__()
-        self.net = torch.nn.Sequential(
-            torch.nn.Linear(in_dim, hidden), torch.nn.ReLU(),
-            torch.nn.Linear(hidden, 1))
-
-    def forward(self, x):
-        return self.net(x).squeeze(-1)
-
-
-def train_nn(cmds, b, epochs=300, lr=1e-3, seed=0):
-    from sklearn.feature_extraction.text import TfidfVectorizer
-    from sklearn.model_selection import train_test_split
-
-    vec = TfidfVectorizer(analyzer="char_wb", ngram_range=(2, 4), max_features=2000)
-    X = vec.fit_transform(cmds).toarray().astype(np.float32)
-    idx = np.arange(len(cmds))
-    tr, te = train_test_split(idx, test_size=0.2, random_state=seed)
-
-    net = DifficultyNet(X.shape[1])
-    opt = torch.optim.Adam(net.parameters(), lr=lr)
-    Xt, bt = torch.tensor(X[tr]), torch.tensor(b[tr], dtype=torch.float32)
-    Xe, be = torch.tensor(X[te]), torch.tensor(b[te], dtype=torch.float32)
-    for ep in range(epochs):
-        opt.zero_grad()
-        loss = torch.nn.functional.mse_loss(net(Xt), bt)
-        loss.backward()
-        opt.step()
-    with torch.no_grad():
-        pred_te = net(Xe).numpy()
-    r = np.corrcoef(pred_te, b[te])[0, 1]
-    print(f"[nn] held-out correlation(predicted difficulty, Rasch b) = {r:.3f}  "
-          f"(n_test={len(te)})")
-
-    with torch.no_grad():
-        b_hat_all = net(torch.tensor(X)).numpy()      # used for routing below
-    return net, vec, b_hat_all, r
+def arm_lookup():
+    """{arm: {(session_id, position_in_session): real_row}} from the SAME
+    fidelity files score_vs_partc reads, so a picked row is the arm's REAL
+    stored response -- a replay, not a new generation."""
+    lut = {a: {} for a in ARMS}
+    for a in ARMS:
+        with open(os.path.join(FIDELITY, f"{a}.jsonl"), encoding="utf-8") as fh:
+            for r in (json.loads(l) for l in fh):
+                lut[a][(str(r["session_id"]), r["position_in_session"])] = r
+    return lut
 
 
-# ── 4. per-arm real cost basis, same formula as cost_analysis.py ───────────
+# ── 3. per-arm real cost basis, same formula as cost_analysis.py ───────────
 
 def per_arm_cost(rows):
     from cost.cost_model import gpu_avg_watt
@@ -178,19 +224,41 @@ def per_arm_cost(rows):
 
 # ── 5. route + replay with the REAL stored response ─────────────────────────
 
-def route_and_replay(theta, b_hat_all, cost_mean, lam, rows, meta):
-    theta_lut = dict(zip(ARMS, theta))
+def load_policy(which: str = "rl"):
+    """honeyrouter's TRAINED policy, via its own loader.
+
+    `which`: "rl" is the PPO-trained policy (stage 3), "policy" the
+    supervised-pretrained one (stage 2). None when nothing is trained yet.
+    """
+    from honeyrouter import cli as HR
+    return HR._policy(which)
+
+
+def route_and_replay(pol, omega, build_rows, lut):
+    """One arm per command from honeyrouter's policy, then the REAL response.
+
+    The decision is entirely honeyrouter's: cli._picks() runs the trained
+    preference-conditioned policy at this omega -- the same call cli.py
+    --review makes. Nothing here scores, ranks or weighs anything; this only
+    maps the policy's choice back to the stored response for that command, so
+    the served answer is a replay rather than a new generation.
+
+    omega weights -cost, so a higher omega is cheaper. Range matches
+    reinforcement.py's training, omega ~ U(0, 2).
+    """
+    from honeyrouter import cli as HR
+    pick = HR._picks(pol, omega)                 # arm index per row, build order
     picks, out = [], []
-    for i, m in enumerate(meta):
-        fidelity = {a: 1 / (1 + np.exp(-(theta_lut[a] - b_hat_all[i]))) for a in ARMS}
-        utility = {a: fidelity[a] - lam * cost_mean[a] for a in ARMS}
-        chosen = max(utility, key=utility.get)
-        picks.append(chosen)
-        real = rows[chosen][i]
+    for n, (sid, pos) in enumerate(build_rows):
+        arm = ARMS[pick[n]]
+        real = lut[arm].get((str(sid), pos))
+        if real is None:                         # scored row the fidelity files lack
+            continue
+        picks.append(arm)
         row = dict(real)
-        row["arm"] = "ml_router"
-        row["routed_to"] = chosen
-        row["ml_utility"] = {a: round(float(v), 4) for a, v in utility.items()}
+        row["arm"] = "ml_router"                 # key score_vs_partc + the
+        row["routed_to"] = arm                   # summariser already read
+        row["omega"] = omega
         out.append(row)
     return picks, out
 
@@ -224,7 +292,9 @@ def score_vs_partc(ml_rows):
     overall["ml_router"] = {k: round(sum(v) / len(v), 4) for k, v in vals.items()}
 
     print("\n" + "=" * 70)
-    print("  FIDELITY — honeyrouter (regex) vs ml_router (IRT+NN)")
+    # "ml_router" is the dict key both callers and summarize_irt_router.py
+    # already read, so it stays; the label says what actually routed.
+    print("  FIDELITY — honeyrouter (regex) vs ml_router (honeyrouter policy)")
     print("=" * 70)
     print("  " + f"{'arm':<12}" + "".join(f"{lbl.split(' (')[0]:>13}" for _, lbl in fast_metrics))
     for arm in ("cowrie", "on_device", "cloud", "honeyrouter", "ml_router"):
@@ -265,7 +335,7 @@ def score_vs_partc(ml_rows):
     cost = {"honeyrouter": cost_of(hr_routed), "ml_router": cost_of(ml_routed)}
 
     print("\n" + "=" * 70)
-    print("  COST — honeyrouter (regex) vs ml_router (IRT+NN)")
+    print("  COST — honeyrouter (regex) vs ml_router (honeyrouter policy)")
     print("=" * 70)
     for a in ("honeyrouter", "ml_router"):
         c = cost[a]
@@ -277,78 +347,133 @@ def score_vs_partc(ml_rows):
 
 def main():
     import argparse
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--lambda-sweep", dest="lams", default="0,0.25,0.5,0.75,1,1.25,1.5,1.75,2",
-                    help="lambda values to try, comma-separated. Cost is "
-                         "normalized to [0,1] (divided by the most expensive "
-                         "arm's mean $/call), so lambda is now on the SAME "
-                         "scale as fidelity -- 0 ignores cost entirely, 1 "
-                         "weighs a maximally-expensive call as costing a full "
-                         "point of fidelity, 2 weighs it double.")
-    ap.add_argument("--epochs-irt", type=int, default=2000)
-    ap.add_argument("--epochs-nn", type=int, default=300)
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--omega-sweep", dest="omegas",
+                    default="0,0.5,1,1.5,2",
+                    help="omega values to try, comma-separated. omega weights "
+                         "-cost, so higher is cheaper; the range matches "
+                         "reinforcement.py's training, omega ~ U(0, 2). This "
+                         "is the paper's preference parameter -- it replaces "
+                         "the hand-rolled lambda this file used to sweep.")
+    for k in ("p1_epochs", "p2_steps", "p2_batch", "p3_steps"):
+        ap.add_argument("--" + k.replace("_", "-"), type=int,
+                        default=DEFAULTS[k], dest=k,
+                        help=f"paper default {DEFAULTS[k]}")
+    ap.add_argument("--no-rl", dest="run_rl", action="store_false",
+                    default=DEFAULTS["run_rl"], help="skip phase 3 (PPO)")
+    ap.add_argument("--no-mixup", dest="mixup", action="store_false",
+                    default=DEFAULTS["mixup"], help="phase 3 without mixup")
+    ap.add_argument("--reuse", action="store_true",
+                    help="if this exact config was already trained, score the "
+                         "existing model instead of retraining it")
     args = ap.parse_args()
-    lams = [float(x) for x in args.lams.split(",")]
+    omegas = [float(x) for x in args.omegas.split(",")]
 
-    print("[1/5] scoring every arm's real response against ground truth ...")
+    cfg = {k: getattr(args, k) for k in
+           ("p1_epochs", "p2_steps", "p2_batch", "p3_steps", "run_rl", "mixup")}
+    h = config_hash(cfg)
+    paper = {k: DEFAULTS[k] for k in cfg}
+    run_dir = os.path.join(OUT_DIR, f"config_{h}")
+    trained = os.path.isfile(os.path.join(run_dir, "routing_policy.pt"))
+
+    print(f"config {h} -> {os.path.relpath(run_dir, _ROOT)}/")
+    print(f"  {cfg}")
+    if cfg != paper:
+        print("  DEPARTS FROM THE PAPER: "
+              + str({k: f"{v} (paper {paper[k]})"
+                     for k, v in cfg.items() if v != paper[k]}))
+    print("  production in honeyrouter/out/ is NOT touched\n", flush=True)
+
+    os.makedirs(run_dir, exist_ok=True)
+    # Before ANY honeyrouter stage module is imported, so predictor/
+    # routing_policy/reinforcement resolve to this run's folder. cli.py froze
+    # its own OUT_DIR at import, when the folder was not yet known, so that one
+    # is repointed by hand -- _policy() checks for the artifacts there.
+    os.environ["HONEYROUTER_OUT"] = run_dir
+    HRCLI.OUT_DIR = run_dir
+    HRCLI.STATE_PATH = os.path.join(run_dir, "router_state.json")
+
+    t0 = time.time()
+    if trained and args.reuse:
+        print("[phases] already trained, --reuse given: scoring as-is\n")
+        which = "rl" if os.path.isfile(
+            os.path.join(run_dir, "routing_policy_rl.pt")) else "policy"
+    else:
+        which = train_phases(cfg, run_dir)
+    train_sec = round(time.time() - t0, 1)
+
+    with open(os.path.join(run_dir, "config.json"), "w", encoding="utf-8") as fh:
+        json.dump({"hash": h, "at": time.strftime("%Y-%m-%d %H:%M:%S"),
+                   "config": cfg, "paper_defaults": paper,
+                   "departs_from_paper": cfg != paper,
+                   "train_sec": train_sec, "policy": which}, fh, indent=2)
+
+    pol = load_policy(which)
+    if pol is None:
+        raise SystemExit(f"training finished but no {which} policy in {run_dir}")
+
+    print("[1/4] scoring every arm's real response against ground truth ...")
     cmds, scores, meta, rows = load_matrix()
     print(f"      {scores.shape[0]} commands x {scores.shape[1]} arms  "
           f"mean correctness: " + "  ".join(
               f"{a}={scores[:, j].mean():.3f}" for j, a in enumerate(ARMS)))
+    print("      (reported only -- the policy was trained in honeyrouter/, "
+          "nothing is fitted here)")
 
-    print("[2/5] fitting Rasch IRT ...")
-    theta, b = fit_rasch(scores, epochs=args.epochs_irt)
-    print(f"      theta (ability): " + "  ".join(
-        f"{a}={t:.3f}" for a, t in zip(ARMS, theta)))
-    print(f"      b (difficulty): mean={b.mean():.3f} std={b.std():.3f} "
-          f"min={b.min():.3f} max={b.max():.3f}")
-
-    print("[3/5] training NN: command text -> difficulty ...")
-    net, vec, b_hat_all, corr = train_nn(cmds, b, epochs=args.epochs_nn)
-
-    print("[4/5] computing real per-arm cost basis (normalized to [0,1]) ...")
+    print("[2/4] real per-arm cost basis ...")
     cost_norm, cost_raw = per_arm_cost(rows)
     print(f"      raw $/call:  " + "  ".join(f"{a}={c:.6f}" for a, c in cost_raw.items()))
     print(f"      normalized:  " + "  ".join(f"{a}={c:.4f}" for a, c in cost_norm.items()))
+    print("      (reported only -- the policy weighs cost itself, via omega)")
+
+    print("[3/4] aligning rows to the policy's build order ...")
+    build_rows = rows_in_build_order()
+    lut = arm_lookup()
+    print(f"      {len(build_rows)} rows")
 
     import collections
     sweep = []
-    for lam in lams:
-        print(f"\n[5/6] lambda={lam} -- routing + replay ...")
-        picks, out = route_and_replay(theta, b_hat_all, cost_norm, lam, rows, meta)
+    for omega in omegas:
+        print(f"\n[4/4] omega={omega} -- honeyrouter policy routes, then replay ...")
+        picks, out = route_and_replay(pol, omega, build_rows, lut)
         dist = collections.Counter(picks)
-        print(f"      routing distribution: {dict(dist)}")
+        print(f"      routing distribution: {dict(dist)}  (n={len(out)})")
 
-        out_dir = OUT_DIR if lam == lams[0] else os.path.join(OUT_DIR, f"lambda_{lam}")
+        # Inside THIS config's folder, so two configs cannot overwrite each
+        # other's replay -- that is the whole point of the config_<hash> dir.
+        out_dir = os.path.join(run_dir, f"omega_{omega}")
         os.makedirs(os.path.join(out_dir, "fidelity"), exist_ok=True)
         path = os.path.join(out_dir, "fidelity", "ml_router.jsonl")
         with open(path, "w", encoding="utf-8") as fh:
             for row in out:
                 fh.write(json.dumps(row) + "\n")
 
-        print("[6/6] scoring against Part C (honeyrouter + pure arms) ...")
         comparison = score_vs_partc(out)
-        sweep.append({"lambda": lam, "routing_distribution": dict(dist), **comparison})
+        sweep.append({"omega": omega, "n": len(out),
+                      "routing_distribution": dict(dist), **comparison})
 
     print("\n" + "=" * 70)
-    print("  LAMBDA SWEEP -- fidelity (cosine) vs cost, ml_router only")
+    print("  OMEGA SWEEP -- fidelity (cosine) vs cost, honeyrouter policy")
     print("=" * 70)
-    print(f"  {'lambda':>8}{'cowrie':>9}{'on_device':>11}{'cloud':>8}"
+    print(f"  {'omega':>7}{'cowrie':>9}{'on_device':>11}{'cloud':>8}"
           f"{'cosine':>9}{'total_usd':>11}")
     for s in sweep:
         d, f, c = s["routing_distribution"], s["fidelity"]["ml_router"], s["cost"]["ml_router"]
-        print(f"  {s['lambda']:>8.2f}{d.get('cowrie', 0):>9}{d.get('on_device', 0):>11}"
+        print(f"  {s['omega']:>7.2f}{d.get('cowrie', 0):>9}{d.get('on_device', 0):>11}"
               f"{d.get('cloud', 0):>8}{f['cosine_score']:>9.3f}{c['total_usd']:>11.4f}")
 
-    os.makedirs(OUT_DIR, exist_ok=True)
-    with open(os.path.join(OUT_DIR, "irt_model.json"), "w") as fh:
-        json.dump({"theta": dict(zip(ARMS, theta.tolist())),
-                   "nn_held_out_correlation": float(corr),
-                   "mean_cost_usd_raw": cost_raw, "mean_cost_normalized": cost_norm,
-                   "lambda_sweep": sweep}, fh, indent=2)
-    print(f"\nwrote {os.path.join(OUT_DIR, 'irt_model.json')}")
-    print(f"ml_router.jsonl for lambda={lams[0]} at {OUT_DIR}/fidelity/; "
-          f"other lambdas under {OUT_DIR}/lambda_<value>/fidelity/")
+    path = os.path.join(run_dir, "irt_model.json")
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump({"hash": h, "config": cfg, "policy": which,
+                   "train_sec": train_sec,
+                   "routing": "honeyrouter.cli._picks (trained policy)",
+                   "mean_cost_usd_raw": cost_raw,
+                   "mean_cost_normalized": cost_norm,
+                   "omega_sweep": sweep}, fh, indent=2)
+    print(f"\nwrote {os.path.relpath(path, _ROOT)}")
+    print(f"per-omega replays under "
+          f"{os.path.relpath(run_dir, _ROOT)}/omega_<value>/fidelity/")
 
 
 if __name__ == "__main__":

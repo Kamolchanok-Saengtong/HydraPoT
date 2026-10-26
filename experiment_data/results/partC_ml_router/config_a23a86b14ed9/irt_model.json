@@ -1,0 +1,347 @@
+{
+  "hash": "a23a86b14ed9",
+  "config": {
+    "p1_epochs": 10,
+    "p2_steps": 500,
+    "p2_batch": 1024,
+    "p3_steps": 500,
+    "run_rl": true,
+    "mixup": true
+  },
+  "policy": "rl",
+  "train_sec": 53.1,
+  "routing": "honeyrouter.cli._picks (trained policy)",
+  "mean_cost_usd_raw": {
+    "cowrie": 0.0,
+    "on_device": 7.702091391857339e-06,
+    "cloud": 0.0005848260843506195
+  },
+  "mean_cost_normalized": {
+    "cowrie": 0.0,
+    "on_device": 0.01316988348837006,
+    "cloud": 1.0
+  },
+  "omega_sweep": [
+    {
+      "omega": 0.0,
+      "n": 2179,
+      "routing_distribution": {
+        "cowrie": 1655,
+        "on_device": 522,
+        "cloud": 2
+      },
+      "fidelity": {
+        "cowrie": {
+          "cosine_score": 0.6122,
+          "levenshtein_score": 0.5734,
+          "jaro_winkler_score": 0.6758,
+          "sequence_score": 0.6414,
+          "bleu_score": 0.4392,
+          "exact_match": 0.263
+        },
+        "on_device": {
+          "cosine_score": 0.4713,
+          "levenshtein_score": 0.4466,
+          "jaro_winkler_score": 0.6081,
+          "sequence_score": 0.5275,
+          "bleu_score": 0.2808,
+          "exact_match": 0.1111
+        },
+        "cloud": {
+          "cosine_score": 0.7195,
+          "levenshtein_score": 0.6846,
+          "jaro_winkler_score": 0.7933,
+          "sequence_score": 0.7466,
+          "bleu_score": 0.5266,
+          "exact_match": 0.3167
+        },
+        "honeyrouter": {
+          "cosine_score": 0.6629,
+          "levenshtein_score": 0.6395,
+          "jaro_winkler_score": 0.7669,
+          "sequence_score": 0.702,
+          "bleu_score": 0.4695,
+          "exact_match": 0.2746
+        },
+        "ml_router": {
+          "cosine_score": 0.6747,
+          "levenshtein_score": 0.6278,
+          "jaro_winkler_score": 0.7484,
+          "sequence_score": 0.7049,
+          "bleu_score": 0.4729,
+          "exact_match": 0.2781
+        }
+      },
+      "cost": {
+        "honeyrouter": {
+          "cloud_usd": 0.267857,
+          "elec_kwh": 0.041236,
+          "elec_thb": 0.1108,
+          "total_usd": 0.271023
+        },
+        "ml_router": {
+          "cloud_usd": 0.000996,
+          "elec_kwh": 0.047211,
+          "elec_thb": 0.1269,
+          "total_usd": 0.004622
+        }
+      }
+    },
+    {
+      "omega": 0.5,
+      "n": 2179,
+      "routing_distribution": {
+        "cowrie": 1666,
+        "on_device": 513
+      },
+      "fidelity": {
+        "cowrie": {
+          "cosine_score": 0.6122,
+          "levenshtein_score": 0.5734,
+          "jaro_winkler_score": 0.6758,
+          "sequence_score": 0.6414,
+          "bleu_score": 0.4392,
+          "exact_match": 0.263
+        },
+        "on_device": {
+          "cosine_score": 0.4713,
+          "levenshtein_score": 0.4466,
+          "jaro_winkler_score": 0.6081,
+          "sequence_score": 0.5275,
+          "bleu_score": 0.2808,
+          "exact_match": 0.1111
+        },
+        "cloud": {
+          "cosine_score": 0.7195,
+          "levenshtein_score": 0.6846,
+          "jaro_winkler_score": 0.7933,
+          "sequence_score": 0.7466,
+          "bleu_score": 0.5266,
+          "exact_match": 0.3167
+        },
+        "honeyrouter": {
+          "cosine_score": 0.6629,
+          "levenshtein_score": 0.6395,
+          "jaro_winkler_score": 0.7669,
+          "sequence_score": 0.702,
+          "bleu_score": 0.4695,
+          "exact_match": 0.2746
+        },
+        "ml_router": {
+          "cosine_score": 0.6749,
+          "levenshtein_score": 0.6282,
+          "jaro_winkler_score": 0.7488,
+          "sequence_score": 0.7054,
+          "bleu_score": 0.4733,
+          "exact_match": 0.2786
+        }
+      },
+      "cost": {
+        "honeyrouter": {
+          "cloud_usd": 0.267857,
+          "elec_kwh": 0.041236,
+          "elec_thb": 0.1108,
+          "total_usd": 0.271023
+        },
+        "ml_router": {
+          "cloud_usd": 0,
+          "elec_kwh": 0.046728,
+          "elec_thb": 0.1256,
+          "total_usd": 0.003589
+        }
+      }
+    },
+    {
+      "omega": 1.0,
+      "n": 2179,
+      "routing_distribution": {
+        "cowrie": 1675,
+        "on_device": 504
+      },
+      "fidelity": {
+        "cowrie": {
+          "cosine_score": 0.6122,
+          "levenshtein_score": 0.5734,
+          "jaro_winkler_score": 0.6758,
+          "sequence_score": 0.6414,
+          "bleu_score": 0.4392,
+          "exact_match": 0.263
+        },
+        "on_device": {
+          "cosine_score": 0.4713,
+          "levenshtein_score": 0.4466,
+          "jaro_winkler_score": 0.6081,
+          "sequence_score": 0.5275,
+          "bleu_score": 0.2808,
+          "exact_match": 0.1111
+        },
+        "cloud": {
+          "cosine_score": 0.7195,
+          "levenshtein_score": 0.6846,
+          "jaro_winkler_score": 0.7933,
+          "sequence_score": 0.7466,
+          "bleu_score": 0.5266,
+          "exact_match": 0.3167
+        },
+        "honeyrouter": {
+          "cosine_score": 0.6629,
+          "levenshtein_score": 0.6395,
+          "jaro_winkler_score": 0.7669,
+          "sequence_score": 0.702,
+          "bleu_score": 0.4695,
+          "exact_match": 0.2746
+        },
+        "ml_router": {
+          "cosine_score": 0.6759,
+          "levenshtein_score": 0.6289,
+          "jaro_winkler_score": 0.7494,
+          "sequence_score": 0.706,
+          "bleu_score": 0.4741,
+          "exact_match": 0.279
+        }
+      },
+      "cost": {
+        "honeyrouter": {
+          "cloud_usd": 0.267857,
+          "elec_kwh": 0.041236,
+          "elec_thb": 0.1108,
+          "total_usd": 0.271023
+        },
+        "ml_router": {
+          "cloud_usd": 0,
+          "elec_kwh": 0.045919,
+          "elec_thb": 0.1234,
+          "total_usd": 0.003526
+        }
+      }
+    },
+    {
+      "omega": 1.5,
+      "n": 2179,
+      "routing_distribution": {
+        "cowrie": 1680,
+        "on_device": 499
+      },
+      "fidelity": {
+        "cowrie": {
+          "cosine_score": 0.6122,
+          "levenshtein_score": 0.5734,
+          "jaro_winkler_score": 0.6758,
+          "sequence_score": 0.6414,
+          "bleu_score": 0.4392,
+          "exact_match": 0.263
+        },
+        "on_device": {
+          "cosine_score": 0.4713,
+          "levenshtein_score": 0.4466,
+          "jaro_winkler_score": 0.6081,
+          "sequence_score": 0.5275,
+          "bleu_score": 0.2808,
+          "exact_match": 0.1111
+        },
+        "cloud": {
+          "cosine_score": 0.7195,
+          "levenshtein_score": 0.6846,
+          "jaro_winkler_score": 0.7933,
+          "sequence_score": 0.7466,
+          "bleu_score": 0.5266,
+          "exact_match": 0.3167
+        },
+        "honeyrouter": {
+          "cosine_score": 0.6629,
+          "levenshtein_score": 0.6395,
+          "jaro_winkler_score": 0.7669,
+          "sequence_score": 0.702,
+          "bleu_score": 0.4695,
+          "exact_match": 0.2746
+        },
+        "ml_router": {
+          "cosine_score": 0.6761,
+          "levenshtein_score": 0.6291,
+          "jaro_winkler_score": 0.7494,
+          "sequence_score": 0.7062,
+          "bleu_score": 0.4746,
+          "exact_match": 0.2795
+        }
+      },
+      "cost": {
+        "honeyrouter": {
+          "cloud_usd": 0.267857,
+          "elec_kwh": 0.041236,
+          "elec_thb": 0.1108,
+          "total_usd": 0.271023
+        },
+        "ml_router": {
+          "cloud_usd": 0,
+          "elec_kwh": 0.045453,
+          "elec_thb": 0.1221,
+          "total_usd": 0.003489
+        }
+      }
+    },
+    {
+      "omega": 2.0,
+      "n": 2179,
+      "routing_distribution": {
+        "cowrie": 1690,
+        "on_device": 489
+      },
+      "fidelity": {
+        "cowrie": {
+          "cosine_score": 0.6122,
+          "levenshtein_score": 0.5734,
+          "jaro_winkler_score": 0.6758,
+          "sequence_score": 0.6414,
+          "bleu_score": 0.4392,
+          "exact_match": 0.263
+        },
+        "on_device": {
+          "cosine_score": 0.4713,
+          "levenshtein_score": 0.4466,
+          "jaro_winkler_score": 0.6081,
+          "sequence_score": 0.5275,
+          "bleu_score": 0.2808,
+          "exact_match": 0.1111
+        },
+        "cloud": {
+          "cosine_score": 0.7195,
+          "levenshtein_score": 0.6846,
+          "jaro_winkler_score": 0.7933,
+          "sequence_score": 0.7466,
+          "bleu_score": 0.5266,
+          "exact_match": 0.3167
+        },
+        "honeyrouter": {
+          "cosine_score": 0.6629,
+          "levenshtein_score": 0.6395,
+          "jaro_winkler_score": 0.7669,
+          "sequence_score": 0.702,
+          "bleu_score": 0.4695,
+          "exact_match": 0.2746
+        },
+        "ml_router": {
+          "cosine_score": 0.675,
+          "levenshtein_score": 0.6281,
+          "jaro_winkler_score": 0.748,
+          "sequence_score": 0.7049,
+          "bleu_score": 0.474,
+          "exact_match": 0.279
+        }
+      },
+      "cost": {
+        "honeyrouter": {
+          "cloud_usd": 0.267857,
+          "elec_kwh": 0.041236,
+          "elec_thb": 0.1108,
+          "total_usd": 0.271023
+        },
+        "ml_router": {
+          "cloud_usd": 0,
+          "elec_kwh": 0.044752,
+          "elec_thb": 0.1202,
+          "total_usd": 0.003434
+        }
+      }
+    }
+  ]
+}

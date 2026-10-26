@@ -30,7 +30,7 @@ json.dump({'sweep': sweep('rl', points=5), 'baselines': baselines()},
 "
 
 echo "[3/3] 6-metric semantic score + real judge score, per omega point ..."
-python -u experiment_data/PartC/run/eval_irt_sweep.py --points 5 --policy rl \
+python -u experiment_data/PartC/score/eval_irt_sweep.py --points 5 --policy rl \
   | tee "$OUT/sweep_semantic_and_judge.txt"
 
 cp honeyrouter/out/predictor.pt "$OUT/"
