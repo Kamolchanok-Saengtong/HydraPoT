@@ -60,11 +60,16 @@ def load_cowrie_baseline() -> list[str]:
 
 def make_obfuscation_handler(layers: int):
     """Bashfuscator's ObfuscationHandler, called as a library -- bypasses the
-    CLI script's `stty size` call, which has no terminal to query here."""
+    CLI script's `stty size` call, which has no terminal to query here.
+
+    payload_size=1 (small): a real attacker pastes a one-liner, not megabytes
+    of escape soup -- payload_size=2/3 inflate output into the hundreds of KB
+    to MB range (see experiment notes), well past what any LLM API would
+    accept as a single command."""
     from bashfuscator.core.engine.obfuscation_handler import ObfuscationHandler
 
     args = SimpleNamespace(
-        layers=layers, payload_size=2, execution_time=2, binaryPref=None,
+        layers=layers, payload_size=1, execution_time=2, binaryPref=None,
         no_file_write=True, write_dir="/tmp/", full_ascii_strings=False,
         debug=False, clip=False, command=None,
         choose_mutators=None, choose_all=None,

@@ -1,5 +1,5 @@
 """
-experiment_data/PartC/run/eval_irt_sweep.py — 6-metric semantic score + real
+experiment_data/PartC/score/eval_irt_sweep.py — 6-metric semantic score + real
 judge score + cost, per omega point, for the TRAINED honeyrouter PPO policy.
 
 Nothing re-derived: routing comes from honeyrouter.cli's own _load_data/_picks
@@ -18,32 +18,21 @@ import sys
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, "..", "..", ".."))
 sys.path.insert(0, _ROOT)
-sys.path.insert(0, _HERE)
+# score_vs_partc lives in the sibling run/ folder, not here: this file scores,
+# train_ml_router.py trains. Imported rather than reimplemented so the
+# HoneyRouter and the ML-router baseline are scored by the same function.
+sys.path.insert(0, os.path.join(_HERE, "..", "run"))
 
-from train_ml_router import ARMS, score_vs_partc  # noqa: E402
+from train_ml_router import (ARMS, arm_lookup, rows_in_build_order,  # noqa: E402
+                             score_vs_partc)
 
 OUT_DIR = os.path.join(_ROOT, "experiment_data", "results", "partC", "honeyrouter_irt")
 
 
-def rows_in_build_order():
-    """(session_id, position_in_session) per row, in EXACTLY the order
-    routing_policy.build_pairwise_dataset() iterates -- sessions.py's
-    load_sessions() dict order, then each session's command order."""
-    from honeyrouter.sessions import load_sessions
-    sess = load_sessions()
-    return [(sid, c["position"]) for sid, cmds in sess.items() for c in cmds]
-
-
-def arm_lookup():
-    """{(session_id, position_in_session): {arm: real_row}} from the SAME
-    fidelity files score_vs_partc reads, so a picked row is the arm's REAL
-    stored response -- a replay, not a new generation."""
-    from train_ml_router import FIDELITY
-    lut = {a: {} for a in ARMS}
-    for a in ARMS:
-        for r in (json.loads(l) for l in open(os.path.join(FIDELITY, f"{a}.jsonl"))):
-            lut[a][(str(r["session_id"]), r["position_in_session"])] = r
-    return lut
+# rows_in_build_order() and arm_lookup() used to be defined here. They now live
+# beside score_vs_partc in run/train_ml_router.py and are imported above, so
+# the two files cannot drift: both route through the same build order, and a
+# mismatch there would silently serve the wrong command's response.
 
 
 def main():
@@ -51,7 +40,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--points", type=int, default=5)
     ap.add_argument("--policy", default="rl", choices=["rl", "policy"])
+    ap.add_argument("--out-dir", default=OUT_DIR,
+                    help="where to write sweep_semantic_and_judge.json; a "
+                         "config sweep points this at its own config_N/ so "
+                         "runs do not overwrite each other")
     args = ap.parse_args()
+    out_dir = args.out_dir
 
     sys.path.insert(0, os.path.join(_ROOT, "honeyrouter", ".."))
     from honeyrouter import cli as HR
@@ -83,8 +77,8 @@ def main():
         results.append({"omega": omega, "n": len(out),
                         "routing_distribution": dict(dist), **comparison})
 
-    os.makedirs(OUT_DIR, exist_ok=True)
-    path = os.path.join(OUT_DIR, "sweep_semantic_and_judge.json")
+    os.makedirs(out_dir, exist_ok=True)
+    path = os.path.join(out_dir, "sweep_semantic_and_judge.json")
     with open(path, "w") as fh:
         json.dump({"policy": args.policy, "sweep": results}, fh, indent=2)
     print(f"\nwrote {path}")

@@ -9,11 +9,56 @@ recomputed, this just lays both runs' numbers next to each other.
 
     python experiment_data/PartC/score/summarize_irt_router.py
 """
+import argparse
 import json
 import os
 
 _HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # PartC/
 IRT_DIR = os.path.join(_HERE, "..", "results", "partC", "honeyrouter_irt")
+
+
+def _read(path):
+    with open(path, encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def _load_sweep(d):
+    """The omega sweep, from whichever file the run actually wrote.
+
+    Two scripts produce the same sweep under different names:
+      eval_irt_sweep.py    -> sweep_semantic_and_judge.json  {"sweep": [...]}
+      train_ml_router.py   -> irt_model.json                 {"omega_sweep": [...]}
+    The rows are the same shape either way (omega, routing_distribution,
+    fidelity, cost), so this reads either rather than making the caller
+    produce a particular filename.
+    """
+    a = os.path.join(d, "sweep_semantic_and_judge.json")
+    if os.path.isfile(a):
+        return _read(a)
+    b = os.path.join(d, "irt_model.json")
+    if os.path.isfile(b):
+        m = _read(b)
+        return {"policy": m.get("policy", "rl"), "sweep": m["omega_sweep"]}
+    rel = os.path.relpath(d, os.path.join(_HERE, "..", ".."))
+    raise SystemExit(
+        f"no sweep in {rel}/ -- expected sweep_semantic_and_judge.json or "
+        f"irt_model.json.\n  Produce one with:\n"
+        f"    python experiment_data/PartC/run/train_ml_router.py")
+
+
+def _load_review(d):
+    """Judge scores per pure arm and per omega, from cli.py --review."""
+    path = os.path.join(d, "review.json")
+    if os.path.isfile(path):
+        return _read(path)
+    rel = os.path.relpath(d, os.path.join(_HERE, "..", ".."))
+    raise SystemExit(
+        f"missing {rel}/review.json -- it holds the judge scores.\n"
+        f"  Produce it with:\n"
+        f"    HONEYROUTER_OUT=$PWD/{rel} python -c \"import json,sys;"
+        f"sys.path.insert(0,'.');from honeyrouter.cli import sweep,baselines;"
+        f"json.dump({{'sweep':sweep('rl',points=5),'baselines':baselines()}},"
+        f"open('{rel}/review.json','w'),indent=2)\"")
 
 METRICS = [("cosine_score", "Cosine"), ("levenshtein_score", "Lev"),
            ("jaro_winkler_score", "JW"), ("sequence_score", "Seq"),
@@ -45,8 +90,17 @@ def regex_honeyrouter_judge():
 
 
 def main():
-    review = json.load(open(os.path.join(IRT_DIR, "review.json")))
-    semantic = json.load(open(os.path.join(IRT_DIR, "sweep_semantic_and_judge.json")))
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--dir", default=IRT_DIR,
+                    help="folder holding the run's output. Defaults to "
+                         "results/partC/honeyrouter_irt (the production run); "
+                         "point it at a results/partC_ml_router/config_<hash>/ "
+                         "to summarise one config instead.")
+    d = ap.parse_args().dir
+
+    review = _load_review(d)
+    semantic = _load_sweep(d)
     hr_judge = regex_honeyrouter_judge()
 
     print("=" * 96)

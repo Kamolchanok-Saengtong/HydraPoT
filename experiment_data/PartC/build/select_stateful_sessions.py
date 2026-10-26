@@ -24,17 +24,22 @@ gets replayed around it. Same rule applied here:
   - wget/curl — would need to fetch real (often dead or malicious) URLs
   - direct execution of a local file (./something) — would run unknown/
     reconstructed code, same guard Part B already applies
-A session is INCLUDED as long as it's stateful; individual commands within
-it are annotated safe/blocked for the ground-truth collector to honor.
+A session is INCLUDED as long as it's stateful; the unrunnable commands
+within it are DROPPED, so every command written out is one Docker can
+really execute. Session text is otherwise exactly as ml4net recorded it —
+nothing is decoded, rewritten or reordered.
 
-Non-cloud sessions are then picked GREEDILY to BALANCE FI0-FI4 coverage:
-target = the scarcest band's own SAFE-unique-command ceiling across the
-WHOLE stateful pool (unsafe commands never count toward the target, since
-they get ground_truth=null and can't be scored). This is why sessions
-aren't excluded for containing one unsafe command elsewhere — most real
-FI2/FI3/FI4 activity co-occurs with a wget/rm in the same session, and
-throwing away the whole session would throw away most of the real signal
-for exactly the bands we're trying to balance.
+Sessions are then picked GREEDILY to BALANCE FI0-FI4 coverage, scored by
+how many new unique commands each adds to bands still below target. This is
+why sessions aren't excluded for containing one unsafe command elsewhere —
+most real FI2/FI3/FI4 activity co-occurs with a wget/rm in the same
+session, and throwing away the whole session would throw away most of the
+real signal for exactly the bands we're trying to balance.
+
+With --target-commands N the balance pass only steers the ORDER of picks; a
+top-up pass then keeps going until N runnable commands are collected, since
+FI0/FI2/FI4 saturate after a few hundred commands and would otherwise cut
+the dataset short (that is what held the first run to 2179).
 
 Output: dataset/partC_stateful_sessions.json
 {
@@ -57,6 +62,8 @@ import os
 import re
 import sys
 import json
+import heapq
+import argparse
 
 # PartC/, not this sub-folder: every path below is relative to the part.
 _HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -70,7 +77,7 @@ for p in (_ROOT, _NSC, _PARTB):
 from filter_stateful_cyberlab import _expand_commands   # reused split helper, not the cyberlab loader
 from filter_stateful_ml4net import load_ml4net_raw_sessions as load_ml4net_raw
 from prompt.fi_manager import FIScorer
-from core.router import _is_cloud   # the REAL obfuscation-detection logic, not a reimplementation
+from core.router import _deobfuscate   # the REAL unwrapping logic, not a reimplementation
 
 DATASET_DIR = os.path.join(_ROOT, "dataset")
 OUTPUT_PATH = os.path.join(DATASET_DIR, "partC_stateful_sessions.json")
@@ -83,44 +90,88 @@ BLOCKED = {
 }
 
 
+# commands whose argument is itself a command — the real verb is the next
+# token, so `sudo rm -rf /` must not read as `sudo`
+_WRAPPERS = {"sudo", "doas", "busybox", "env", "nohup", "time", "command",
+             "exec", "timeout", "nice", "ionice", "setsid", "xargs"}
+# every separator that begins a new command. Splitting on ';' alone missed
+# `echo hi && rm -rf /` and `cat x | rm` entirely.
+_SEPARATORS = re.compile(r"(?:\|\||&&|[;|&\n])")
+
+
+def _verb(part: str) -> str:
+    """The command actually being invoked: basename, past any VAR=val prefix
+    and command wrapper. `/bin/rm` -> rm, `sudo rm` -> rm, `LC_ALL=C ls` -> ls.
+
+    basename, NOT lstrip("./") — lstrip takes a character SET, so
+    "/bin/rm".lstrip("./") is "bin/rm", which matched nothing in BLOCKED and
+    let every absolute path through."""
+    for tok in part.split():
+        if "=" in tok.split("/")[0]:          # VAR=value prefix
+            continue
+        base = os.path.basename(tok)
+        if base in _WRAPPERS:
+            continue
+        return base
+    return ""
+
+
 def _is_safe_for_docker(cmd: str) -> bool:
     """True if `cmd` can be actually executed in a throwaway Docker
     container without needing network fetches, running unknown binaries,
-    or risking the container/shell itself."""
-    for part in cmd.split(";"):
+    or risking the container/shell itself.
+
+    This decides whether a command is DROPPED from the dataset (see
+    _annotate_commands), so a miss means a destructive command reaches the
+    ground-truth collector and runs.
+
+    The command is judged exactly as ml4net recorded it. Judging the
+    router's decoded form as well was tried and removed: it caught none of
+    `$(echo cm0=|base64 -d) -rf /`, `echo cm0=|base64 -d|sh` (the regex
+    needs 8+ base64 chars, and $(echo ...) is unwrapped without decoding
+    its argument), while it did drop `echo a2lsbA==|base64 -d`, which only
+    prints "kill" to stdout and runs nothing. Zero threats caught, real
+    commands lost. A disguised `rm` therefore still reaches Docker — a known
+    limitation of a static filter, not something decoding here fixes."""
+    for part in _SEPARATORS.split(cmd):
         part = part.strip()
         if not part:
             continue
-        toks = part.split()
-        base = toks[0].lstrip("./") if toks else ""
-        if base in BLOCKED:
-            return False
-        if "wget" in toks or "curl" in toks:
-            return False
         if re.match(r"^\./\S+", part):
+            return False
+        if _verb(part) in BLOCKED:
+            return False
+        if any(os.path.basename(t) in ("wget", "curl") for t in part.split()):
             return False
     return True
 
 
 def _is_stateful(commands: list[str], scorer: FIScorer) -> bool:
     """Loose definition (same as build_partB_benchmark.py originally used):
-    at least one command in the session has FI >= 1."""
-    return any(scorer.score(c)[0] >= 1 for c in commands)
+    at least one command in the session has FI >= 1.
 
-
-def _is_cloud_routed(commands: list[str]) -> bool:
-    """At least one command in the session would actually route to cloud in
-    production — real obfuscation/semantic-reconstruction detection from
-    router.py, not a separate reimplementation."""
-    return any(_is_cloud(c) for c in commands)
+    Restricted to SAFE commands, since the unsafe ones are dropped from the
+    session — a session stateful only by virtue of an `rm` or a `wget` has no
+    stateful command left once those are removed."""
+    return any(scorer.score(c)[0] >= 1 for c in commands if _is_safe_for_docker(c))
 
 
 def _annotate_commands(cmds: list[str], scorer: FIScorer) -> list[dict]:
-    return [{"cmd": c, "blocked": not _is_safe_for_docker(c), "fi": scorer.score(c)[0]}
-            for c in cmds]
+    """Annotate a session's commands, DROPPING the unrunnable ones.
+
+    Ground truth is collected by really executing the session in Docker, and
+    the collector skips anything _is_safe_for_docker rejects — so the
+    container state never reflects those commands. Keeping them in the
+    session would hand the agent a history Docker never had (a `wget` whose
+    payload does not exist, an `rm` that never ran) and then score it against
+    that container, marking the agent wrong for believing its own transcript.
+    They are removed so the session the agent replays is the session Docker
+    actually executed."""
+    return [{"cmd": c, "blocked": False, "fi": scorer.score(c)[0]}
+            for c in cmds if _is_safe_for_docker(c)]
 
 
-def select_sessions():
+def select_sessions(target_commands: int = 0):
     scorer = FIScorer()
 
     # ml4net only (233k sessions) — not cyberlab (~338), per explicit request
@@ -135,108 +186,118 @@ def select_sessions():
             s["commands"] = _expand_commands(s["commands"])
         print(f"[select] {name}: {len(pool)} raw sessions with commands")
 
-    # scan the FULL pool for two separate categories — sessions are NOT
-    # excluded for containing an unsafe command (wget/rm/etc. elsewhere in
-    # the same session); only that individual command gets marked blocked
-    # at annotation time. Most real FI2/FI3/FI4 activity co-occurs with a
-    # download step in the same session, so requiring the WHOLE session be
-    # safe would throw away most of the signal for exactly the bands this
-    # file exists to balance. cloud-routed sessions are pulled out and
-    # harvested FIRST, since real obfuscated commands are much rarer than
-    # plain stateful ones — without this, they'd get crowded out entirely
-    # by the balancing pass below and Part C would never exercise the
-    # cloud/honeyrouter arms.
-    cloud_pool    = {name: [] for name in pools}
+    # ONE bucket: a session qualifies if it has at least one stateful (FI>=1)
+    # safe command. Sessions are NOT excluded for containing an unsafe command
+    # elsewhere — that command alone is dropped by _annotate_commands, and most
+    # real FI2/FI3/FI4 activity co-occurs with a download step in the same
+    # session, so excluding whole sessions would throw away the signal for
+    # exactly the bands this file exists to balance.
+    #
+    # There used to be a second bucket that harvested "cloud-routed"
+    # (obfuscated) sessions first, back when router._is_cloud() sent anything
+    # obfuscated straight to cloud. The router no longer works that way — it
+    # decodes the disguise and routes on the DECODED FI band — so an
+    # obfuscated command is already represented by whichever band it decodes
+    # into, and the FI balance below covers the cloud arm on its own. The
+    # bucket is gone: session text is kept exactly as ml4net recorded it, with
+    # the unrunnable commands removed and nothing else changed.
     stateful_pool = {name: [] for name in pools}
     for name, pool in pools.items():
         for s in pool:
             cmds = s["commands"]
             if not cmds:
                 continue
-            if _is_cloud_routed(cmds):
-                cloud_pool[name].append(s)
-            elif _is_stateful(cmds, scorer):
+            if _is_stateful(cmds, scorer):
                 stateful_pool[name].append(s)
-        n_cloud = len(cloud_pool[name])
-        n_stateful = len(stateful_pool[name])
-        print(f"[select] {name}: {n_cloud} qualifying cloud-routed sessions, "
-              f"{n_stateful} qualifying stateful sessions (unsafe commands allowed, "
-              f"marked blocked individually)")
+        print(f"[select] {name}: {len(stateful_pool[name])} qualifying stateful "
+              f"sessions (unrunnable commands dropped individually)")
 
     selected = []
     total_commands = 0
     blocked_commands = 0
+    dropped_empty = 0
     breakdown = {}
 
+    # the two pools overlap, so a session can be a candidate in both passes
+    taken_ids = set()
+
+    def _already_taken(s):
+        return (s["source"], s["session_id"]) in taken_ids
+
+    def _runnable():
+        """Commands that will actually execute in Docker -- the budget's unit.
+        A blocked command is written with ground_truth=null and can never be
+        scored, so counting it toward a requested size would overstate the
+        dataset."""
+        return total_commands - blocked_commands
+
     def _take(s, reason):
-        nonlocal total_commands, blocked_commands
+        """Record a session. Returns False if nothing runnable survived the
+        unsafe-command drop, in which case the session is not selected."""
+        nonlocal total_commands, blocked_commands, dropped_empty
         annotated = _annotate_commands(s["commands"], scorer)
+        if not annotated:
+            dropped_empty += 1
+            return False
         selected.append({**s, "commands": annotated, "selected_because": reason})
+        taken_ids.add((s["source"], s["session_id"]))
         total_commands   += len(annotated)
         blocked_commands += sum(1 for c in annotated if c["blocked"])
         breakdown[s["source"]] = breakdown.get(s["source"], 0) + len(annotated)
+        return True
 
     # compute the shared balance TARGET up front (before either harvesting
     # step): the scarcest FI band's own SAFE-unique-command ceiling across
-    # the whole stateful pool. This same number caps BOTH the cloud harvest
-    # and the FI0-FI4 balance below, so "cloud" is treated as its own
-    # category balanced to the same scale as everything else, not a
-    # special-cased "take everything" bucket.
+    # the whole stateful pool — the headroom each band actually has, which
+    # the per-band targets below are clamped to.
     all_stateful = [s for pool in stateful_pool.values() for s in pool]
     avail_by_fi = {fi: set() for fi in range(5)}
     for s in all_stateful:
         for c in set(s["commands"]):
             if _is_safe_for_docker(c):
                 avail_by_fi[scorer.score(c)[0]].add(c)
-    target = min(len(v) for v in avail_by_fi.values())
-    print(f"[select] shared balance target={target} unique SAFE commands per category "
-          f"(bottleneck FI band size, across the full stateful pool)")
+    ceiling = {fi: len(avail_by_fi[fi]) for fi in range(5)}
+    print("[select] unique SAFE commands available per FI band:")
+    for fi in range(5):
+        print(f"[select]   FI{fi}: {ceiling[fi]}")
 
-    # 1) harvest cloud-routed sessions GREEDILY by new-unique-command
-    #    coverage, capped at `target` — NOT every qualifying session
-    #    unconditionally. Once unsafe commands are allowed to stay
-    #    in-session (instead of excluding the whole session), the
-    #    qualifying cloud-routed pool turns out to be huge (90k+ of 233k
-    #    sessions all contain SOME obfuscation-triggering command
-    #    somewhere) — taking all of them, or even just "until nothing new
-    #    appears," produces a multi-million-command dataset nowhere near
-    #    collectible via Docker. Capping the loop at `target` bounds both
-    #    the dataset size AND the runtime (at most `target` argmax passes
-    #    over the pool, not one per remaining session).
-    cloud_candidates = [s for pool in cloud_pool.values() for s in pool]
-    cloud_seen = set()
-    while cloud_candidates and len(cloud_seen) < target:
-        best_idx, best_gain = None, -1
-        for i, s in enumerate(cloud_candidates):
-            gain = len(set(s["commands"]) - cloud_seen)
-            if gain > best_gain:
-                best_idx, best_gain = i, gain
-        if best_gain <= 0:
-            break
-        s = cloud_candidates.pop(best_idx)
-        cloud_seen.update(s["commands"])
-        _take(s, "cloud")
-    print(f"[select] harvested {len(selected)} cloud-routed sessions "
-          f"({total_commands} commands) before filling the rest with stateful ones")
+    # --target-commands is a budget on the RUNNABLE commands written to the
+    # dataset -- the ones Part C can actually replay and score. It is NOT a
+    # per-band unique-command count. The two differ a lot: sessions are taken
+    # whole, so each pick contributes all ~23 of its commands (duplicates and
+    # FI0 filler included), while FI0/FI2/FI4 hold only a few hundred unique
+    # safe commands each, so band coverage saturates long before the budget.
+    #
+    # Band balance therefore steers the ORDER of picks (scarce bands first)
+    # while the budget decides when to stop. Without the budget, selection
+    # halts the moment no session adds new scarce-band coverage -- which is
+    # what held the original run to 2179.
+    budget = target_commands if target_commands > 0 else None
+    if budget:
+        quota = budget // 5
+        target_by_fi = {fi: min(quota, ceiling[fi]) for fi in range(5)}
+        print(f"[select] budget {budget} RUNNABLE commands; band coverage steers "
+              f"pick order ({', '.join(f'FI{fi}={target_by_fi[fi]}' for fi in range(5))} "
+              f"unique SAFE before top-up)")
+        capped = [f"FI{fi}" for fi in range(5) if ceiling[fi] < quota]
+        if capped:
+            print(f"[select] note: {', '.join(capped)} saturate below the "
+                  f"{quota}/band share -- the top-up pass covers the shortfall")
+    else:
+        bottleneck = min(ceiling.values())
+        target_by_fi = {fi: bottleneck for fi in range(5)}
+        print(f"[select] shared balance target={bottleneck} unique SAFE commands "
+              f"per category (bottleneck FI band size, across the full stateful pool)")
 
-    # 2) fill the remainder with stateful-only sessions, picked GREEDILY to
-    #    BALANCE FI0-FI4 coverage to the same `target` — not just maximize
-    #    raw diversity. ml4net is FI0-heavy (basic recon) with FI2/FI4
-    #    being genuinely scarce (real "modify"/"impact" commands mostly
+    # 1) pick sessions GREEDILY to BALANCE FI0-FI4 coverage — not just to
+    #    maximize raw diversity. ml4net is FI1-heavy (basic recon) with
+    #    FI0/FI2/FI4 genuinely scarce (real "modify"/"impact" commands mostly
     #    show up bundled inside sessions that also contain a wget/rm). Each
-    #    pick is scored by how many NEW commands it adds to bands still
-    #    below target, not by total new-command count. Unsafe commands
-    #    never count toward the target — they'll be marked blocked
-    #    (ground_truth=null) and can't be scored, so "coverage" only means
-    #    SAFE commands actually collectible in Docker.
+    #    pick is scored by how many NEW commands it adds to bands still below
+    #    target, not by total new-command count. Unrunnable commands never
+    #    count -- they are dropped from the session, so "coverage" only means
+    #    commands actually collectible in Docker.
     seen_by_fi = {fi: set() for fi in range(5)}
-    for s in selected:
-        # sessions already in `selected` (from step 1) are annotated —
-        # commands are {"cmd": ..., "blocked": ..., "fi": ...} dicts, not
-        # plain strings
-        for c in s["commands"]:
-            if not c["blocked"]:
-                seen_by_fi[c["fi"]].add(c["cmd"])
 
     # Restrict the greedy scan to sessions carrying at least one SAFE
     # command in a currently-scarce band (2/3/4) — FI0/FI1 are so abundant
@@ -246,62 +307,122 @@ def select_sessions():
     SCARCE = {2, 3, 4}
     remaining = [
         s for s in all_stateful
-        if any(_is_safe_for_docker(c) and scorer.score(c)[0] in SCARCE
-               for c in set(s["commands"]))
+        if not _already_taken(s)
+        and any(_is_safe_for_docker(c) and scorer.score(c)[0] in SCARCE
+                for c in set(s["commands"]))
     ]
     print(f"[select] {len(remaining)} sessions carry a safe FI2/FI3/FI4 command "
           f"(candidate pool for balancing)")
 
     def _under_target():
-        return {fi for fi in range(5) if len(seen_by_fi[fi]) < target}
+        return {fi for fi in range(5) if len(seen_by_fi[fi]) < target_by_fi[fi]}
 
-    while remaining and _under_target():
-        best_idx, best_gain = None, -1
-        needed = _under_target()
-        for i, s in enumerate(remaining):
-            gain = 0
-            for c in set(s["commands"]):
-                if not _is_safe_for_docker(c):
-                    continue
-                fi = scorer.score(c)[0]
-                if fi in needed and c not in seen_by_fi[fi]:
-                    gain += 1
-            if gain > best_gain:
-                best_idx, best_gain = i, gain
-        if best_gain <= 0:
-            break   # no remaining session helps any still-under-target band
-        s = remaining.pop(best_idx)
-        for c in set(s["commands"]):
-            if not _is_safe_for_docker(c):
+    # Each pick below re-read every candidate session's commands and
+    # re-scored FI on all of them. At the old bottleneck target that was
+    # tolerable; at a 2000-per-band quota it is ~2000 passes over ~100k
+    # sessions, i.e. billions of regex scores, and never finishes. Band
+    # membership never changes during the loop, so it is computed once here
+    # and the loop does set arithmetic instead.
+    bands_of = [
+        {fi: {c for c in set(s["commands"])
+              if _is_safe_for_docker(c) and scorer.score(c)[0] == fi}
+         for fi in range(5)}
+        for s in remaining
+    ]
+
+    # Greedy max-coverage, LAZILY evaluated. A session's marginal gain can
+    # only shrink as seen_by_fi grows, so a cached gain is always an upper
+    # bound: pop the best bound, recompute just that one session, and if it
+    # still beats the next bound it IS the true argmax. Identical picks to a
+    # full scan, but a handful of evaluations per pick instead of ~230k --
+    # the full scan needs billions of set operations at a 50k budget and does
+    # not finish. (Lazy greedy / CELF; valid because coverage is submodular.)
+    def _greedy(pool, bands_list, needed_fn, done_fn, reason):
+        heap = [(-sum(len(b[fi]) for fi in needed_fn()), i)
+                for i, b in enumerate(bands_list)]
+        heapq.heapify(heap)
+        alive = dict(enumerate(bands_list))
+        while heap and not done_fn():
+            needed = needed_fn()
+            if not needed:
+                break
+            neg, i = heapq.heappop(heap)
+            bands = alive.get(i)
+            if bands is None:
                 continue
-            fi = scorer.score(c)[0]
-            if fi in needed:
-                seen_by_fi[fi].add(c)
-        _take(s, "stateful")
+            gain = sum(len(bands[fi] - seen_by_fi[fi]) for fi in needed)
+            if gain <= 0:
+                del alive[i]        # contributes nothing, and `needed` only
+                continue            # shrinks, so it never will
+            if heap and gain < -heap[0][0]:
+                heapq.heappush(heap, (-gain, i))   # stale bound, re-queue
+                continue
+            del alive[i]
+            for fi in needed:
+                seen_by_fi[fi] |= bands[fi]
+            _take(pool[i], reason)
+        kept = sorted(alive)       # keep the two lists index-aligned
+        return [pool[i] for i in kept], [alive[i] for i in kept]
 
+    remaining, bands_of = _greedy(
+        remaining, bands_of, _under_target,
+        lambda: not _under_target(), "stateful")
+
+    print(f"[select] band coverage pass done: {_runnable()} runnable commands "
+          f"({', '.join(f'FI{fi}={len(seen_by_fi[fi])}' for fi in range(5))} unique SAFE)")
+
+    # 3) top up to the requested RUNNABLE budget. The pass above stops as
+    #    soon as no session adds new coverage in a needy band -- with
+    #    FI0/FI2/FI4 only a few hundred commands deep, that happens early and
+    #    is exactly what capped the original run. Carry on taking the session
+    #    that adds the most new unique safe commands in ANY band until the
+    #    budget is met, so a requested size is actually delivered instead of
+    #    being silently cut short by the scarcest band.
+    if budget:
+        _greedy(remaining, bands_of, lambda: set(range(5)),
+                lambda: _runnable() >= budget, "topup")
+        if _runnable() < budget:
+            print(f"[select] WARNING: pool exhausted at {_runnable()} runnable "
+                  f"commands, short of the {budget} requested")
+
+    if dropped_empty:
+        print(f"[select] {dropped_empty} sessions skipped — every command in them "
+              f"was unrunnable, nothing left after the drop")
     return selected, total_commands, blocked_commands, breakdown
 
 
 def main():
-    selected, total_commands, blocked_commands, breakdown = select_sessions()
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--target-commands", type=int, default=0, metavar="N",
+                    help="minimum RUNNABLE commands wanted in the dataset -- "
+                         "commands that actually execute in Docker, i.e. total "
+                         "minus the wget/curl/rm/./x ones marked blocked. FI band "
+                         "coverage still steers which sessions are picked first; "
+                         "once the scarce bands saturate, a top-up pass keeps "
+                         "taking sessions until the budget is met. "
+                         "0 (default) keeps the original behaviour: every band "
+                         "pinned to the scarcest band's size.")
+    args = ap.parse_args()
 
-    n_cloud    = sum(1 for s in selected if s["selected_because"] == "cloud")
-    n_stateful = sum(1 for s in selected if s["selected_because"] == "stateful")
-    cloud_commands = sum(len(s["commands"]) for s in selected if s["selected_because"] == "cloud")
+    selected, total_commands, blocked_commands, breakdown = select_sessions(
+        target_commands=args.target_commands)
 
-    print(f"\n[select] selected {len(selected)} sessions, {total_commands} total commands "
-          f"({blocked_commands} blocked, {total_commands - blocked_commands} runnable)")
-    print(f"[select]   {n_cloud} sessions selected for cloud/obfuscated coverage ({cloud_commands} commands)")
-    print(f"[select]   {n_stateful} sessions selected for plain stateful coverage")
+    n_balance = sum(1 for s in selected if s["selected_because"] == "stateful")
+    n_topup   = sum(1 for s in selected if s["selected_because"] == "topup")
+
+    print(f"\n[select] selected {len(selected)} sessions, {total_commands} commands "
+          f"(all runnable — the unrunnable ones were dropped)")
+    print(f"[select]   {n_balance} sessions picked for FI band balance")
+    print(f"[select]   {n_topup} sessions picked to reach the requested budget")
     print(f"[select] breakdown by source file:")
     for src, n in sorted(breakdown.items()):
-        print(f"  {src:<30} {n:5d} commands")
+        print(f"  {src:<30} {n:6d} commands")
 
     out = {
         "total_sessions":   len(selected),
         "total_commands":   total_commands,
-        "blocked_commands": blocked_commands,
-        "cloud_sessions":   n_cloud,
+        "blocked_commands": blocked_commands,   # 0 — kept for schema compatibility
         "breakdown":        breakdown,
         "sessions":         selected,
     }
