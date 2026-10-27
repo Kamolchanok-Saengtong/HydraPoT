@@ -364,6 +364,13 @@ class Config:
             "pciutils", "usbutils", "rpcbind", "acl", "libcap2-bin", "kmod",
             "sysstat", "lshw", "finger", "nano", "vim-tiny", "less", "bzip2",
             "xz-utils", "sudo", "perl",
+            # Declared in config.yaml's system_state.versions, so the
+            # container has to actually run them -- otherwise the honeypot
+            # answers "gcc (Ubuntu 9.4.0...) 9.4.0" while ground truth is
+            # "bash: gcc: command not found" and the command scores zero on
+            # a disagreement that is ours, not the model's.
+            "gcc", "g++", "make", "git", "python3", "ruby", "htop",
+            "screen", "nmap", "vim",
         ],
         # Fringe/renamed packages — best effort, never fail the build.
         "best_effort_packages": [
