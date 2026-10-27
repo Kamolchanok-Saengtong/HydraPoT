@@ -293,17 +293,22 @@ def _extract_commands(events: list[dict]) -> list[str]:
     return cmds
 
 
-def load_raw_sessions():
+def load_raw_sessions(pattern="cyberlab_*.json"):
     """
-    Scan every dataset/cyberlab_*.json file directly (not through
+    Scan dataset/<pattern> directly (not through
     workloads.load_cyberlab_sessions()) so the full, untouched raw event
     list for each session can be kept and later attached to the output —
     independently verifiable against the source file.
     Returns [{"session_id": <real id>, "source": <filename>,
               "full_entry": <raw events, verbatim>, "commands": [...]}, ...]
+
+    `pattern` narrows which capture files are read. The default keeps the
+    original behaviour of taking every one, but cyberlab_2019-08-05.json is
+    543MB and reading it to use only the other capture costs minutes and a
+    lot of memory, so a caller that wants one file names it.
     """
     sessions = []
-    for path in sorted(glob.glob(os.path.join(DATASET_DIR, "cyberlab_*.json"))):
+    for path in sorted(glob.glob(os.path.join(DATASET_DIR, pattern))):
         fname = os.path.basename(path)
         data  = json.load(open(path, encoding="utf-8"))
         for entry in data:
