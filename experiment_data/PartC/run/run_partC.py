@@ -1,7 +1,7 @@
 """
 experiment_data/PartC/run_partC.py — Part C: raw data collection (fidelity scoring deferred)
 ─────────────────────────────────────────────────────────────────
-Replays dataset/partC_stateful_sessions.json — 123 real, stateful ml4net
+Replays the dataset named by --sessions — real, stateful ml4net
 sessions (1658 commands total, real Docker-collected ground truth) —
 through 4 agent arms: cowrie/on_device/cloud (forced) + honeyrouter
 (natural routing).
@@ -21,7 +21,7 @@ scoring itself is NOT computed here — a separate script scores
 ground_truth vs response per record after this run finishes.
 
 Usage:
-    python experiment_data/PartC/run_partC.py [--sessions dataset/partC_stateful_sessions.json] [--trials 1]
+    python experiment_data/PartC/run_partC.py --sessions dataset/dataset_groundtruth_<N>.json [--trials 1]
     python experiment_data/PartC/run_partC.py --arms on_device
 ─────────────────────────────────────────────────────────────────
 """
@@ -54,7 +54,11 @@ from _paths import session_dir_for
 
 
 
-DEFAULT_SESSIONS = os.path.join(_ROOT, "dataset", "partC_stateful_sessions.json")
+# No default dataset. This pointed at dataset/partC_stateful_sessions.json,
+# a months-old selection whose ground truth was collected one docker exec
+# per command, so `cd` never carried over and 73 of its 109 sessions are
+# wrong. Reaching for it implicitly is how stale output kept reappearing;
+# the dataset is now always named on the command line.
 
 
 def load_sessions(path):
@@ -64,7 +68,7 @@ def load_sessions(path):
 
 
 RESULTS_DIR = os.path.join(_HERE, "..", "results", "partC")
-ARMS = ("cowrie", "on_device", "cloud", "honeyrouter")
+ARMS = ("cowrie", "on_device", "cloud", "honeyrouter", "irt_router")
 
 
 # ─── logger — mirrors every message to stdout AND a run.log file ───────────────
@@ -141,7 +145,8 @@ def _expected_route(config, fi):
         return None
 
 
-def _run_session_for_arm(base, session, arm, trial, run_id, write, arm_stats, log):
+def _run_session_for_arm(base, session, arm, trial, run_id, write, arm_stats, log,
+                         irt_router=None):
     """
     Fresh handle for this (session, arm) pair — fresh SYSTEM_STATE, same as
     ground truth collection's reset-between-sessions behavior. Commands
@@ -150,7 +155,11 @@ def _run_session_for_arm(base, session, arm, trial, run_id, write, arm_stats, lo
     """
     import main as hydrapot_main
     session_id  = session["session_id"]
-    force_agent = None if arm == "honeyrouter" else arm
+    # honeyrouter: force nothing, core.router.classify() (regex + FI) decides.
+    # irt_router:  the TRAINED neural policy names the agent per command and
+    #              it is forced, so the pick is the network's, not the regex's.
+    # anything else: that single agent, forced.
+    force_agent = None if arm in ("honeyrouter", "irt_router") else arm
 
     handle = hydrapot_main.make_command_handler(
         base.cowrie,
@@ -169,8 +178,12 @@ def _run_session_for_arm(base, session, arm, trial, run_id, write, arm_stats, lo
         ground_truth = c.get("ground_truth")
         fi_score     = c.get("fi")
 
+        per_cmd_force = force_agent
+        if arm == "irt_router":
+            per_cmd_force = irt_router.pick(cmd)
+
         response, fields, routed_to, usage, state_size, state_snapshot, ok = _run_arm(
-            handle, cmd, force_agent, log=log
+            handle, cmd, per_cmd_force, log=log
         )
 
         if usage and usage.get("cost") is not None:
@@ -230,11 +243,24 @@ def _run_session_for_arm(base, session, arm, trial, run_id, write, arm_stats, lo
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--sessions", type=str, default=DEFAULT_SESSIONS)
+    ap.add_argument("--sessions", type=str, required=True,
+                    help="the dataset_groundtruth_<N>.json to replay")
     ap.add_argument("--trials",   type=int, default=1)
     ap.add_argument("--arms",     type=str, default=None,
                      help=f"comma-separated subset of arms to run, from {ARMS} "
                           f"(default: all 4). e.g. --arms on_device")
+    ap.add_argument("--irt-config-dir", type=str, default=None,
+                     help="for --arms irt_router: the "
+                          "results/partC_ml_router/config_<hash>/ folder whose "
+                          "trained policy picks the agent per command")
+    ap.add_argument("--irt-policy", type=str, default="rl",
+                     choices=["rl", "policy"],
+                     help="rl = Stage 3 PPO, the final model (default); "
+                          "policy = Stage 2 supervised, the warm start and the "
+                          "fallback while Stage 3 is being fixed")
+    ap.add_argument("--irt-omega", type=float, default=0.5,
+                     help="preference weight on -cost the policy is "
+                          "conditioned on at inference (default 0.5)")
     ap.add_argument("--tag",      type=str, default=None,
                      help="human-readable label for the output folder, e.g. "
                           "--tag cloud_new -> results/partC/fidelity_cloud_new/ "
@@ -293,6 +319,22 @@ def main():
 
     write, close = make_writers(out_dir, arms=selected_arms)
 
+    # One router for the whole run: loading the predictor and policy is slow
+    # and the embedding cache inside it pays off across repeated commands.
+    # Stage 3 (rl) is the final model; Stage 2 (policy) is the warm start and
+    # the fallback while Stage 3 is being fixed.
+    irt_router = None
+    if "irt_router" in selected_arms:
+        if not args.irt_config_dir:
+            raise SystemExit(
+                "--arms irt_router needs --irt-config-dir: the trained "
+                "config_<hash>/ folder whose policy should pick the agent")
+        from irt_router_live import IrtRouter
+        irt_router = IrtRouter(args.irt_config_dir, which=args.irt_policy,
+                               omega=args.irt_omega)
+        log(f"[partC] irt_router: {args.irt_policy} policy from "
+            f"{args.irt_config_dir}, omega={args.irt_omega}")
+
     cloud_cost_total = 0.0
     t_run_start = time.time()
     arm_stats = {
@@ -305,7 +347,8 @@ def main():
         for s_idx, session in enumerate(sessions):
             for arm in selected_arms:
                 cloud_cost_total += _run_session_for_arm(
-                    base, session, arm, trial, run_id, write, arm_stats, log
+                    base, session, arm, trial, run_id, write, arm_stats, log,
+                    irt_router=irt_router
                 )
 
             if (s_idx + 1) % 10 == 0:
