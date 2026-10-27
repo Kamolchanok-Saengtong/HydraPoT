@@ -41,7 +41,7 @@ top-up pass then keeps going until N runnable commands are collected, since
 FI0/FI2/FI4 saturate after a few hundred commands and would otherwise cut
 the dataset short (that is what held the first run to 2179).
 
-Output: dataset/partC_stateful_sessions.json
+Output: dataset/dataset_groundtruth_<N>.json, N = commands in the file
 {
   "total_sessions": N,
   "total_commands": N,
@@ -74,13 +74,38 @@ for p in (_ROOT, _NSC, _PARTB):
     if p not in sys.path:
         sys.path.insert(0, p)
 
-from filter_stateful_cyberlab import _expand_commands   # reused split helper, not the cyberlab loader
+from filter_stateful_cyberlab import _expand_commands   # shared ';'-split helper
+from filter_stateful_cyberlab import load_raw_sessions as load_cyberlab_raw
 from filter_stateful_ml4net import load_ml4net_raw_sessions as load_ml4net_raw
+
+# Both loaders return the same record shape -- {session_id, source,
+# full_entry, commands} with `commands` a list of raw strings -- so
+# _expand_commands handles either without special-casing.
+#
+# One cyberlab capture, not every match of cyberlab_*.json: the other one
+# (cyberlab_2019-08-05.json) is 543MB, and reading it when it is not wanted
+# costs minutes and a lot of memory.
+CYBERLAB_DEFAULT = "cyberlab_2019-05-13.json"
 from prompt.fi_manager import FIScorer
-from core.router import _deobfuscate   # the REAL unwrapping logic, not a reimplementation
 
 DATASET_DIR = os.path.join(_ROOT, "dataset")
-OUTPUT_PATH = os.path.join(DATASET_DIR, "partC_stateful_sessions.json")
+
+
+def output_path(source: str, n_commands: int) -> str:
+    """dataset/dataset_groundtruth_<source>_<N>.json, N = commands in the file.
+
+    The source is in the name because ml4net and cyberlab are selected
+    separately and their files otherwise differ only by a command count --
+    two runs could collide, or worse, land side by side with no way to tell
+    which dataset either came from.
+
+    The size is in the name so a run never overwrites an earlier dataset.
+    This used to write one fixed partC_stateful_sessions.json, which meant
+    re-running the selector destroyed the previous selection AND the hours
+    of Docker ground truth already collected into it. Downstream scripts
+    take the path as an argument instead of assuming the name."""
+    return os.path.join(DATASET_DIR,
+                        f"dataset_groundtruth_{source}_{n_commands}.json")
 
 # partC.md's own BLOCKED set — would hang/kill the container or the docker
 # exec shell itself, breaking the rest of that session's replay
@@ -171,13 +196,16 @@ def _annotate_commands(cmds: list[str], scorer: FIScorer) -> list[dict]:
             for c in cmds if _is_safe_for_docker(c)]
 
 
-def select_sessions(target_commands: int = 0):
+def select_sessions(target_commands: int = 0, sources=("ml4net",),
+                    cyberlab_file: str = CYBERLAB_DEFAULT):
     scorer = FIScorer()
 
-    # ml4net only (233k sessions) — not cyberlab (~338), per explicit request
-    pools = {
-        "ml4net": load_ml4net_raw(),
-    }
+    pools = {}
+    for name in sources:
+        if name == "cyberlab":
+            pools[name] = load_cyberlab_raw(pattern=cyberlab_file)
+        else:
+            pools[name] = load_ml4net_raw()
     # ml4net stores an entire session as ONE ';'-joined string — split it so
     # per-command safety/statefulness below operates on real individual
     # steps, not one giant blob per session.
@@ -299,20 +327,16 @@ def select_sessions(target_commands: int = 0):
     #    commands actually collectible in Docker.
     seen_by_fi = {fi: set() for fi in range(5)}
 
-    # Restrict the greedy scan to sessions carrying at least one SAFE
-    # command in a currently-scarce band (2/3/4) — FI0/FI1 are so abundant
-    # that virtually every session already has them, so they don't need
-    # active searching (they ride along for free, as the last run showed).
-    # Scanning all ~233k sessions per pick otherwise would be far too slow.
-    SCARCE = {2, 3, 4}
-    remaining = [
-        s for s in all_stateful
-        if not _already_taken(s)
-        and any(_is_safe_for_docker(c) and scorer.score(c)[0] in SCARCE
-                for c in set(s["commands"]))
-    ]
-    print(f"[select] {len(remaining)} sessions carry a safe FI2/FI3/FI4 command "
-          f"(candidate pool for balancing)")
+    # EVERY qualifying session is a candidate. This used to be pre-filtered to
+    # sessions carrying a safe FI2/FI3/FI4 command, because the old full-scan
+    # greedy could not afford to look at 233k sessions on every pick. Two
+    # reasons it is gone: the lazy greedy below evaluates a handful of
+    # candidates per pick, so the pool size no longer costs anything; and the
+    # filter silently made a requested budget unreachable on any dataset where
+    # the scarce bands are rare -- an FI0/FI1-only session could never be
+    # picked, however many commands were still needed.
+    remaining = [s for s in all_stateful if not _already_taken(s)]
+    print(f"[select] {len(remaining)} candidate sessions")
 
     def _under_target():
         return {fi for fi in range(5) if len(seen_by_fi[fi]) < target_by_fi[fi]}
@@ -342,18 +366,26 @@ def select_sessions(target_commands: int = 0):
                 for i, b in enumerate(bands_list)]
         heapq.heapify(heap)
         alive = dict(enumerate(bands_list))
+        # Sessions that add nothing to THIS pass's bands are set aside for the
+        # rest of this pass only -- never removed from `alive`. Deleting them
+        # was wrong across passes: the scarce pass (FI0/FI2/FI4) exhausts those
+        # three bands after ~750 commands, at which point almost every session
+        # scores zero and used to be discarded, so the following FI1/FI3 pass
+        # inherited only the few leftovers. A 50k run ended up with
+        # FI1=67 unique commands out of 380,350 available.
+        spent = set()
         while heap and not done_fn():
             needed = needed_fn()
             if not needed:
                 break
             neg, i = heapq.heappop(heap)
-            bands = alive.get(i)
-            if bands is None:
+            if i in spent or i not in alive:
                 continue
+            bands = alive[i]
             gain = sum(len(bands[fi] - seen_by_fi[fi]) for fi in needed)
             if gain <= 0:
-                del alive[i]        # contributes nothing, and `needed` only
-                continue            # shrinks, so it never will
+                spent.add(i)
+                continue
             if heap and gain < -heap[0][0]:
                 heapq.heappush(heap, (-gain, i))   # stale bound, re-queue
                 continue
@@ -364,9 +396,37 @@ def select_sessions(target_commands: int = 0):
         kept = sorted(alive)       # keep the two lists index-aligned
         return [pool[i] for i in kept], [alive[i] for i in kept]
 
-    remaining, bands_of = _greedy(
-        remaining, bands_of, _under_target,
-        lambda: not _under_target(), "stateful")
+    def _need(bands):
+        return {fi for fi in bands if len(seen_by_fi[fi]) < target_by_fi[fi]}
+
+    if budget:
+        # SCARCE bands first, to their own ceilings, with no budget cap --
+        # FI0/FI2/FI4 together hold only a few hundred unique commands, so
+        # covering them exhaustively costs a small slice of the budget and is
+        # the coverage actually worth protecting. Only then do the abundant
+        # bands fill, and they stop when the budget is spent.
+        #
+        # Order matters. Run as one pass, FI1's 380k commands score so high
+        # in the greedy that they win nearly every pick: the 50k run reached
+        # FI1=10000 after 9394 sessions and 153002 commands, blowing a 50000
+        # budget by 3x before the top-up pass was ever consulted. Splitting
+        # the pass is what makes the budget a real ceiling.
+        scarce   = {fi for fi in range(5) if ceiling[fi] < quota}
+        abundant = set(range(5)) - scarce
+
+        remaining, bands_of = _greedy(
+            remaining, bands_of, lambda: _need(scarce),
+            lambda: not _need(scarce), "scarce")
+        print(f"[select] scarce bands ({', '.join(f'FI{fi}' for fi in sorted(scarce))}) "
+              f"covered: {_runnable()} runnable commands so far")
+
+        remaining, bands_of = _greedy(
+            remaining, bands_of, lambda: _need(abundant),
+            lambda: not _need(abundant) or _runnable() >= budget, "balance")
+    else:
+        remaining, bands_of = _greedy(
+            remaining, bands_of, _under_target,
+            lambda: not _under_target(), "stateful")
 
     print(f"[select] band coverage pass done: {_runnable()} runnable commands "
           f"({', '.join(f'FI{fi}={len(seen_by_fi[fi])}' for fi in range(5))} unique SAFE)")
@@ -379,8 +439,33 @@ def select_sessions(target_commands: int = 0):
     #    budget is met, so a requested size is actually delivered instead of
     #    being silently cut short by the scarcest band.
     if budget:
-        _greedy(remaining, bands_of, lambda: set(range(5)),
-                lambda: _runnable() >= budget, "topup")
+        # 3a) diversity first: keep taking whatever still adds unseen commands.
+        remaining, bands_of = _greedy(
+            remaining, bands_of, lambda: set(range(5)),
+            lambda: _runnable() >= budget, "topup")
+
+        # 3b) then pure volume. _greedy scores a session by how many UNSEEN
+        #     commands it adds and discards it at zero -- right for coverage,
+        #     wrong for a size budget, because a session whose commands are
+        #     all duplicates still contributes every one of them to the
+        #     dataset. ml4net holds 5.1M command instances but only 408k
+        #     distinct strings, so novelty runs out long before the sessions
+        #     do: without this pass a large budget reports "pool exhausted"
+        #     with 200k sessions still unused. Biggest sessions first, so the
+        #     budget is reached in the fewest sessions -- which also means the
+        #     fewest container resets when ground truth is collected.
+        if _runnable() < budget:
+            fill = sorted(remaining,
+                          key=lambda s: -sum(1 for c in s["commands"]
+                                             if _is_safe_for_docker(c)))
+            n_before = _runnable()
+            for s in fill:
+                if _runnable() >= budget:
+                    break
+                _take(s, "fill")
+            print(f"[select] volume pass added {_runnable() - n_before} commands "
+                  f"after novelty ran out")
+
         if _runnable() < budget:
             print(f"[select] WARNING: pool exhausted at {_runnable()} runnable "
                   f"commands, short of the {budget} requested")
@@ -403,18 +488,39 @@ def main():
                          "taking sessions until the budget is met. "
                          "0 (default) keeps the original behaviour: every band "
                          "pinned to the scarcest band's size.")
+    ap.add_argument("--source", default="ml4net",
+                    choices=["ml4net", "cyberlab", "both"],
+                    help="which dataset to select from. ml4net is "
+                         "dataset/ml4net_full.json (233k sessions); cyberlab "
+                         "is dataset/cyberlab_*.json (~338). 'both' pools "
+                         "them and the per-source command counts are printed "
+                         "in the breakdown either way.")
+    ap.add_argument("--cyberlab-file", default=CYBERLAB_DEFAULT, metavar="NAME",
+                    help=f"which cyberlab capture to read from dataset/, used "
+                         f"only when --source includes cyberlab. Default "
+                         f"{CYBERLAB_DEFAULT}. A glob is accepted, but "
+                         f"cyberlab_*.json also pulls in the 543MB "
+                         f"2019-08-05 capture.")
+    ap.add_argument("--collect", action="store_true",
+                    help="after writing the dataset, run "
+                         "collect_ground_truth_sessions.py on it straight away "
+                         "(hours: one docker exec per command). Without this "
+                         "the command to run is printed for you to start later.")
     args = ap.parse_args()
 
+    sources = ("ml4net", "cyberlab") if args.source == "both" else (args.source,)
     selected, total_commands, blocked_commands, breakdown = select_sessions(
-        target_commands=args.target_commands)
+        target_commands=args.target_commands, sources=sources,
+        cyberlab_file=args.cyberlab_file)
 
-    n_balance = sum(1 for s in selected if s["selected_because"] == "stateful")
-    n_topup   = sum(1 for s in selected if s["selected_because"] == "topup")
+    by_reason = {}
+    for s in selected:
+        by_reason[s["selected_because"]] = by_reason.get(s["selected_because"], 0) + 1
 
     print(f"\n[select] selected {len(selected)} sessions, {total_commands} commands "
           f"(all runnable — the unrunnable ones were dropped)")
-    print(f"[select]   {n_balance} sessions picked for FI band balance")
-    print(f"[select]   {n_topup} sessions picked to reach the requested budget")
+    for reason, n in sorted(by_reason.items()):
+        print(f"[select]   {n:6d} sessions picked in the '{reason}' pass")
     print(f"[select] breakdown by source file:")
     for src, n in sorted(breakdown.items()):
         print(f"  {src:<30} {n:6d} commands")
@@ -427,9 +533,35 @@ def main():
         "sessions":         selected,
     }
     os.makedirs(DATASET_DIR, exist_ok=True)
-    with open(OUTPUT_PATH, "w", encoding="utf-8") as f:
+    path = output_path(args.source, total_commands)
+    if os.path.exists(path):
+        raise SystemExit(
+            f"[select] {path} already exists — refusing to overwrite it.\n"
+            f"  A dataset of this exact size was selected before and may "
+            f"already hold collected ground truth.\n"
+            f"  Move or delete it first if you really want to replace it.")
+    with open(path, "w", encoding="utf-8") as f:
         json.dump(out, f, indent=2, ensure_ascii=False)
-    print(f"[select] wrote {OUTPUT_PATH}")
+    print(f"[select] wrote {path}")
+
+    collector = os.path.join(_HERE, "build", "collect_ground_truth_sessions.py")
+    if not args.collect:
+        print(f"[select] next: collect ground truth into it with")
+        print(f"[select]   python {os.path.relpath(collector, _ROOT)} "
+              f"--dataset {os.path.relpath(path, _ROOT)}")
+        return
+
+    # Same interpreter, as a child process rather than an import: the
+    # collector owns a Docker container for hours and checkpoints the file as
+    # it goes, so a crash there must not take the selection with it.
+    import subprocess
+    print(f"[select] --collect given, starting ground truth collection\n")
+    sys.stdout.flush()
+    rc = subprocess.call([sys.executable, collector, "--dataset", path])
+    if rc != 0:
+        raise SystemExit(f"[select] ground truth collection exited {rc} — "
+                         f"{path} is written and holds whatever it checkpointed, "
+                         f"so re-run the collector on it rather than re-selecting")
 
 
 if __name__ == "__main__":
