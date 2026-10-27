@@ -75,7 +75,10 @@ from honeyrouter.embeddings import embed                 # noqa: E402
 from honeyrouter.sessions import load_sessions           # noqa: E402
 from honeyrouter import predictor as P                   # noqa: E402
 
-OUT = os.path.join(_HERE, "out", "routing_policy.pt")
+# HONEYROUTER_OUT: see predictor.py. Same directory for the whole run, so this
+# stage reads the predictor its own run produced, not production's.
+_OUT_DIR = os.environ.get("HONEYROUTER_OUT") or os.path.join(_HERE, "out")
+OUT = os.path.join(_OUT_DIR, "routing_policy.pt")
 
 
 # ── data: the pairwise comparison set V ───────────────────────────────────────
@@ -88,18 +91,44 @@ def build_pairwise_dataset(seed: int = 0):
     strictly higher than arm k2 (ties dropped -- they carry no preference).
 
         E     (N, emb)   frozen prompt embedding per command
-        score (N, K)     judge score 1-5 per arm (0 if the judge failed)
+        score (N, K)     judge score rescaled to [0,1] per arm
         cost  (N, K)     $/command per arm
         sids  (N,)       session id per command (for the held-out split)
         pairs (M, 4)     [row, k1, k2, z]
+
+    Two things this function is careful about, because Stage 2's target and
+    Stage 3's reward are both built from `score` -- getting it wrong here
+    skews the fidelity-vs-cost trade-off in both.
+
+    SCALE. The judge answers 1-5 and everything downstream divides by the row
+    maximum (Eq 6/B.7). Fed the raw scale, the WORST possible answer comes out
+    at 1/5 = 0.2 rather than 0, so fidelity spans 0.2..1 while cost spans
+    0..1 -- the two halves of omega^T[s,-c] on different rulers, with cost
+    free to dominate. Rescaled to [0,1] first, `cowrie=3 vs cloud=4` is a gap
+    of 0.33 instead of 0.25, and a cloud win survives a cost weight of ~1.0
+    instead of ~0.8.
+
+    MISSING JUDGE. A score of 0 means the judge never ran, not that the answer
+    was terrible -- on a 1-5 scale it reads as worse than the worst. There
+    were 81 such entries across 44 commands, and they fell on the paid arms:
+    cowrie 2, on_device 40, cloud 39. Scoring them 0 penalised those arms for
+    our tooling failing. Those commands are dropped instead.
     """
     sess = load_sessions()
     rows = [(sid, c) for sid, cmds in sess.items() for c in cmds]
-    table = embed([c["cmd"] for _, c in rows])
 
+    raw = np.array([[c["agents"][a]["judge_score"] for a in AGENTS]
+                    for _, c in rows], dtype=np.float32)
+    keep = (raw > 0).all(axis=1)
+    if not keep.all():
+        print(f"[data] dropping {int((~keep).sum())} of {len(rows)} commands "
+              f"-- the judge did not score every arm on them")
+        rows = [r for r, k in zip(rows, keep) if k]
+        raw = raw[keep]
+
+    table = embed([c["cmd"] for _, c in rows])
     E = np.stack([table[c["cmd"]] for _, c in rows]).astype(np.float32)
-    score = np.array([[c["agents"][a]["judge_score"] for a in AGENTS]
-                      for _, c in rows], dtype=np.float32)
+    score = (raw - 1.0) / 4.0                     # judge 1..5 -> 0..1
     cost = np.array([[c["agents"][a]["cost_usd"] for a in AGENTS]
                      for _, c in rows], dtype=np.float32)
     sids = np.array([sid for sid, _ in rows])
