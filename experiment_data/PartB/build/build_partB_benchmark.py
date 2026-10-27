@@ -68,7 +68,19 @@ GT_IMAGE      = _GT["image"]
 GT_DOCKERFILE = os.path.join(_HERE, "Dockerfile.ground_truth.generated")
 CONTAINER     = _GT["container"]
 TIMEOUT       = 10
-DOCKER        = "sudo docker"
+def _docker_cmd():
+    """`docker` if this user can reach the daemon, else `sudo docker`.
+
+    Collecting 50k commands is ~3k docker invocations, and with a hard-coded
+    `sudo docker` every one of them is a separate sudo call: once the
+    credential cache expires the run stops and waits for a password it cannot
+    be given, over and over, for hours. Preferring the direct socket makes
+    that disappear for anyone in the `docker` group."""
+    probe = subprocess.run("docker info", shell=True, capture_output=True)
+    return "docker" if probe.returncode == 0 else "sudo docker"
+
+
+DOCKER        = _docker_cmd()
 GT_HOSTNAME   = _CFG.honeypot.hostname
 
 
@@ -134,8 +146,17 @@ def render_dockerfile() -> str:
                 f"-d {home}", f"-s {shell}",
                 f'-c "{gecos}"' if gecos else "",
                 "-m" if str(home).startswith("/home") else ""]
-        L.append(f"RUN id -u {name} >/dev/null 2>&1 || "
-                 f"useradd {' '.join(o for o in opts if o)} {name}")
+        # Three steps, because `useradd -u N` exits 4 when N is taken and that
+        # failed the whole build: config declared sshd at uid 101, which is
+        # 22.04's, while 20.04 hands 101 to systemd-resolve. Skip if the
+        # account exists; create it at the declared uid; failing that, create
+        # it without one so the build survives -- the name is what `ls -l` and
+        # /etc/passwd show, and a clash is reported rather than silent.
+        plain = ' '.join(o for o in opts if o and not o.startswith("-u "))
+        L.append(f"RUN id -u {name} >/dev/null 2>&1 "
+                 f"|| useradd {' '.join(o for o in opts if o)} {name} "
+                 f"|| {{ echo \"NOTE: uid {uid} taken, creating {name} "
+                 f"without it\"; useradd {plain} {name}; }}")
     L += ["", "# Files from system_state.starting_files — declared perms and size.",
           "# Content was never specified, only perms/size, so filler is padded",
           "# to the declared length."]
@@ -149,7 +170,15 @@ def render_dockerfile() -> str:
         gen = (f"head -c {n} /dev/zero | tr '\\0' '#'" if n else "printf ''")
         L.append(f"RUN mkdir -p {parent} && {gen} > {path} && "
                  f"chmod {_octal(perms)} {path}")
-    L += ["", 'CMD ["sleep", "infinity"]', ""]
+    # Start where an SSH login starts, which is root's home, not /. `docker
+    # exec` inherits the image's WORKDIR, and with none set every session
+    # began in / -- so `mkdir .ssh` made /.ssh and the `chmod 700 ~/.ssh`
+    # right after it failed with "cannot access '/root/.ssh'", a
+    # contradiction no real session produces. Taken from config.yaml's
+    # system_state.users.root.home so it cannot drift from what the honeypot
+    # claims.
+    _root_home = ((users.get("root") or {}).get("home")) or "/root"
+    L += ["", f"WORKDIR {_root_home}", "", 'CMD ["sleep", "infinity"]', ""]
     return "\n".join(L)
 
 
@@ -440,7 +469,14 @@ def build_candidates(max_per_fi=25):
 # ─── Docker helpers ───────────────────────────────────────────────────────────
 
 def _run(cmd, check=True):
+    # stdin from /dev/null, not inherited. With DOCKER="sudo docker" and an
+    # expired sudo timestamp, an inherited tty let sudo print
+    # "[sudo] password for ...:" and block the whole collection until someone
+    # typed it -- a 50k-command run spent hours asleep at that prompt rather
+    # than working. Denied stdin, sudo fails immediately and the error is
+    # visible instead of silent.
     return subprocess.run(cmd, shell=True, check=check,
+                          stdin=subprocess.DEVNULL,
                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
 
@@ -452,6 +488,23 @@ def container_exists():
 def _image_exists():
     r = _run(f"{DOCKER} image inspect {GT_IMAGE}", check=False)
     return r.returncode == 0
+
+
+def _image_is_stale():
+    """True if config.yaml now renders a different Dockerfile than the one the
+    existing image was built from.
+
+    Without this, editing config.yaml did nothing: start_container() built
+    only when the image was MISSING, so the image kept whatever base, users
+    and WORKDIR it was first built with while the regenerated Dockerfile sat
+    on disk unused. Two whole collection runs were spent on an image that
+    still started every session in / after config said /root, and the only
+    cure was knowing to `docker rmi` by hand."""
+    try:
+        with open(GT_DOCKERFILE, encoding="utf-8") as fh:
+            return fh.read() != render_dockerfile()
+    except OSError:
+        return True            # never built here, or the record is gone
 
 
 def _build_gt_image():
@@ -474,28 +527,52 @@ def _build_gt_image():
     print("[docker] image built")
 
 
+def _wait_ready(attempts=200):
+    """Block until the container accepts an exec, instead of sleeping a fixed
+    guess. The old fixed `sleep 0.3` + `sleep 0.5` per reset was both slower
+    and less safe than asking: 0.8s x ~3100 sessions is ~41 minutes of pure
+    sleeping on a 50k-command collection, while a loaded host can still need
+    longer than 0.8s, in which case the first command of the session used to
+    fail against a container that was not up yet."""
+    for _ in range(attempts):
+        if _run(f"{DOCKER} exec {CONTAINER} true", check=False).returncode == 0:
+            return
+        time.sleep(0.05)
+    raise RuntimeError(f"container {CONTAINER} did not become ready")
+
+
 def start_container():
     if not _image_exists():
+        _build_gt_image()
+    elif _image_is_stale():
+        print("[docker] config.yaml changed since this image was built "
+              "— rebuilding")
+        _run(f"{DOCKER} rmi -f {GT_IMAGE}", check=False)
         _build_gt_image()
     print(f"[docker] starting {GT_IMAGE} as {CONTAINER} (hostname={GT_HOSTNAME}) ...")
     if container_exists():
         _run(f"{DOCKER} rm -f {CONTAINER}", check=False)
     _run(f"{DOCKER} run -d --name {CONTAINER} --hostname {GT_HOSTNAME} --rm=false "
          f"{GT_IMAGE} sleep infinity")
-    time.sleep(1)
+    _wait_ready()
     print("[docker] ready")
 
 
 def reset_container():
     _run(f"{DOCKER} rm -f {CONTAINER}", check=False)
-    time.sleep(0.3)
     _run(f"{DOCKER} run -d --name {CONTAINER} --hostname {GT_HOSTNAME} --rm=false "
          f"{GT_IMAGE} sleep infinity")
-    time.sleep(0.5)
+    _wait_ready()
 
 
-def exec_cmd(cmd):
-    """Returns (output, returncode). Captures raw bytes and decodes with
+def exec_cmd(cmd, timeout=None):
+    """Returns (output, returncode). `timeout` overrides the module default
+    for this one command -- a fullscreen program (top, htop, watch, less)
+    never exits on its own and burns the full timeout every time, so a
+    caller that knows it is running one can ask for a shorter wait. The
+    screen such a program paints is identical after 2s and after 10s.
+
+    Captures raw bytes and decodes with
     errors='replace' instead of subprocess's default strict utf-8 — real
     command output sometimes contains a byte that isn't valid utf-8 (binary
     data, unusual locale output, etc.), which would otherwise raise
@@ -523,7 +600,8 @@ def exec_cmd(cmd):
     wrapped = f"({cmd}) 2>&1"
     r = subprocess.run(
         f"{DOCKER} exec -t {CONTAINER} bash -c {shlex.quote(wrapped)}",
-        shell=True, capture_output=True, timeout=TIMEOUT, stdin=subprocess.DEVNULL,
+        shell=True, capture_output=True, stdin=subprocess.DEVNULL,
+        timeout=TIMEOUT if timeout is None else timeout,
     )
     output = r.stdout.decode("utf-8", errors="replace").replace("\r\n", "\n").replace("\r", "\n")
     return output.strip(), r.returncode
