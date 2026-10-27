@@ -57,7 +57,11 @@ from _paths import session_dir_for
 
 
 RESULTS_DIR = os.path.join(_HERE, "..", "results", "partC")
-DEFAULT_SESSIONS = os.path.join(_ROOT, "dataset", "partC_stateful_sessions.json")
+# No default dataset. This pointed at dataset/partC_stateful_sessions.json,
+# a months-old selection whose ground truth was collected one docker exec
+# per command, so `cd` never carried over and 73 of its 109 sessions are
+# wrong. Reaching for it implicitly is how stale output kept reappearing;
+# the dataset is now always named on the command line.
 
 # ── arm sources (the three forced-arm runs we already have) ───────────────────
 ARM_FILES = {
@@ -137,7 +141,8 @@ def load_sessions(path):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--sessions", default=DEFAULT_SESSIONS)
+    ap.add_argument("--sessions", required=True,
+                    help="the dataset_groundtruth_<N>.json to replay")
     ap.add_argument("--limit", type=int, default=None,
                     help="only replay the first N sessions (smoke test)")
     ap.add_argument("--out", default=None, help="output dir (default: auto timestamp)")
