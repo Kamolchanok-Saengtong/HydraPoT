@@ -24,7 +24,7 @@ keys are skipped on restart) and run requests concurrently via a thread
 pool (I/O-bound network calls, not CPU-bound, so threads are fine).
 
 reliability mode reads cmd/ground_truth straight from the Part C reference
-dataset (dataset/partC_stateful_sessions.json by default) — never from an
+dataset (the dataset_groundtruth_<N>.json named by --dataset) — never from an
 arm's result .jsonl, which pairs ground_truth with a `response` field. This
 keeps the sanity check completely isolated from any arm's actual output.
 
@@ -65,7 +65,11 @@ from prompt.prompt_manager import _looks_binary
 
 ARMS = ("cowrie", "on_device", "cloud", "honeyrouter")
 _ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-DEFAULT_DATASET = os.path.join(_ROOT, "dataset", "partC_stateful_sessions.json")
+# No default dataset. This pointed at dataset/partC_stateful_sessions.json,
+# a months-old selection whose ground truth was collected one docker exec
+# per command, so `cd` never carried over and 73 of its 109 sessions are
+# wrong. Reaching for it implicitly is how stale output kept reappearing;
+# the dataset is now always named on the command line.
 
 # Experiment keys live in experiment_data/.env, separate from the repo-root .env.
 from core.config_loader import load_dotenv
@@ -314,7 +318,7 @@ def _select(records: list, limit: int | None, sample: int | None) -> list:
 def load_source_dataset(path: str) -> list:
     """
     Loads (session_id, position_in_session, cmd, ground_truth, fi_score) straight
-    from the actual Part C reference dataset (e.g. dataset/partC_stateful_sessions.json)
+    from the actual Part C reference dataset (e.g. dataset/dataset_groundtruth_<N>.json)
     — NOT from any arm's result .jsonl. Those files pair ground_truth with a
     `response` field from a specific arm; reading from the pure source dataset
     instead means there is zero chance of ever touching an arm's response here.
@@ -462,7 +466,7 @@ def main():
     common.add_argument("--sample", type=int, default=None, help="randomly sample N records instead of judging all")
 
     p_rel = sub.add_parser("reliability", parents=[common])
-    p_rel.add_argument("--dataset", default=DEFAULT_DATASET,
+    p_rel.add_argument("--dataset", required=True,
                         help="Part C reference dataset to read cmd+ground_truth from "
                              "(NOT an arm's result file — no response field exists here at all)")
 
