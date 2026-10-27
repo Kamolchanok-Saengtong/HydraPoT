@@ -16,6 +16,9 @@ dependencies = [
     "asyncssh>=2.14",
     "paramiko>=3.0",
 
+    # Guardrail: the NeMo detector arm (guardrail/detector_arm/nemo.py)
+    "nemoguardrails>=0.24",
+
     # LLM (on-device)
     "transformers>=4.40",
     "torch>=2.0",
@@ -151,7 +154,19 @@ extend_exclude = [
     "honeyrouter/.*", "finetuning/.*",
     "tools/.*",
     "test.py", "measure.py", "debug_chmod_state.py",
+    # NVIDIA's own jailbreak-detection source, vendored verbatim so the arm
+    # runs NeMo's logic rather than a reimplementation. Its imports are
+    # upstream's problem, not this project's dependency surface.
+    "guardrail/detector_arm/nemo_jailbreak/.*",
+    # Research scripts: they import `overhead`/`fidelity`/
+    # `build_partB_benchmark` out of experiment_data, which is excluded above
+    "guardrail/DES.py", "guardrail/collect_ground_truth.py",
 ]
+
+# Bare-name imports of modules sitting next to the importer, reached through
+# sys.path rather than a package path. deptry cannot tell those from a
+# distribution name.
+known_first_party = ["character_break"]
 
 # Import name != distribution name. Listing these lets deptry run without the
 # dependencies installed, so CI never needs torch.
