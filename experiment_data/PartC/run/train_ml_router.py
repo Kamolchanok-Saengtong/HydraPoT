@@ -1,6 +1,10 @@
 """
-experiment_data/PartC/run/train_ml_router.py — replay Part C through the
-HoneyRouter's OWN trained policy, swept over the preference weight omega.
+experiment_data/PartC/run/train_ml_router.py — train the HoneyRouter's three
+phases for one hyperparameter config. TRAINS ONLY; it does not evaluate.
+
+Sweeping omega lives in score/eval_irt_sweep.py, which loads what this file
+trained. They were one script, so trying another omega meant paying for a
+whole retrain.
 
 THE ROUTING LOGIC IS honeyrouter/'s, NOT THIS FILE'S. The arm for each command
 comes from honeyrouter.cli._picks() -- the policy trained by
@@ -24,13 +28,9 @@ Pipeline now:
   2. Real per-arm cost, same formula as cost_analysis.py: cloud $/call for
      cloud, GPU_AVG_WATT x latency for on_device, 0 for cowrie. Reported, and
      used by no routing decision -- the policy weighs cost itself through omega.
-  3. For each omega in the sweep, honeyrouter's policy picks the arm per
-     command (cli._picks, the same call cli.py --review uses).
-  4. REPLAY: the response served is the stored real response from the picked
-     arm -- same mechanism replay_honeyrouter.py uses, no new agent calls.
-  5. Scored and costed by CALLING score_all_metrics.py's _fast_metrics and
-     cost_analysis.py's own cost primitives (cost.cost_model.gpu_avg_watt,
-     cost.power_cost.kwh_to_thb) -- nothing re-derived.
+  3. Train phases 1-3 into results/partC_ml_router/config_<hash>/ and record
+     the config in irt_model.json. Routing, replay and scoring per omega are
+     eval_irt_sweep.py's job, on this folder.
 
 SHARED HELPERS LIVE HERE, imported by score/eval_irt_sweep.py and
 score/summarize_irt_router.py: ARMS, FIDELITY, score_vs_partc(),
@@ -349,13 +349,6 @@ def main():
     import argparse
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--omega-sweep", dest="omegas",
-                    default="0,0.5,1,1.5,2",
-                    help="omega values to try, comma-separated. omega weights "
-                         "-cost, so higher is cheaper; the range matches "
-                         "reinforcement.py's training, omega ~ U(0, 2). This "
-                         "is the paper's preference parameter -- it replaces "
-                         "the hand-rolled lambda this file used to sweep.")
     for k in ("p1_epochs", "p2_steps", "p2_batch", "p3_steps"):
         ap.add_argument("--" + k.replace("_", "-"), type=int,
                         default=DEFAULTS[k], dest=k,
@@ -365,24 +358,33 @@ def main():
     ap.add_argument("--no-mixup", dest="mixup", action="store_false",
                     default=DEFAULTS["mixup"], help="phase 3 without mixup")
     ap.add_argument("--reuse", action="store_true",
-                    help="if this exact config was already trained, score the "
-                         "existing model instead of retraining it")
+                    help="if this exact config was already trained, keep "
+                         "that model instead of retraining it")
     args = ap.parse_args()
-    omegas = [float(x) for x in args.omegas.split(",")]
 
     cfg = {k: getattr(args, k) for k in
            ("p1_epochs", "p2_steps", "p2_batch", "p3_steps", "run_rl", "mixup")}
+    # Folder identity has to cover how the DATA was prepared, not just the
+    # hyperparameters. routing_policy.build_pairwise_dataset changed on
+    # 2026-10-26 -- judge scores rescaled 1-5 -> [0,1], and commands the judge
+    # failed to score dropped instead of counted as 0. Same hyperparameters,
+    # different training signal: without this key the new run would hash to
+    # config_a23a86b14ed9 and overwrite results it is meant to be compared
+    # against. Bump it whenever the signal changes.
+    cfg["data_rev"] = "unit-score-drop-unjudged"
     h = config_hash(cfg)
-    paper = {k: DEFAULTS[k] for k in cfg}
+    # Only the hyperparameters have a paper default to compare against;
+    # data_rev describes our own preprocessing and is not in DEFAULTS.
+    paper = {k: DEFAULTS[k] for k in cfg if k in DEFAULTS}
     run_dir = os.path.join(OUT_DIR, f"config_{h}")
     trained = os.path.isfile(os.path.join(run_dir, "routing_policy.pt"))
 
     print(f"config {h} -> {os.path.relpath(run_dir, _ROOT)}/")
     print(f"  {cfg}")
-    if cfg != paper:
-        print("  DEPARTS FROM THE PAPER: "
-              + str({k: f"{v} (paper {paper[k]})"
-                     for k, v in cfg.items() if v != paper[k]}))
+    off = {k: f"{v} (paper {paper[k]})" for k, v in cfg.items()
+           if k in paper and v != paper[k]}
+    if off:
+        print("  DEPARTS FROM THE PAPER: " + str(off))
     print("  production in honeyrouter/out/ is NOT touched\n", flush=True)
 
     os.makedirs(run_dir, exist_ok=True)
@@ -413,7 +415,7 @@ def main():
     if pol is None:
         raise SystemExit(f"training finished but no {which} policy in {run_dir}")
 
-    print("[1/4] scoring every arm's real response against ground truth ...")
+    print("[1/3] scoring every arm's real response against ground truth ...")
     cmds, scores, meta, rows = load_matrix()
     print(f"      {scores.shape[0]} commands x {scores.shape[1]} arms  "
           f"mean correctness: " + "  ".join(
@@ -421,59 +423,28 @@ def main():
     print("      (reported only -- the policy was trained in honeyrouter/, "
           "nothing is fitted here)")
 
-    print("[2/4] real per-arm cost basis ...")
+    print("[2/3] real per-arm cost basis ...")
     cost_norm, cost_raw = per_arm_cost(rows)
     print(f"      raw $/call:  " + "  ".join(f"{a}={c:.6f}" for a, c in cost_raw.items()))
     print(f"      normalized:  " + "  ".join(f"{a}={c:.4f}" for a, c in cost_norm.items()))
     print("      (reported only -- the policy weighs cost itself, via omega)")
 
-    print("[3/4] aligning rows to the policy's build order ...")
-    build_rows = rows_in_build_order()
-    lut = arm_lookup()
-    print(f"      {len(build_rows)} rows")
-
-    import collections
-    sweep = []
-    for omega in omegas:
-        print(f"\n[4/4] omega={omega} -- honeyrouter policy routes, then replay ...")
-        picks, out = route_and_replay(pol, omega, build_rows, lut)
-        dist = collections.Counter(picks)
-        print(f"      routing distribution: {dict(dist)}  (n={len(out)})")
-
-        # Inside THIS config's folder, so two configs cannot overwrite each
-        # other's replay -- that is the whole point of the config_<hash> dir.
-        out_dir = os.path.join(run_dir, f"omega_{omega}")
-        os.makedirs(os.path.join(out_dir, "fidelity"), exist_ok=True)
-        path = os.path.join(out_dir, "fidelity", "ml_router.jsonl")
-        with open(path, "w", encoding="utf-8") as fh:
-            for row in out:
-                fh.write(json.dumps(row) + "\n")
-
-        comparison = score_vs_partc(out)
-        sweep.append({"omega": omega, "n": len(out),
-                      "routing_distribution": dict(dist), **comparison})
-
-    print("\n" + "=" * 70)
-    print("  OMEGA SWEEP -- fidelity (cosine) vs cost, honeyrouter policy")
-    print("=" * 70)
-    print(f"  {'omega':>7}{'cowrie':>9}{'on_device':>11}{'cloud':>8}"
-          f"{'cosine':>9}{'total_usd':>11}")
-    for s in sweep:
-        d, f, c = s["routing_distribution"], s["fidelity"]["ml_router"], s["cost"]["ml_router"]
-        print(f"  {s['omega']:>7.2f}{d.get('cowrie', 0):>9}{d.get('on_device', 0):>11}"
-              f"{d.get('cloud', 0):>8}{f['cosine_score']:>9.3f}{c['total_usd']:>11.4f}")
-
+    # The omega sweep used to run here, which meant adding one omega cost a
+    # full retrain. It is score/eval_irt_sweep.py's job now: this file trains
+    # and records HOW it trained, that file loads the result and measures it.
+    print("[3/3] recording how it was trained ...")
     path = os.path.join(run_dir, "irt_model.json")
     with open(path, "w", encoding="utf-8") as fh:
         json.dump({"hash": h, "config": cfg, "policy": which,
                    "train_sec": train_sec,
                    "routing": "honeyrouter.cli._picks (trained policy)",
                    "mean_cost_usd_raw": cost_raw,
-                   "mean_cost_normalized": cost_norm,
-                   "omega_sweep": sweep}, fh, indent=2)
+                   "mean_cost_normalized": cost_norm}, fh, indent=2)
     print(f"\nwrote {os.path.relpath(path, _ROOT)}")
-    print(f"per-omega replays under "
-          f"{os.path.relpath(run_dir, _ROOT)}/omega_<value>/fidelity/")
+    print("\nnext -- sweep omega on this trained model (no retraining):")
+    print(f"  python experiment_data/PartC/score/eval_irt_sweep.py \\")
+    print(f"      --config-dir {os.path.relpath(run_dir, _ROOT)} \\")
+    print(f"      --omega-sweep 0,0.5,1,1.5,2")
 
 
 if __name__ == "__main__":

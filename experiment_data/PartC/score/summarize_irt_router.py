@@ -25,25 +25,34 @@ def _read(path):
 def _load_sweep(d):
     """The omega sweep, from whichever file the run actually wrote.
 
-    Two scripts produce the same sweep under different names:
-      eval_irt_sweep.py    -> sweep_semantic_and_judge.json  {"sweep": [...]}
-      train_ml_router.py   -> irt_model.json                 {"omega_sweep": [...]}
-    The rows are the same shape either way (omega, routing_distribution,
-    fidelity, cost), so this reads either rather than making the caller
-    produce a particular filename.
+    Three filenames have carried this sweep:
+      eval_irt_sweep.py  -> omega_sweep.json  {"omega_sweep": [...]}  current
+      eval_irt_sweep.py  -> sweep_semantic_and_judge.json  {"sweep": [...]}
+      train_ml_router.py -> irt_model.json    {"omega_sweep": [...]}  pre-split
+    The rows are the same shape in all three (omega, routing_distribution,
+    fidelity, cost), so this reads whichever exists rather than making the
+    caller produce a particular filename. irt_model.json is last because it
+    only holds a sweep in runs from before training and evaluation were split
+    into separate scripts.
     """
-    a = os.path.join(d, "sweep_semantic_and_judge.json")
+    a = os.path.join(d, "omega_sweep.json")
     if os.path.isfile(a):
-        return _read(a)
-    b = os.path.join(d, "irt_model.json")
-    if os.path.isfile(b):
-        m = _read(b)
+        m = _read(a)
         return {"policy": m.get("policy", "rl"), "sweep": m["omega_sweep"]}
+    b = os.path.join(d, "sweep_semantic_and_judge.json")
+    if os.path.isfile(b):
+        return _read(b)
+    c = os.path.join(d, "irt_model.json")
+    if os.path.isfile(c):
+        m = _read(c)
+        if "omega_sweep" in m:
+            return {"policy": m.get("policy", "rl"), "sweep": m["omega_sweep"]}
     rel = os.path.relpath(d, os.path.join(_HERE, "..", ".."))
     raise SystemExit(
-        f"no sweep in {rel}/ -- expected sweep_semantic_and_judge.json or "
-        f"irt_model.json.\n  Produce one with:\n"
-        f"    python experiment_data/PartC/run/train_ml_router.py")
+        f"no sweep in {rel}/ -- expected omega_sweep.json.\n"
+        f"  Produce one from the trained model (no retraining):\n"
+        f"    python experiment_data/PartC/score/eval_irt_sweep.py \\\n"
+        f"        --config-dir {rel} --omega-sweep 0,0.5,1,1.5,2")
 
 
 def _load_review(d):
