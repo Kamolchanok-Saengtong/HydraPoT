@@ -43,17 +43,46 @@ from datetime import datetime
 from agent_manager.cowrie_agent import CowrieAgent
 from agent_manager.static_handler import is_static, dispatch_static
 from prompt.fi_manager import FILogManager
-from prompt.prompt_manager import PromptManager
+from prompt.prompt_manager import PromptManager, _decode_echo_payload, _looks_binary
 from threat_intel.mitre_mapper import tag as mitre_tag
-from core.router import _is_cloud, classify
+from core.router import classify
 
 from shell.fakefs import FakeFS
 from shell.software import Software
+from shell import state as state_mod
 from shell.state import StateTracker
 from shell.responders import Responders
 from shell.cowrie_link import CowrieLink
 from shell.telemetry import Telemetry
 from shell.routing import Routing
+
+
+def _state_snapshot(state: dict, content_chars: int = 2000) -> dict:
+    """JSON-serialisable SYSTEM_STATE for the Part C judge's state context.
+
+    Binary content is marked (can't go in a JSON prompt); text is clipped.
+    """
+    files = {}
+    for path, rec in state.get("files", {}).items():
+        meta = {"perms": rec.get("perms"), "size": rec.get("size")}
+        raw = rec.get("content")
+        if raw:
+            if rec.get("backend") == "cowrie":
+                meta["content"] = "[real bytes held by Cowrie]"
+            elif _looks_binary(raw):
+                meta["content"] = "[binary data]"
+            else:
+                text = _decode_echo_payload(raw).decode("utf-8", "replace")
+                meta["content"] = (text if len(text) <= content_chars
+                                   else text[:content_chars] + "…[clipped]")
+        files[path] = meta
+    return {
+        "cwd":       state.get("cwd"),
+        "files":     files,
+        "installed": sorted(state.get("installed", {})),
+        "versions":  dict(state.get("versions", {})),
+        "vars":      dict(state.get("vars", {})),
+    }
 
 
 def parse_command(cmd: str):
@@ -132,32 +161,21 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
     if plugins:
         plugins.apply_fi_rules(fi_manager.scorer)
 
+    # Per-session state; dict(...) copies avoid leaking into the shared config.
     SYSTEM_STATE = {
+        "cwd":       "/root",
+        "files":     dict(config.system_state.get("starting_files", {})),
         "versions":  {},
         "installed": {},
-        # Home of the account that actually logged in, not always /root.
-        # validate_password() accepts any username, so an attacker connecting
-        # as `admin` must land in /home/admin or the first `pwd` gives the
-        # honeypot away. Filled in just below, once "users" exists.
-        "cwd":       "/root",   # tracked so `cd` can be resolved deterministically
-                                 # instead of left to the LLM to guess/hallucinate
-        "files":     dict(config.system_state.get("starting_files", {})),
-        # F3 (systemctl/service) state — otherwise `start`/`stop` were never
-        # remembered and `status` always claimed "active (running)" regardless
-        # of prior actions, an internal inconsistency an attacker could probe
-        # (stop a service, then immediately query status and see it "running").
-        "services":  {},   # {service_name: {"active": bool, "enabled": bool}}
-        # Persona — see config.yaml system_state.users / .shadow. Copied so
-        # a session mutating state (useradd/userdel/chpasswd) cannot leak into
-        # the shared config object and affect the next session.
-        "users":  {u: dict(v) for u, v in config.system_state.get("users", {}).items()},
-        "shadow": dict(config.system_state.get("shadow", {})),
+        "services":  {},
+        "users":     {u: dict(v) for u, v in config.system_state.get("users", {}).items()},
+        "shadow":    dict(config.system_state.get("shadow", {})),
+        # Shell variables the attacker set. Written by StateTracker._assign,
+        # read by the agent prompt -- see that method for why.
+        "vars":      {},
     }
 
-    # The account the attacker authenticated as. Unknown names are registered
-    # on the fly with a conventional /home/<user> — a real box would have the
-    # account in /etc/passwd, and without this `cd ~` and bare `cd` resolve to
-    # root's home for every user.
+    # Unknown login → conventional /home/<user> so `cd ~` and `pwd` look real.
     if username not in SYSTEM_STATE["users"]:
         SYSTEM_STATE["users"][username] = {
             "uid": 1001, "gid": 1001,
@@ -225,6 +243,22 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
                     if content:
                         extra += f"\nFILE CONTENT of {p}:\n{content}\n"
         return extra
+
+    def _build_agent_prompt(agent: str, actual_cmd: str, actual_base: str):
+        """The prompt an LLM agent is actually sent: SRi prompt + virtual-file
+        extra. THE one place that assembles it.
+
+        Exported as handle.build_agent_prompt so Part A's standalone arm sends
+        production's prompt instead of a reconstruction of it. Rebuilding it
+        outside the pipeline is how that baseline went wrong three times
+        (missing builtins, missing users, missing the SRi block), each time
+        turning an architecture measurement into a prompt-size measurement.
+        """
+        if agent == "cloud":
+            sys_p, usr_p = prompt_manager.build_cloud_prompt(actual_cmd)
+        else:
+            sys_p, usr_p = prompt_manager.build_prompt(actual_cmd)
+        return sys_p, usr_p + _cat_file_content_extra(actual_cmd, actual_base)
 
     def _handle_passwd(cmd: str, write_fn, read_fn) -> str:
         time.sleep(random.uniform(1.5, 3.0))
@@ -301,7 +335,8 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
         storage.bump_counter("cowrie_fallback", instance=INSTANCE)
 
     link = CowrieLink(cowrie, fallback=_answer_without_cowrie,
-                      on_degrade=_count_degradation)
+                      on_degrade=_count_degradation, sync_state=sync_state)
+    link.tracker = tracker          # lets link.catch_up() read state + deltas
 
     # ── shortcut: log + return ────────────────────────────────────────────
     def _reaches_a_model(agent, needs_llm, base, lookup_base, cmd) -> bool:
@@ -370,7 +405,7 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
             retry = _once()
             retry_broke = _validator.validate(retry)
             if not retry_broke.broke_persona:
-                _record_break(cmd, out, broke.reasons, "retry")
+                _record_break(cmd, out, broke.matched_prefixes, "retry")
                 return retry
             out, broke = retry, retry_broke
 
@@ -381,9 +416,9 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
         # cannot loop.
         if cmd:
             fallback, _ = link.send(cmd)
-            _record_break(cmd, out, broke.reasons, "cowrie")
+            _record_break(cmd, out, broke.matched_prefixes, "cowrie")
             return fallback or ""
-        _record_break(cmd, out, broke.reasons, "unresolved")
+        _record_break(cmd, out, broke.matched_prefixes, "unresolved")
         return out
 
     # ── prompt-injection guardrail ──────────────────────────────────────────
@@ -443,6 +478,7 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
     def _finish(cmd, agent, output, fi_score, t_start, streamed=False):
         handle.last_agent  = agent
         handle.state_size  = len(SYSTEM_STATE["files"]) + len(SYSTEM_STATE["installed"])
+        handle.state_snapshot = _state_snapshot(SYSTEM_STATE)
         latency_ms = (time.time() - t_start) * 1000
         # fi/method from handle() -- one score per command, see the note at
         # the scorer.score() call there.
@@ -466,39 +502,26 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
         cases. Each is logged as the agent it DISPLACED, so the routing
         statistics stay honest about what these took away from cowrie.
 
-        force_agent=="cowrie" is the measurement arm: it must reach the
-        real container, so none of this applies to it.
+        None of this applies to ANY forced arm. Each one exists to measure
+        one agent's own behaviour, so answering on its behalf here scores
+        this code instead of the agent -- it silently took 506 of the
+        on_device arm's 2179 commands (chmod 199, cd 190, unset 17, ...)
+        and 303 of cloud's, inflating both baselines. Production is
+        unaffected: force_agent is None there.
         """
-        if force_agent == "cowrie":
+        if force_agent is not None:
             return None
 
         if actual_base == "cd":
             handled, cd_error = responders.cd(actual_cmd)
             if handled:
-                # Keep the REAL Cowrie shell in step with SYSTEM_STATE['cwd'].
-                # Cowrie holds one persistent SSH shell with its own working
-                # directory, but this branch answers `cd` itself and never
-                # forwards it — so the container stayed wherever it started
-                # while our tracked cwd moved. Any later cowrie-routed
-                # command then ran in the WRONG directory (e.g. `cd /tmp`
-                # then `ls` listed /root), which an attacker spots instantly.
-                # Send the RESOLVED absolute path so relative forms (`..`,
-                # `~`, symlinked paths) land in the same place on both sides.
-                if cd_error is None:
-                    try:
-                        cowrie.send(f"cd {SYSTEM_STATE['cwd']}")
-                    except Exception:
-                        pass   # sync is best-effort: never break the session
+                # FIXME: Cowrie cwd not synced here — pending lazy state-sync layer.
                 return _finish(cmd, "cowrie", cd_error or "", fi_score, t_start)
 
         if actual_base == "chmod" and not cloud_routed:
             handled, chmod_error = responders.chmod(actual_cmd)
             if handled:
-                # Only forward a chmod we actually accepted. Forwarding one
-                # we answered with "No such file" would create the file's
-                # permissions on a file we just said does not exist.
-                if chmod_error is None:
-                    link.sync(actual_cmd)
+                # FIXME: Cowrie not synced here — pending lazy state-sync layer.
                 return _finish(cmd, "cowrie", chmod_error or "", fi_score, t_start)
 
         # unset always succeeds silently in real bash, regardless of
@@ -533,7 +556,7 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
         # closes that gap.
         if actual_base in ("systemctl", "service"):
             output = responders.systemctl(actual_cmd)
-            tracker.record(cmd, output)
+            tracker.record(actual_cmd, output)
             return _finish(cmd, "on_device", output, fi_score, t_start)
         return None
 
@@ -566,13 +589,27 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
         # one assignment token: NAME= then a value that may be single/double
         # quoted, a $(...) substitution, or bare (bare stops at whitespace) —
         # so VER=$(uname -a) and YEL='[1 ; 33m' count as ONE assignment each.
-        _ASSIGN = r"[A-Za-z_][A-Za-z0-9_]*=(?:'[^']*'|\"[^\"]*\"|\$\([^)]*\)|[^\s]*)"
-        _PURE_ASSIGN = re.compile(r"^\s*(?:" + _ASSIGN + r"\s*)+$")
+        # Imported, not redefined: StateTracker._assign records what this
+        # pattern decides is silent, so a second copy here could drift and
+        # leave an assignment answered but never stored.
+        _ASSIGN = state_mod.ASSIGN
+        _PURE_ASSIGN = state_mod.PURE_ASSIGN
         _ENV_PREFIX  = re.compile(r"^\s*(?:" + _ASSIGN + r"\s+)+(\S.*)$", re.S)
         if force_agent != "cowrie" and actual_cmd:
-            if _PURE_ASSIGN.match(actual_cmd):
+            # Answering locally is skipped for EVERY forced arm, not just
+            # cowrie: each measurement arm must reach its own agent or the
+            # score is this code's, not the agent's. The env-prefix REWRITE
+            # below is normalisation, not an answer, so it still applies.
+            if force_agent is None and _PURE_ASSIGN.match(actual_cmd):
                 # pure assignment(s): wdir="/bin", VER=$(uname -a), A=1 B=2
                 # -> bash assigns and prints nothing
+                #
+                # record() first: this branch used to return without it, so the
+                # assigned value was thrown away and a later `eval "$P"` reached
+                # its agent with no idea what P held. The output stays empty --
+                # real bash is silent here, and routing these to a model for
+                # output would only make it invent some.
+                tracker.record(actual_cmd, "")
                 return _finish(cmd, "cowrie", "", fi_score, t_start)
             _m = _ENV_PREFIX.match(actual_cmd)
             if _m:
@@ -580,9 +617,9 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
                 actual_cmd  = _m.group(1)
                 actual_base = actual_cmd.split()[0]
                 lookup_base = os.path.basename(actual_base)
-            elif actual_cmd.lstrip().startswith((">", "<")):
+            elif force_agent is None and actual_cmd.lstrip().startswith((">", "<")):
                 # redirect with no command (>file, >>file, >.dropper) -> silent
-                tracker.record(cmd, "")
+                tracker.record(actual_cmd, "")
                 return _finish(cmd, "cowrie", "", fi_score, t_start)
 
         # ── helper: does this command reference a tracked (LLM/local-only) file? ──
@@ -621,8 +658,8 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
         def _routes_to_cloud() -> bool:
             if force_agent is not None:
                 return force_agent == "cloud"
-            if _is_cloud(actual_cmd):      # obfuscated -> cloud regardless of FI
-                return True
+            # Obfuscation no longer forces cloud — route by FI band (see
+            # core.router.classify). Keeps harmless low-FI obfuscation cheap.
             try:
                 return str(config.routing.fi_routing.get(fi_score)) == "cloud"
             except Exception:
@@ -630,10 +667,14 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
 
         cloud_routed = _routes_to_cloud()
 
-        answered = _deterministic_answer(actual_cmd, actual_base, cloud_routed,
-                                         force_agent, cmd, fi_score, t_start)
-        if answered is not None:
-            return answered
+        # _deterministic_answer() is UNWIRED — kept as dead code, not called.
+        # It answered 249 of FI2's 258 commands (96.5%) before routing ever
+        # ran, logged them as "cowrie" though neither the container nor any
+        # model saw them, and scored WORSE than real Cowrie on the same
+        # commands (judge 3.28 vs 4.41): it resolved paths the real tool
+        # echoes verbatim ("/root/xmrig" for `chmod +x xmrig`), never expanded
+        # globs, and reported success for `cd` into a directory that does not
+        # exist. Routing by FI band now decides these, like every other command.
 
         # ── evaluation-only forced routing ───────────────────────────────────
         # force_agent is only set by the eval framework (run_partB.py).
@@ -642,24 +683,34 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
         if force_agent is not None:
             if force_agent == "cloud":
                 agent = "cloud"
-                sys_p, usr_p = prompt_manager.build_cloud_prompt(actual_cmd)
-                usr_p += _cat_file_content_extra(actual_cmd, actual_base)
+                sys_p, usr_p = _build_agent_prompt(agent, actual_cmd, actual_base)
                 output = _llm_send(cloud, sys_p, usr_p, cmd=actual_cmd)
                 link.sync_history(cmd)
-                tracker.record(cmd, output)
+                tracker.record(actual_cmd, output)
                 return _finish(cmd, agent, output, fi_score, t_start)
             elif force_agent == "on_device":
+                # Must mirror the forced cloud branch above and the natural
+                # on-device path below, or this measurement arm is not the
+                # pipeline it claims to measure: both the virtual-file prompt
+                # extra and the Cowrie history-sync were missing here, so the
+                # arm skipped a round-trip production actually pays.
                 agent = "on_device"
-                sys_p, usr_p = prompt_manager.build_prompt(actual_cmd)
+                sys_p, usr_p = _build_agent_prompt(agent, actual_cmd, actual_base)
                 output = _llm_send(ondevice, sys_p, usr_p, cmd=actual_cmd)
-                tracker.record(cmd, output)
+                link.sync_history(cmd)
+                tracker.record(actual_cmd, output)
                 return _finish(cmd, agent, output, fi_score, t_start)
             elif force_agent == "cowrie":
-                # force_agent=="cowrie" is the measurement arm — it must reach
-                # the real container, so no fallback here on purpose.
+                # Measurement arm — must reach the real container (no fallback).
+                # Catch Cowrie up first so it reads the creator's synced state.
                 agent  = "cowrie"
+                link.catch_up()
+                gen = cowrie.generation
                 output, _ = cowrie.send(cmd)
-                tracker.record(cmd, output)
+                if cowrie.generation != gen:    # reconnected mid-command → shell wiped
+                    link.catch_up()             # rebuild, then run against real state
+                    output, _ = cowrie.send(cmd)
+                tracker.record(actual_cmd, output, on_cowrie=True)
                 return _finish(cmd, agent, output, fi_score, t_start)
 
         # ── apt install — fully local, streamed ───────────────────────────
@@ -697,7 +748,7 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
         # download too — that is what the on_device/cloud agents read.
         if actual_base in ("wget", "curl") and re.search(r'https?://', actual_cmd):
             output, used = _cowrie_send(cmd, write_fn=write_fn)
-            tracker.record(cmd, output)
+            tracker.record(actual_cmd, output, on_cowrie=(used == "cowrie"))
             return _finish(cmd, used, output, fi_score, t_start, streamed=True)
 
         if actual_base == "passwd" and not cloud_routed:
@@ -775,7 +826,7 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
         # have had their turn but before routing even runs.
         if is_static(actual_cmd):
             output = dispatch_static(actual_cmd, write_fn)
-            tracker.record(cmd, output)
+            tracker.record(actual_cmd, output)
             return _finish(cmd, "cowrie", output, fi_score, t_start, streamed=True)
 
         # ── Route using classify() from router.py ─────────────────────────
@@ -842,20 +893,27 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
         # intelligence: an attacker probing the LLM is worth capturing.
         # Past the boundary AND actually going to a model -- a command that
         # Cowrie answers builds no prompt either.
+        prompt_manager.injection_flagged = False
         if _detector is not None and (needs_llm or agent != "cowrie"):
             try:
                 from guardrail.policy import Action, Policy
-                from guardrail.sanitizer import Sanitized
-                # Reuse what PromptManager._guard already stripped for the
-                # prompt, rather than sanitising the same command twice.
-                removed = getattr(prompt_manager, "last_removed", []) or []
-                _san = Sanitized(text=actual_cmd, removed=removed,
-                                 modified=bool(removed))
+                from guardrail.sanitizer import Sanitizer
+                # Sanitise THIS command here rather than reading
+                # prompt_manager.last_removed: the prompt for this command is
+                # not built until further down, so that field still held the
+                # PREVIOUS command's tokens -- a forged token was missed on
+                # first use, and the next benign command inherited it and was
+                # logged as an attack. The sanitiser is two regexes over one
+                # string, so running it again costs nothing measurable, and
+                # the decision no longer depends on statement order.
+                _san = Sanitizer().sanitize(actual_cmd)
                 _decision = Policy().decide(_detector.classify(actual_cmd), _san)
+                prompt_manager.injection_flagged = (
+                    _decision.action is Action.PROTECT)
                 if _decision.action is Action.PROTECT and _injection_log:
                     _injection_log.record(_decision, cmd, src_ip=src_ip,
                                           session_id=SESSION_ID,
-                                          removed_tokens=removed)
+                                          removed_tokens=_san.removed)
             except Exception as e:
                 print(f"[guardrail] detect failed: {type(e).__name__}: {e}")
 
@@ -864,37 +922,24 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
             usr_p += _cat_file_content_extra(actual_cmd, actual_base)
             output = _llm_send(cloud, sys_p, usr_p, cmd=actual_cmd)
             link.sync_history(cmd)
-            tracker.record(cmd, output)
+            tracker.record(actual_cmd, output)
 
         elif agent == "on_device" or needs_llm:
             if re.search(r'--version\b|-V\b', cmd):
                 agent  = "on_device"
                 output = sw.version(lookup_base)
-                tracker.record(cmd, output)
+                tracker.record(actual_cmd, output)
                 return _finish(cmd, agent, output, fi_score, t_start)
 
             elif actual_base in ("touch", "mkdir"):
-                # Forward to Cowrie as well as recording it here. These used to
-                # update SYSTEM_STATE only, so the file existed on our side and
-                # not in Cowrie's real filesystem — and the two then disagreed
-                # the moment any command reached the other side:
-                #
-                #   touch payload.sh    -> our state only
-                #   ls -la payload.sh   -> answered here, file "exists"
-                #   chmod 755 payload.sh-> our state only, Cowrie unchanged
-                #   rm payload.sh       -> routed to Cowrie -> "No such file"
-                #
-                # Same fix as `cd` above: answer locally for speed and state,
-                # forward so the container stays in step. Best effort — a
-                # logging or backend problem must never kill a live session.
-                tracker.record(cmd, "")
-                link.sync(actual_cmd)
+                # FIXME: Cowrie not synced here — pending lazy state-sync layer.
+                tracker.record(actual_cmd, "")
                 return _finish(cmd, "cowrie", "", fi_score, t_start)
 
             elif actual_base == "mv":
                 parts = actual_cmd.split()
                 if len(parts) >= 3 and fs.resolve(parts[1]) in SYSTEM_STATE["files"]:
-                    tracker.record(cmd, "")
+                    tracker.record(actual_cmd, "")
                     return _finish(cmd, "cowrie", "", fi_score, t_start)
 
             # systemctl/service now handled deterministically, unconditionally,
@@ -904,7 +949,7 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
 
             elif actual_base == "sed":
                 agent  = "on_device"
-                tracker.record(cmd, "")
+                tracker.record(actual_cmd, "")
                 output = ""
 
             elif ondevice is not None:
@@ -945,15 +990,15 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
                             usr_p = usr_p + extra
                         output = _llm_send(ondevice, sys_p, usr_p, cmd=actual_cmd)
                 link.sync_history(cmd)
-                tracker.record(cmd, output)
+                tracker.record(actual_cmd, output)
 
             else:
                 output, agent = _cowrie_send(cmd)
-                tracker.record(cmd, output)
+                tracker.record(actual_cmd, output)
 
         else:  # agent == "cowrie"
             output, agent = _cowrie_send(cmd)
-            tracker.record(cmd, output)
+            tracker.record(actual_cmd, output)
 
         if (agent == "cowrie" and not streamed
                 and ("command not found" in (output or "") or "cannot execute binary file" in (output or ""))
@@ -964,9 +1009,12 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
             if llm_out and "command not found" not in llm_out:
                 output = llm_out
                 agent  = "on_device"
-                tracker.record(cmd, output)
+                tracker.record(actual_cmd, output)
         return _finish(cmd, agent, output, fi_score, t_start, streamed)
 
     handle.fi_manager = fi_manager
     handle.prompt_manager = prompt_manager
+    # Production's own prompt assembly, so Part A's standalone arm can send the
+    # real prompt rather than rebuild one that matches. See _build_agent_prompt.
+    handle.build_agent_prompt = _build_agent_prompt
     return handle

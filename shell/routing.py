@@ -19,6 +19,8 @@ bytes. Hence the `backend == "cowrie"` skip below.
 """
 import re
 
+from prompt.prompt_manager import _looks_binary
+
 # Answered from local state rather than the container: our service table, our
 # hostname, our compiler behaviour.
 _ALWAYS = frozenset({"systemctl", "service", "journalctl", "hostname",
@@ -107,6 +109,10 @@ class Routing:
         path = self.fs.resolve(arg)
         record = files.get(path)
         if not record or not record.get("content"):
+            return False
+        # Binary: Cowrie holds the real synced bytes and cats them exactly, so
+        # route there instead of letting the model fake plausible bytes.
+        if _looks_binary(record["content"]):
             return False
         # Cowrie downloaded it and holds the real bytes; ours is a placeholder.
         return record.get("backend") != "cowrie"
