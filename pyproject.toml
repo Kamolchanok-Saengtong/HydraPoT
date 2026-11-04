@@ -182,5 +182,7 @@ PyYAML = ["yaml"]
 llama-cpp-python = ["llama_cpp"]
 
 [tool.deptry.per_rule_ignores]
-# Imported by transformers/llama-cpp, not by our own code
-DEP002 = ["torch", "accelerate", "bitsandbytes"]
+# Imported by transformers/llama-cpp, not by our own code. python-multipart is
+# the same case for FastAPI: the dashboard login form's Form() fields need it
+# at runtime, but nothing in this codebase imports `multipart` by name.
+DEP002 = ["torch", "accelerate", "bitsandbytes", "python-multipart"]
