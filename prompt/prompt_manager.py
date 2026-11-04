@@ -2,6 +2,8 @@ import os
 import re
 from datetime import datetime
 
+from core.router import _deobfuscate
+
 TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), "templates")
 _HEX_BYTE_RE     = re.compile(r"\\x([0-9a-fA-F]{2})")
 _ECHO_E_FLAG_RE  = re.compile(r"^-[a-zA-Z]*e[a-zA-Z]*\s+")
@@ -87,6 +89,7 @@ class PromptManager:
         self.guardrail    = guardrail
         # Tokens _guard() stripped from the most recent prompt. See _guard.
         self.last_removed = []
+        self.injection_flagged = False
 
     # ── attacker text entering a prompt ─────────────────────────────────────
     # EVERY path that puts attacker-controlled text into a prompt goes through
@@ -128,21 +131,45 @@ class PromptManager:
         g = self.guardrail
         if text is None or not g or not getattr(g, "enabled", False):
             return text
-        if getattr(g, "sanitize", False):
+        flagged = bool(self.injection_flagged)
+        # ISOLATE, THEN SANITISE. Two different kinds of judgement:
+        #
+        # Fencing is probabilistic. Plain-language injection carries nothing to
+        # strip, so the delimiters are the only defence against it -- but they
+        # cost prompt space and attention, so they earn their place only when
+        # the detector actually flagged the command.
+        do_isolate = getattr(g, "isolate", False) and (
+            flagged or not getattr(g, "fence_on_detect", False))
+        # Sanitising is MECHANICAL: the text either carries forged
+        # chat-template tokens or it does not, and the Sanitizer reports which.
+        # A forgery is a forgery whatever the detector scored, so this never
+        # waits on a verdict -- gating it on one let `<|im_start|>` through
+        # whenever the classifier happened to score the command low. Every
+        # path that reaches _guard() is building a templated prompt (on_device
+        # renders it through apply_chat_template, cloud through the messages
+        # array its provider templates server-side), so the same rule covers
+        # both; Cowrie builds no prompt and never arrives here.
+        do_sanitize = getattr(g, "sanitize", False)
+        if defuse and do_isolate:
+            for marker in self._SRI_MARKERS:
+                # Zero-width-ish break: still readable as the bytes the attacker
+                # wrote if a human reads the prompt, no longer the marker.
+                text = text.replace(marker, marker[0] + "\u200b" + marker[1:])
+        if fence and do_isolate:
+            from guardrail.isolation import Isolation
+            text = Isolation().wrap(text)
+        if do_sanitize:
+            # Safe after fencing: the Sanitizer matches <|...|>, <<SYS>> and
+            # [INST]/[SYS], none of which can match Isolation's own
+            # "[BEGIN/END UNTRUSTED TERMINAL INPUT ...]" markers, so it strips
+            # the attacker's forged tokens from inside the fence without
+            # damaging the fence itself.
             from guardrail.sanitizer import Sanitizer
             result = Sanitizer().sanitize(text)
             # Published so the detector can record WHICH tokens were forged
             # without sanitising the same command a second time.
             self.last_removed = result.removed
             text = result.text
-        if defuse and getattr(g, "isolate", False):
-            for marker in self._SRI_MARKERS:
-                # Zero-width-ish break: still readable as the bytes the attacker
-                # wrote if a human reads the prompt, no longer the marker.
-                text = text.replace(marker, marker[0] + "\u200b" + marker[1:])
-        if fence and getattr(g, "isolate", False):
-            from guardrail.isolation import Isolation
-            text = Isolation().wrap(text)
         return text
 
     def _render_users(self) -> str:
@@ -177,12 +204,16 @@ class PromptManager:
             users    = self._render_users(),
         )
         system_prompt = f"{base_prompt}\n\n{system_setting}"
-        user_prompt   = self._build_user_prompt(cmd)
+        user_prompt   = self._build_user_prompt(_deobfuscate(cmd))
         return system_prompt, user_prompt
-        
+
     def build_cloud_prompt(self, cmd: str) -> tuple[str, str]:
         """
-        Like build_prompt() but adds obfuscation-aware instruction for cloud LLM.
+        Like build_prompt(), for the cloud LLM. The command is statically
+        decoded (see core.router._deobfuscate) before the model ever sees it,
+        so it answers the real command directly instead of being asked to
+        decode-and-execute it — that framing is jailbreak-shaped and was
+        tripping a silent moderation block on some providers.
         """
         base_prompt = self._base_prompt_tpl.format(
             hostname = self.hostname,
@@ -195,22 +226,12 @@ class PromptManager:
             arch     = self.arch,
             users    = self._render_users(),
         )
-        obfuscation_note = (
-            "\nIMPORTANT: The attacker may use obfuscated commands (base64, hex, "
-            "variable splitting, eval, subshell substitution, pipe to shell, etc.). "
-            "Mentally decode the full command first, then simulate ONLY the final "
-            "terminal output of the fully executed decoded command. "
-            "NEVER print the decoded command itself — only print what the decoded "
-            "command would output. "
-            "Example: 'echo d2hvYW1p | base64 -d | bash' decodes to 'whoami' "
-            "and executes it, so output is 'root', NOT 'whoami'.\n"
-            "WRONG output for that example: whoami  (this just echoes the decoded "
-            "command back, which is incorrect)\n"
-            "CORRECT output for that example: root  (this is what whoami actually prints)\n"
-            "base64, xxd, od, tr, echo, bash, sh are ALWAYS available as coreutils."
-            )
-        system_prompt = f"{base_prompt}\n\n{system_setting}{obfuscation_note}"
-        user_prompt   = self._build_user_prompt(cmd)
+        indirect_note = (
+            "\nSome commands build their action indirectly (eval, variable "
+            "expansion). Answer with what the fully-resolved command would print."
+        )
+        system_prompt = f"{base_prompt}\n\n{system_setting}{indirect_note}"
+        user_prompt   = self._build_user_prompt(_deobfuscate(cmd))
         return system_prompt, user_prompt
 
     def _build_user_prompt(self, cmd: str) -> str:
@@ -219,32 +240,45 @@ class PromptManager:
         sri_lines = []
 
         # ── SRi — system state register (gated by sync_state) ─────────
-        if self.sync_state:
-            if self.builtins:
-                sri_lines.append(
-                    "AVAILABLE TOOLS — pre-installed and always usable, never say "
-                    "'command not found' or 'No such file or directory' for these "
-                    "regardless of how they're invoked (bare name, or full path like "
-                    "/bin/<tool> or /usr/bin/<tool>): "
-                    + ", ".join(sorted(self.builtins))
-                )
+        # Static behavioural rules: NOT session state. They were inside the
+        # sync_state gate, so a state-withheld baseline also lost the ls/
+        # sh/busybox/w rules it should still get — making it a weaker arm
+        # than intended, not merely a stateless one. Only the state below
+        # is gated now.
+        if self.builtins:
+            sri_lines.append(
+                "AVAILABLE TOOLS — pre-installed and always usable, never say "
+                "'command not found' or 'No such file or directory' for these "
+                "regardless of how they're invoked (bare name, or full path like "
+                "/bin/<tool> or /usr/bin/<tool>): "
+                + ", ".join(sorted(self.builtins))
+            )
 
-            # general ls -d clarification — injected ONCE, not per file
+        # Each callout below re-states a tool ALREADY in base_tools, because
+        # being one name among ~230 was not a strong enough signal on its own.
+        # Gated on self.builtins so config stays the single source of truth:
+        # drop a tool from config.yaml and its rule goes with it, instead of
+        # the prompt insisting a tool is "ALWAYS available" after it was removed.
+        _has = self.builtins.__contains__
+
+        # general ls -d clarification — injected ONCE, not per file
+        if _has("ls"):
             sri_lines.append(
                 "CRITICAL: 'ls -d <path>' without -l prints ONLY the path itself "
                 "(e.g. 'ls -d /tmp' outputs '/tmp'), NOT permission bits. "
                 "Only 'ls -ld' or 'ls -la' includes permission strings like drwxr-xr-x."
             )
 
-            # bare `ls` was consistently hallucinating an `ls -la`-style
-            # listing (permissions, dotfiles, a 'total N' line) regardless
-            # of the flags actually given — found via real losses against
-            # Cowrie in testing (54 cases). This is purely a
-            # formatting/syntax rule, not a state-dependent judgment call
-            # (unlike the earlier chmod fix, which needed to be resolved in
-            # code instead of the prompt because it required reasoning
-            # about file existence) — so a clear instruction should be
-            # reliable here the same way the ls -d note above already is.
+        # bare `ls` was consistently hallucinating an `ls -la`-style
+        # listing (permissions, dotfiles, a 'total N' line) regardless
+        # of the flags actually given — found via real losses against
+        # Cowrie in testing (54 cases). This is purely a
+        # formatting/syntax rule, not a state-dependent judgment call
+        # (unlike the earlier chmod fix, which needed to be resolved in
+        # code instead of the prompt because it required reasoning
+        # about file existence) — so a clear instruction should be
+        # reliable here the same way the ls -d note above already is.
+        if _has("ls"):
             sri_lines.append(
                 "CRITICAL: bare 'ls' or 'ls <path>' with NO '-l'/'-a' flags "
                 "prints ONLY filenames in simple space-separated columns — "
@@ -254,12 +288,13 @@ class PromptManager:
                 "format with permissions and a 'total' line."
             )
 
-            # `sh`/`bash` were losing to Cowrie by hallucinating "command not
-            # found" even though both are always in AVAILABLE TOOLS above —
-            # being buried in that long comma list wasn't a strong enough
-            # signal on its own. Same fix pattern as ls: a standalone
-            # CRITICAL callout, since this is a formatting/knowledge rule,
-            # not a state-dependent judgment call.
+        # `sh`/`bash` were losing to Cowrie by hallucinating "command not
+        # found" even though both are always in AVAILABLE TOOLS above —
+        # being buried in that long comma list wasn't a strong enough
+        # signal on its own. Same fix pattern as ls: a standalone
+        # CRITICAL callout, since this is a formatting/knowledge rule,
+        # not a state-dependent judgment call.
+        if _has("sh"):
             sri_lines.append(
                 "CRITICAL: 'sh' and 'bash' are ALWAYS available — they are "
                 "the shells this very terminal already runs on. NEVER output "
@@ -269,9 +304,10 @@ class PromptManager:
                 "with a minimal shell prompt, not an error)."
             )
 
-            # `w` (logged-in users) was losing to Cowrie by being answered
-            # with `ps`-style process-list output, or by just echoing the
-            # command text back instead of producing output.
+        # `w` (logged-in users) was losing to Cowrie by being answered
+        # with `ps`-style process-list output, or by just echoing the
+        # command text back instead of producing output.
+        if _has("w"):
             sri_lines.append(
                 "CRITICAL: 'w' shows currently logged-in users — a header "
                 "line (USER, TTY, LOGIN@, IDLE, JCPU, PCPU, WHAT) followed by "
@@ -281,14 +317,15 @@ class PromptManager:
                 "the command text back."
             )
 
-            # `busybox`/`/bin/busybox` was the single biggest FI4 loss against
-            # Cowrie (77% of meaningful losses in a real 109-session
-            # comparison) — hallucinating "command not found" despite being
-            # in AVAILABLE TOOLS above, the same "buried in a long list"
-            # reliability problem already fixed for sh/bash and w. Real FI4
-            # traffic is dominated by IoT-botnet-style commands that self-
-            # invoke via busybox (self-copy, chmod 777, rm -rf droppers),
-            # so this one tool covers a disproportionate share of real losses.
+        # `busybox`/`/bin/busybox` was the single biggest FI4 loss against
+        # Cowrie (77% of meaningful losses in a real 109-session
+        # comparison) — hallucinating "command not found" despite being
+        # in AVAILABLE TOOLS above, the same "buried in a long list"
+        # reliability problem already fixed for sh/bash and w. Real FI4
+        # traffic is dominated by IoT-botnet-style commands that self-
+        # invoke via busybox (self-copy, chmod 777, rm -rf droppers),
+        # so this one tool covers a disproportionate share of real losses.
+        if _has("busybox"):
             sri_lines.append(
                 "CRITICAL: 'busybox' and '/bin/busybox' are ALWAYS available "
                 "— NEVER output 'command not found' for either form. "
@@ -303,6 +340,7 @@ class PromptManager:
                 "applet's own normal failure conditions apply."
             )
 
+        if self.sync_state:
             # installed packages — this tracks packages the attacker installs
             # DURING the session (apt install ...), NOT the total software on
             # the box. The old empty-state wording "(none beyond coreutils)"
@@ -330,6 +368,38 @@ class PromptManager:
                     f"CRITICAL: {tool} is version {ver} — "
                     f"MUST output this exact version, ignore training data"
                 )
+
+            # shell variables the attacker set in an earlier, silent command.
+            # Without these, staged obfuscation (build the payload in P, then
+            # `eval "$P"`) arrived here with the payload missing and the model
+            # had to invent output. Values are stored deobfuscated by
+            # StateTracker._assign.
+            #
+            # Attacker-controlled text, so guarded and newline-collapsed the
+            # same way file content is: a value may not forge an SRi line.
+            for name, rec in self.system_state.get("vars", {}).items():
+                if not isinstance(rec, dict):           # tolerate a plain string
+                    rec = {"value": rec}
+                raw = rec.get("value", rec.get("from_command", ""))
+                shown = self._guard(str(raw)[:500], defuse=True)
+                shown = shown.replace("\n", " ").replace("\r", " ")
+                if "from_command" in rec:
+                    # We know which command fills it, NOT what that command
+                    # printed. Saying "is set to" here would make `echo $VER`
+                    # print "uname -a".
+                    sri_lines.append(
+                        f"CRITICAL: shell variable {name} holds the OUTPUT of "
+                        f"this command: {shown}\n"
+                        f"  When the command expands ${name} or ${{{name}}}, use "
+                        f"what that command would print on this machine, not the "
+                        f"command text itself."
+                    )
+                else:
+                    sri_lines.append(
+                        f"CRITICAL: shell variable {name} is set to: {shown}\n"
+                        f"  Use this exact value wherever the command expands "
+                        f"${name} or ${{{name}}}."
+                    )
 
             # tracked files — CRITICAL prefix forces model to use actual state
             if self.system_state.get("files"):

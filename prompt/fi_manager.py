@@ -37,7 +37,7 @@ FI_RULES = {
         # as touch/cp/tar above (create/install-adjacent, not a modify/nav op)
         r'^xargs\b',
         r'^(kill|killall|pkill)\b(?!.*-9)',        # bare kill — the -9 variant is FI4 below
-        r'^exec\s+(?!\d+[<>])',                     # exec <cmd> — network-fd redirect handled by _is_cloud()
+        r'^exec\s+(?!\d+[<>])',                     # exec <cmd> — the network-fd redirect form (exec 3<>...) is excluded
     ],
     2: [
         r'^(mv|rm(?!\s+.*-rf?)|rmdir|truncate|tee|dd)',
@@ -104,8 +104,9 @@ FI scale:
 """
 # ── FI Scorer ─────────────────────────────────────────────────────────────────
 class FIScorer:
-    def __init__(self, llm_fn=None):
+    def __init__(self, llm_fn=None, fallback_fi=3):
         self.llm_fn = llm_fn
+        self.fallback_fi = fallback_fi   # band for text no pattern matches — e.g. garbled obfuscation output
         self.cache  = {}   # per-instance cache, safe for concurrent sessions
 
     def score(self, command: str) -> tuple[int, str]:
@@ -131,8 +132,8 @@ class FIScorer:
             except Exception:
                 pass
 
-        self.cache[cmd] = 0
-        return 0, "fallback"
+        self.cache[cmd] = self.fallback_fi
+        return self.fallback_fi, "fallback"
 
 
 # ── FI Log Manager ────────────────────────────────────────────────────────────
