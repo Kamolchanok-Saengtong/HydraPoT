@@ -44,59 +44,38 @@ _RESULTS = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..",
     "experiment_data", "results", "partC")
 
-# Kept for callers that want the judge/honeyrouter files, which all live here.
-BASE_DIR = os.path.join(_RESULTS, "fidelity_full109_final")
+# The Oct-5 reorg (commit 79bc665) consolidated every arm's execution record
+# into ONE directory and re-scored all three with a SINGLE judge model,
+# replacing the old split (full109_final + a separate cloud re-run dir, three
+# different judge models). Repointed here to match; see git log on this file
+# for the paths this replaced.
+BASE_DIR = os.path.join(_RESULTS, "fidelity")
 
 AGENTS = ("cowrie", "on_device", "cloud")
 
-# Execution record per arm. Explicit paths, NOT f"{agent}.jsonl" under one
-# directory -- see the module docstring for why the cloud arm is elsewhere.
-ARM_FILES = {
-    "cowrie": os.path.join(BASE_DIR, "cowrie.jsonl"),
-    "on_device": os.path.join(BASE_DIR, "on_device.jsonl"),
-    "cloud": os.path.join(_RESULTS, "fidelity_cloud_new_20260728_131019",
-                          "cloud.jsonl"),
-}
+ARM_FILES = {a: os.path.join(BASE_DIR, f"{a}.jsonl") for a in AGENTS}
 
-# THE RULE-BASED ROUTER WAS ALSO RECORDED, TWICE, AND THE TWO RUNS ARE NOT THE
-# SAME ROUTER:
-#
-#   full109_final/honeyrouter.jsonl       2026-07-14  cow 79.2  on 17.7  clo  3.1
-#   honeyrouter_replay_latest/hr.jsonl    2026-07-28  cow 68.8  on  7.0  clo 24.1
-#
-# The 07-28 run is the baseline, because it is the one that PAIRS WITH THE
-# CLOUD ARM ABOVE -- same day, and its cloud rows are lookups of that exact
-# file: cloud token totals match to the token (3,198,344). Using the 07-14
-# decisions against the 07-28 cloud arm is the same file-pairing mistake the
-# docstring above warns about, one layer up.
-ROUTER_FILE = os.path.join(_RESULTS, "honeyrouter_replay_latest",
-                           "honeyrouter.jsonl")
+# The rule-based router's measured execution + the judge that scored it now
+# live in the same consolidated fidelity/ directory as every other arm.
+ROUTER_FILE = os.path.join(BASE_DIR, "honeyrouter.jsonl")
+ROUTER_MEASURED_FILE = ROUTER_FILE
 
-# ...but the 07-28 run is a lookup replay and records NO timing at all
-# (inference_ms is 0 on every one of its 2179 rows), so the only measured
-# end-to-end latency for a rule-based router comes from the 07-14 run. It is
-# reported as what it is -- a different run, with a different routing mix --
-# and never summed into the 07-28 row.
-ROUTER_MEASURED_FILE = os.path.join(BASE_DIR, "honeyrouter.jsonl")
-
-# One judge run per agent (different judge model per arm -- whatever was
-# actually used to score that arm's real responses, see results dir).
-JUDGE_FILES = {
-    "cowrie": "judge_scored_cowrie_z-ai_glm-5.jsonl",
-    "on_device": "judge_scored_on_device_deepseek-v4-flash.jsonl",
-    "cloud": "judge_scored_cloud_deepseek-v4-flash.jsonl",
-}
+# One unified judge (openai/gpt-6-luna) scored all three arms post-reorg, at
+# fidelity/judge/<agent>/judge_scored_openai_gpt-6-luna.jsonl -- same filename
+# per agent now, not three different judge models under one flat directory.
+JUDGE_FILE = "judge_scored_openai_gpt-6-luna.jsonl"
 
 
 def _load_judge_scores(base_dir: str) -> dict:
     """-> {agent: {(session_id, position_in_session): judge_score}}"""
     judge_maps = {}
-    for agent, fname in JUDGE_FILES.items():
-        with open(os.path.join(base_dir, fname), encoding="utf-8") as f:
+    for agent in AGENTS:
+        path = os.path.join(base_dir, "judge", agent, JUDGE_FILE)
+        with open(path, encoding="utf-8") as f:
             rows = [json.loads(line) for line in f]
         judge_maps[agent] = {
-            (r["session_id"], r["position_in_session"]): r["judge_score"]
-            for r in rows
+            (str(r["session_id"]), r["position_in_session"]): r["judge_score"]
+            for r in rows if r.get("judge_score") is not None
         }
     return judge_maps
 

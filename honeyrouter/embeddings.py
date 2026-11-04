@@ -22,6 +22,12 @@ import os
 import numpy as np
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
+# Deliberately NOT redirected by HONEYROUTER_OUT, unlike predictor.py,
+# routing_policy.py and reinforcement.py. These embeddings are a pure function
+# of the commands and the model below -- no hyperparameter changes them -- so
+# every config shares one cache instead of re-embedding 2179 commands per run
+# for an identical result. Nothing a config run writes here can affect a
+# trained model; the model artifacts are the ones that get their own folder.
 CACHE = os.path.join(_HERE, "out", "embeddings.npz")
 MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 
@@ -31,23 +37,46 @@ def _key(model: str) -> str:
 
 
 def embed(commands, model: str = MODEL, refresh: bool = False) -> dict:
-    """{command_text: vector}. Cached on disk, keyed by the encoder used."""
+    """{command_text: vector}. Cached on disk, keyed by the encoder used.
+
+    The cache is matched PER COMMAND TEXT and only ever grows. It used to be
+    matched on len(texts) and rewritten whole, which quietly corrupted the
+    live router: irt_router_live.pick() calls embed([cmd]) one command at a
+    time, so a 1137-entry cache was overwritten with a single entry, and the
+    next single-command call saw 1 == 1, took the hit, and returned the
+    PREVIOUS command's vector. Routing then ran on the wrong embedding.
+    """
     commands = sorted(set(commands))
+    have, vecs_by_text = {}, {}
     if os.path.exists(CACHE) and not refresh:
         z = np.load(CACHE, allow_pickle=True)
-        if str(z["model_key"]) == _key(model) and len(z["texts"]) == len(commands):
-            return dict(zip(z["texts"].tolist(), z["vectors"]))
+        if str(z["model_key"]) == _key(model):
+            vecs_by_text = dict(zip(z["texts"].tolist(), z["vectors"]))
+            have = {c: vecs_by_text[c] for c in commands if c in vecs_by_text}
+    missing = [c for c in commands if c not in have]
+    if not missing:
+        return have
 
     from sentence_transformers import SentenceTransformer
     enc = SentenceTransformer(model)
-    vecs = enc.encode(commands, batch_size=64, show_progress_bar=False,
-                      normalize_embeddings=True)
+    new = enc.encode(missing, batch_size=64, show_progress_bar=False,
+                     normalize_embeddings=True)
+    have.update(zip(missing, new))
+    vecs_by_text.update(zip(missing, new))
+
+    # Union of old and new, written atomically: the live router and a training
+    # run can both be embedding at once, and a half-written npz would be read
+    # back as a corrupt cache by whichever got there second.
+    texts = sorted(vecs_by_text)
     os.makedirs(os.path.dirname(CACHE), exist_ok=True)
-    np.savez_compressed(CACHE, texts=np.array(commands, dtype=object),
-                        vectors=np.asarray(vecs, dtype=np.float32),
+    tmp = f"{CACHE}.{os.getpid()}.tmp.npz"     # savez appends .npz otherwise
+    np.savez_compressed(tmp, texts=np.array(texts, dtype=object),
+                        vectors=np.asarray([vecs_by_text[t] for t in texts],
+                                           dtype=np.float32),
                         model_key=_key(model))
-    print(f"[embed] {len(commands)} commands -> {np.shape(vecs)} -> {CACHE}")
-    return dict(zip(commands, vecs))
+    os.replace(tmp, CACHE)
+    print(f"[embed] +{len(missing)} new, {len(texts)} cached -> {CACHE}")
+    return have
 
 
 if __name__ == "__main__":

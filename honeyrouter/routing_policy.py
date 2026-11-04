@@ -83,6 +83,31 @@ OUT = os.path.join(_OUT_DIR, "routing_policy.pt")
 
 # ── data: the pairwise comparison set V ───────────────────────────────────────
 
+def rows_kept(verbose: bool = True):
+    """([(session_id, command)], judge scores) in BUILD ORDER, unjudged dropped.
+
+    The one definition of "which commands this stage sees, in what order".
+    Anything that maps the policy's output back to a command has to use this,
+    or it silently pairs decision n with a different command n: the policy
+    decides for the KEPT rows only, and iterating all rows instead ran off the
+    end of its output (2179 commands vs 2135 decisions).
+    """
+    sess = load_sessions()
+    rows = [(sid, c) for sid, cmds in sess.items() for c in cmds]
+    raw = np.array([[c["agents"][a]["judge_score"] for a in AGENTS]
+                    for _, c in rows], dtype=np.float32)
+    # 0 means the judge never ran, not a terrible answer -- see the note in
+    # build_pairwise_dataset's docstring.
+    keep = (raw > 0).all(axis=1)
+    if not keep.all():
+        if verbose:
+            print(f"[data] dropping {int((~keep).sum())} of {len(rows)} "
+                  f"commands -- the judge did not score every arm on them")
+        rows = [r for r, k in zip(rows, keep) if k]
+        raw = raw[keep]
+    return rows, raw
+
+
 def build_pairwise_dataset(seed: int = 0):
     """Build V from the replay.
 
@@ -114,18 +139,7 @@ def build_pairwise_dataset(seed: int = 0):
     cowrie 2, on_device 40, cloud 39. Scoring them 0 penalised those arms for
     our tooling failing. Those commands are dropped instead.
     """
-    sess = load_sessions()
-    rows = [(sid, c) for sid, cmds in sess.items() for c in cmds]
-
-    raw = np.array([[c["agents"][a]["judge_score"] for a in AGENTS]
-                    for _, c in rows], dtype=np.float32)
-    keep = (raw > 0).all(axis=1)
-    if not keep.all():
-        print(f"[data] dropping {int((~keep).sum())} of {len(rows)} commands "
-              f"-- the judge did not score every arm on them")
-        rows = [r for r, k in zip(rows, keep) if k]
-        raw = raw[keep]
-
+    rows, raw = rows_kept()
     table = embed([c["cmd"] for _, c in rows])
     E = np.stack([table[c["cmd"]] for _, c in rows]).astype(np.float32)
     score = (raw - 1.0) / 4.0                     # judge 1..5 -> 0..1

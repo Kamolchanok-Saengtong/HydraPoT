@@ -69,7 +69,10 @@ from honeyrouter.action import AGENTS                       # noqa: E402
 from honeyrouter import predictor as P                      # noqa: E402
 from honeyrouter import routing_policy as RP                # noqa: E402
 
-OUT = os.path.join(_HERE, "out", "routing_policy_rl.pt")
+# HONEYROUTER_OUT: see predictor.py. Same directory for the whole run, so this
+# stage continues the Phase-2 policy its own run produced, not production's.
+_OUT_DIR = os.environ.get("HONEYROUTER_OUT") or os.path.join(_HERE, "out")
+OUT = os.path.join(_OUT_DIR, "routing_policy_rl.pt")
 N_OBJ = 2                                                    # [score, -cost]
 
 
