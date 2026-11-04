@@ -24,11 +24,28 @@ THE ECHO PARSER lives here because nothing else uses it. Rebuilding a file from
 at a time, and getting the quoting wrong corrupts the content the agents are
 then shown -- see _ECHO_WRITE_RE.
 """
+import copy
 import posixpath
 import re
 
+from core.router import _deobfuscate
 from prompt.prompt_manager import _decode_echo_payload
 from shell.fakefs import mode_to_perms
+
+
+# One assignment token: NAME= then a value that may be single/double quoted, a
+# $(...) substitution, or bare (bare stops at whitespace) -- so VER=$(uname -a)
+# and YEL='[1;33m' each count as ONE assignment.
+#
+# DEFINED HERE, IMPORTED BY session.py. The two must agree: session.py decides
+# from PURE_ASSIGN that a command is silent, and _assign below is what records
+# what that silent command did. When they disagree, an assignment is answered
+# but never stored, which is the whole bug this pattern was pulled out for.
+ASSIGN = r"[A-Za-z_][A-Za-z0-9_]*=(?:'[^']*'|\"[^\"]*\"|\$\([^)]*\)|[^\s]*)"
+PURE_ASSIGN = re.compile(r"^\s*(?:" + ASSIGN + r"\s*)+$")
+_ASSIGN_ONE = re.compile(r"(?P<name>[A-Za-z_][A-Za-z0-9_]*)=(?P<value>"
+                         r"'[^']*'|\"[^\"]*\"|\$\([^)]*\)|[^\s;]*)")
+_SUBST = re.compile(r"^\$\((?P<inner>.*)\)$", re.S)
 
 
 # `echo [flags] <content> >|>> <path>` -- one pattern for all three real forms.
@@ -95,29 +112,106 @@ class StateTracker:
         self.state = state
         self.fs = fs
         self.sw = software
+        self.version = 0        # bumps on every state change
+        self.deltas = []        # [(version, key, path)] pointers into `state`
 
     # ── entry point ─────────────────────────────────────────────────────────
 
-    def record(self, cmd: str, response: str = ""):
-        """Apply whatever `cmd` changed. Safe to call for any command."""
+    def record(self, cmd: str, response: str = "", on_cowrie: bool = False):
+        """Apply whatever `cmd` changed, then log a pointer-delta per change.
+
+        on_cowrie=True means Cowrie already executed this command, so its deltas
+        must NOT be replayed back into Cowrie by catch_up.
+        """
+        before = copy.deepcopy(self.state)
         text = cmd.strip()
         bare = text[5:].strip() if text.startswith("sudo ") else text
 
-        # `cd` first and alone: it is the one effect that must be tracked no
-        # matter which agent answered, and nothing else below applies to it.
+        # `cd` is tracked no matter which agent answered; nothing else applies.
         if bare.split()[:1] == ["cd"]:
             handled, new_cwd, _err = self.fs.compute_cd(bare)
             if handled and new_cwd is not None:
-                # oldpwd, so `cd -` works no matter which agent answered.
                 self.state["oldpwd"] = self.state["cwd"]
                 self.state["cwd"] = new_cwd
-            return
+        else:
+            for effect in (self._assign, self._uninstall, self._remember_version,
+                           self._echo_write, self._touch, self._download,
+                           self._chpasswd, self._chmod, self._remove,
+                           self._mkdir, self._sed, self._move):
+                effect(text, response)
 
-        for effect in (self._uninstall, self._remember_version, self._echo_write,
-                       self._touch, self._download, self._chpasswd,
-                       self._chmod, self._remove, self._mkdir, self._sed,
-                       self._move):
-            effect(text, response)
+        self._log_deltas(before, on_cowrie)
+
+    def _emit(self, key: str, path, on_cowrie: bool):
+        self.version += 1
+        self.deltas.append((self.version, key, path, on_cowrie))
+
+    def _log_deltas(self, before: dict, on_cowrie: bool):
+        """One pointer-delta per changed key/path — diff `before` vs now."""
+        if before.get("cwd") != self.state.get("cwd"):
+            self._emit("cwd", None, on_cowrie)
+        bf, af = before.get("files", {}), self.state.get("files", {})
+        for p in af:
+            if bf.get(p) != af[p]:
+                self._emit("files", p, on_cowrie)
+        for p in bf:
+            if p not in af:
+                self._emit("files", p, on_cowrie)
+        for key in ("versions", "installed", "services", "users", "shadow",
+                    "vars"):
+            if before.get(key) != self.state.get(key):
+                self._emit(key, None, on_cowrie)
+
+    # ── shell variables ─────────────────────────────────────────────────────
+
+    def _assign(self, cmd, response):
+        """Record NAME=value so a later command that USES the variable can be
+        answered from state instead of guessed.
+
+        Staged obfuscation is the attack this exists for: build the payload in
+        variables over several silent commands, then run it.
+
+            P=$(echo "ZXhlYyAvdG1wLy54LnNoIC1z" | base64 -d)   <- silent
+            eval "${P/x/l}"                                    <- the real one
+
+        Before this, the value was discarded, so by the time `eval` reached an
+        agent nothing in the prompt said what P held and the agent had to
+        invent output -- which is where the honeypot stopped being convincing.
+
+        STORED DEOBFUSCATED, via the same core.router._deobfuscate the FI
+        scorer already uses, so `$(echo '<base64>' | base64 -d)` is recorded as
+        the decoded text rather than the disguise.
+
+        TWO SHAPES, because they are not the same claim:
+
+            {"value": "/bin"}               VER=/bin      -- we know the value
+            {"from_command": "uname -a"}    VER=$(uname -a) -- we know only
+                                            which command produces it
+
+        Flattening the second into the first is tempting and wrong: it would
+        record VER as the literal string "uname -a", and an agent asked to
+        `echo $VER` would print the command text instead of a kernel string.
+        The prompt renders each shape with its own wording.
+
+        Deliberately NOT a shell expansion engine: `${P/x/l}`, `$A$B` and
+        friends are stored as written, and a $(...) is never run. Resolving
+        them is a separate job with its own failure modes, and a wrong
+        expansion is worse than none.
+        """
+        # Only pure assignments. An env prefix (`LC_ALL=C ls`) sets the variable
+        # for one command and does not survive it, and session.py rewrites that
+        # form to the real command anyway -- recording it would state a
+        # persistence real bash does not have.
+        if not PURE_ASSIGN.match(cmd):
+            return
+        for m in _ASSIGN_ONE.finditer(_deobfuscate(cmd)):
+            value = m.group("value")
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
+                value = value[1:-1]
+            subst = _SUBST.match(value)
+            rec = ({"from_command": subst.group("inner").strip()} if subst
+                   else {"value": value})
+            self.state.setdefault("vars", {})[m.group("name")] = rec
 
     # ── packages ────────────────────────────────────────────────────────────
 
