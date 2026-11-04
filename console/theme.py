@@ -879,7 +879,10 @@ app.index_string = """
     .ai-fab:hover { transform:translateY(-2px);
                     box-shadow:0 10px 26px rgba(38,35,31,0.34); }
     .ai-fab:active { transform:translateY(0); }
-    .ai-fab-icon { font-size:1.35rem; line-height:1; }
+    /* 24px over a 12px grid: an exact 2x, so every pixel lands on whole
+       device pixels instead of being smeared across a fractional one. */
+    .ai-fab-icon { width:24px; height:24px; display:block;
+                   image-rendering:pixelated; }
 
     .ai-panel {
       position:fixed; right:22px; bottom:88px; z-index:1200;
