@@ -292,8 +292,8 @@ def _events_chart(df):
 
 def _hydrapot_intel(df, sav):
     """FI band -> which agent actually handled it. Measured, not the config
-    table: `_is_cloud()` obfuscation detection overrides the FI band, so the
-    real mapping is not one-to-one and showing the config would misrepresent it."""
+    table: Cowrie-coverage overrides and decoded-FI routing can deviate from the
+    raw band, so showing the config table would misrepresent the real mapping."""
     if df.empty:
         return html.Div("No data.", className="caption")
 

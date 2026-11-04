@@ -15,10 +15,13 @@ decoration: it is how you check the reply came from HydraPoT's pipeline and not
 from the model's priors. An answer with no tool calls is a claim with no
 evidence, and it looks like one.
 """
+from urllib.parse import quote
+
 from dash import html, dcc, Input, Output, State, ctx, ALL
 from dash.exceptions import PreventUpdate
 
 from console.server import app
+from console.theme import INK, PAPER
 
 # What the panel offers before you have typed anything. Chosen to demonstrate
 # the range -- a roll-up, a consequence question, and a pivot -- rather than to
@@ -30,6 +33,45 @@ SUGGESTIONS = [
 ]
 
 MAX_HISTORY = 20        # turns kept in the browser store
+
+# The button's mark. Kept as a picture so it is redrawn by editing the picture,
+# not by recomputing coordinates: '#' ink, 'o' eye, '.' clear.
+SQUID = """
+....####....
+..########..
+.##########.
+############
+############
+##oo####oo##
+##oo####oo##
+############
+.##########.
+.##..##..##.
+.##..##..##.
+..#...#...#.
+"""
+
+
+def _squid() -> html.Img:
+    """The pixel squid: one <rect> per lit pixel, inlined as a data URI.
+
+    An <img> rather than inline SVG because Dash's html module carries no SVG
+    elements. crispEdges is the point of the whole thing -- without it the
+    browser smooths the pixels back into a blob at any size but 1:1.
+    """
+    rows = SQUID.strip().splitlines()
+    w, h = len(rows[0]), len(rows)
+    rects = "".join(
+        f'<rect x="{x}" y="{y}" width="1" height="1" '
+        f'fill="{INK if px == "#" else PAPER}"/>'
+        for y, row in enumerate(rows)
+        for x, px in enumerate(row)
+        if px in "#o"
+    )
+    svg = (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {h}" '
+           f'shape-rendering="crispEdges">{rects}</svg>')
+    return html.Img(src=f"data:image/svg+xml,{quote(svg)}",
+                    className="ai-fab-icon", alt="")
 
 
 def _enabled() -> bool:
@@ -123,7 +165,7 @@ def widget():
         ]),
 
         html.Button(id="ai-fab", className="ai-fab", n_clicks=0, children=[
-            html.Span("✦", className="ai-fab-icon"),
+            _squid(),
         ], title="Ask the security analyst"),
     ])
 
