@@ -67,8 +67,19 @@ DASHBOARD_PID = os.path.join(_HP_DIR, "data", "dashboard.pid")
 DASHBOARD_LOG = os.path.join(_HP_DIR, "data", "dashboard.log")
 
 # Defaults live here rather than in the click options: --host/--port are shared
-# by two actions that want different ones.
-DASH_HOST, DASH_PORT = "127.0.0.1", 8050
+# by two actions that want different ones. Read from config.yaml's dashboard
+# section -- loopback and 8050 below are the fallback for an unreadable config,
+# not the setting.
+def _dash_defaults():
+    try:
+        from core.config_loader import load_config
+        d = load_config(os.path.join(_HP_DIR, "config.yaml")).dashboard
+        return d.host, int(d.port)
+    except Exception:
+        return "127.0.0.1", 8050
+
+
+DASH_HOST, DASH_PORT = _dash_defaults()
 
 
 class LicenseCommand(click.Command):
@@ -198,6 +209,88 @@ def _is_loopback(host: str) -> bool:
         return False
 
 
+def _dashboard_passwd():
+    """Create or rotate the dashboard's operator account.
+
+    THE ONLY WAY AN ACCOUNT IS CREATED. A web setup page would belong to
+    whoever reached the port first; running this command already requires
+    shell access to the sensor, so the CLI authenticates the operator for
+    free. See console/auth.py.
+    """
+    from console import auth
+
+    existing = auth.load_credential()
+    if existing:
+        click.echo(f"\n  Rotating the password for '{existing['username']}'.")
+        click.echo("  Every signed-in session will be revoked.\n")
+    else:
+        click.echo("\n  Creating the dashboard operator account.\n")
+
+    username = click.prompt("  Operator username",
+                            default=existing.get("username") or "admin")
+
+    # Stated BEFORE the prompt, not after a rejection: finding out the rule by
+    # breaking it means typing a password twice for nothing.
+    minimum = int(auth.cfg().min_password_length)
+    click.echo(f"\n  Password: at least {minimum} characters. Any characters "
+               f"-- letters, digits,\n  symbols, spaces, non-English text. No "
+               f"required mix, because length is\n  what actually costs an "
+               f"attacker. A short phrase you can remember beats a\n  short "
+               f"one you cannot.\n")
+
+    # hide_input + confirmation_prompt: the password is never echoed and never
+    # reaches the shell history, which is the other reason this is a prompt
+    # rather than an argument.
+    while True:
+        password = click.prompt("  Password", hide_input=True,
+                                confirmation_prompt="  Password (again)")
+        if len(password) >= minimum:
+            break
+        # Re-prompt rather than exit: throwing away the whole command over a
+        # short password means re-running it and retyping the username too.
+        click.echo(click.style(
+            f"  Too short — {len(password)} of {minimum} characters. "
+            f"Try again.\n", fg="red"))
+
+    path = auth.write_credential(username, password, rotate=bool(existing))
+    click.echo(click.style(f"\n  ✓ {'Rotated' if existing else 'Created'} "
+                           f"'{username}'", fg="green", bold=True))
+    click.echo(f"    stored (mode 0600, hashed with scrypt): {path}")
+    if existing:
+        click.echo("    all previous sessions revoked")
+    click.echo(f"\n  Start the dashboard with: hp --dashboard\n")
+
+
+def _ensure_operator_account():
+    """Make sure an account exists before the dashboard starts.
+
+    Offers to create one right here, so first run costs one prompt rather
+    than a failed start and a second command. Without a terminal to prompt on
+    -- systemd, a container, CI -- it names the command and stops, because the
+    alternative is a dashboard that serves nothing and says so in a log file
+    nobody is reading yet.
+    """
+    from console import auth
+    if auth.configured():
+        return
+
+    click.echo(click.style(
+        "\n  No operator account yet.", fg="yellow", bold=True))
+    click.echo("  The dashboard shows captured credentials and runs a SQL "
+               "console over them,\n  so it will not serve anything until "
+               "there is an account to sign in as.\n")
+
+    if not sys.stdin.isatty():
+        click.echo("  Create one on the sensor host:\n")
+        click.echo(click.style("      hp --dashboard-passwd\n", fg="green"))
+        raise SystemExit(2)
+
+    if not click.confirm("  Create one now?", default=True):
+        click.echo("\n  Nothing started. Run: hp --dashboard-passwd\n")
+        raise SystemExit(2)
+    _dashboard_passwd()
+
+
 def _dashboard(port, host, debug, foreground, i_accept_public_exposure):
     """Start the analytics dashboard in the background.
 
@@ -206,34 +299,35 @@ def _dashboard(port, host, debug, foreground, i_accept_public_exposure):
 
         ssh -N -L 8050:127.0.0.1:8050 user@sensor -p <admin-port>
     """
-    # The dashboard has NO authentication and its Database page includes a
-    # read-only SQL console over the capture database. Read-only is not the
-    # same as harmless: `SELECT username, password FROM auth` returns every
-    # credential the honeypot ever collected, plus every attacker IP and
-    # command. Binding it to the internet publishes all of that to anyone who
-    # finds the port.
-    #
-    # So a public bind has to be typed out deliberately. The tunnel costs one
-    # command and leaves nothing listening to find.
-    if not _is_loopback(host) and not i_accept_public_exposure:
+    # There is a login now (console/auth.py), so this is no longer the only
+    # thing standing between the SQL console and the internet -- but it stays,
+    # because a login is not TLS. On plain HTTP the password crosses the wire
+    # in clear, so loopback remains the default and exposure stays deliberate.
+    _ensure_operator_account()
+
+    from core.config_loader import load_config
+    allowed = load_config(os.path.join(_HP_DIR, "config.yaml")
+                          ).dashboard.allow_public_bind
+    if not _is_loopback(host) and not (allowed or i_accept_public_exposure):
         click.echo(click.style(
-            f"\n  Refusing to bind {host}: the dashboard has no login and "
-            f"exposes a SQL console\n  over your captured credentials.\n",
-            fg="red", bold=True))
+            f"\n  Refusing to bind {host}: a public bind is a deliberate "
+            f"choice, not a default.\n", fg="red", bold=True))
         click.echo("  Use an SSH tunnel instead (nothing listens publicly):\n")
         click.echo(click.style(
             f"      ssh -N -L {port}:127.0.0.1:{port} <user>@<sensor-host> -p <admin-ssh-port>\n",
             fg="green"))
         click.echo(f"  then open http://localhost:{port} on your own machine.\n")
         click.echo("  If you genuinely need a public bind, put it behind a reverse")
-        click.echo("  proxy with TLS and auth, and re-run with:")
+        click.echo("  proxy with TLS and either set dashboard.allow_public_bind")
+        click.echo("  in config.yaml or re-run with:")
         click.echo(f"      hp --dashboard --host {host} --i-accept-public-exposure\n")
         raise SystemExit(2)
 
     if not _is_loopback(host):
         click.echo(click.style(
-            f"  WARNING: binding {host} — dashboard is unauthenticated and "
-            f"exposes a SQL console.", fg="yellow", bold=True))
+            f"  WARNING: binding {host} — the login protects the UI, but "
+            f"nothing encrypts it.\n  Put TLS in front of it, or the password "
+            f"crosses the network in clear.", fg="yellow", bold=True))
 
     if foreground:
         click.echo(f"🍯 Dashboard on http://{host}:{port}  (Ctrl+C to stop)")
@@ -400,6 +494,8 @@ def _config():
               help="Start the analytics dashboard in the background")
 @click.option("--dashboard-stop", "do_dashboard_stop", is_flag=True,
               help="Stop the background dashboard")
+@click.option("--dashboard-passwd", "do_dashboard_passwd", is_flag=True,
+              help="Create or rotate the dashboard's operator account")
 @click.option("--config", "do_config", is_flag=True,
               help="Show the active configuration")
 @click.option("--version", "do_version", is_flag=True,
@@ -418,8 +514,9 @@ def _config():
 @click.option("--i-accept-public-exposure", is_flag=True,
               help="--dashboard: required to bind a non-loopback address. Read the warning.")
 @click.pass_context
-def main(ctx, do_init, do_run, do_dashboard, do_dashboard_stop, do_config,
-         do_version, host, port, debug, foreground, i_accept_public_exposure):
+def main(ctx, do_init, do_run, do_dashboard, do_dashboard_stop,
+         do_dashboard_passwd, do_config, do_version, host, port, debug,
+         foreground, i_accept_public_exposure):
     """HydraPoT: Multi Agent Honeypot System
 
     One command, flags only. Pick exactly one action flag.
@@ -429,6 +526,7 @@ def main(ctx, do_init, do_run, do_dashboard, do_dashboard_stop, do_config,
         ("--run", do_run),
         ("--dashboard", do_dashboard),
         ("--dashboard-stop", do_dashboard_stop),
+        ("--dashboard-passwd", do_dashboard_passwd),
         ("--config", do_config),
         ("--version", do_version),
     ]
@@ -456,6 +554,8 @@ def main(ctx, do_init, do_run, do_dashboard, do_dashboard_stop, do_config,
                    debug, foreground, i_accept_public_exposure)
     elif action == "--dashboard-stop":
         _dashboard_stop()
+    elif action == "--dashboard-passwd":
+        _dashboard_passwd()
     elif action == "--config":
         _config()
     elif action == "--version":

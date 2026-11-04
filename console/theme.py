@@ -580,6 +580,17 @@ app.index_string = """
                     padding: 8px 10px; font-size: 0.78rem; cursor: pointer; }
     .refresh-btn:hover { background: """ + Y_400 + """; color: """ + INK + """; }
 
+    /* Sign out. An <a> rather than a nav-pill: it leaves the Dash app for a
+       server-rendered confirm page, so it must be a real navigation and not a
+       callback. */
+    .sidebar-signout { display: block; margin-top: 10px; padding: 7px 10px;
+                       border: 1px solid rgba(255,255,255,0.12);
+                       border-radius: 8px; text-align: center;
+                       font-size: 0.76rem; text-decoration: none;
+                       color: """ + SIDEBAR_MUT + """; }
+    .sidebar-signout:hover { background: rgba(255,255,255,0.07);
+                             color: """ + SIDEBAR_FG + """; }
+
     /* agent health box */
     .hp-status { border: 1px solid rgba(255,255,255,0.13); border-radius: 10px;
                   padding: 11px 12px; margin-top: 4px; }

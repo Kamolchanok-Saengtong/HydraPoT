@@ -64,6 +64,10 @@ sidebar = html.Div(className="sidebar", id="sidebar", children=[
     # Live component health. Filled by a callback rather than at import time so
     # a probe result can never be baked into the served page.
     html.Div(id="hp-status-panel"),
+    # A real link, not a nav-pill: it leaves the Dash app for a server-rendered
+    # page, and the actual sign-out is the POST that page submits. A plain GET
+    # logout would let any site sign the operator out with an <img> tag.
+    html.A("Sign out", href="/_hp/logout", className="sidebar-signout"),
     # Always-present (top-level, not inside per-page content-area) throwaway
     # target for the WebSocket setup clientside_callback below -- a per-page
     # element like live-feed-wrap only exists while Summary is on screen, and
