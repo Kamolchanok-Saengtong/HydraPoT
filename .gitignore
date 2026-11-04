@@ -30,6 +30,14 @@ partC.md
 dataset/
 eval_cowrie_results.json
 
+# One file per session PER ARM -- 2151 sessions x 4 arms = 8604 files, 176MB,
+# which was 99% of every `git status`. It is the command handler's own session
+# store (run_partC.py passes store="json"), not a result and not a resume
+# point: the real per-command records go to results/partC/<run>/<arm>.jsonl,
+# which is what the scorers read. guardrail/DES.py sends the same artifact to
+# a tempdir for the same reason.
+experiment_data/*/sessions/
+
 .claude/
 # MITRE ATT&CK STIX bundle (46MB, regenerate: see threat_intel/mitre_mapper.py)
 threat_intel/enterprise-attack.json
