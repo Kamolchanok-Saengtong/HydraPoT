@@ -22,14 +22,19 @@ or directly for testing:
     uvicorn api.api_server:api --host 127.0.0.1 --port 8050
 """
 import asyncio
+import hmac
 import re
+from urllib.parse import quote
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Form, Request, WebSocket, WebSocketDisconnect
 from fastapi.openapi.docs import get_swagger_ui_html
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import (HTMLResponse, JSONResponse, RedirectResponse,
+                               Response)
 from a2wsgi import WSGIMiddleware
 
 from console import app as dash_app
+from console import auth as dash_auth
+from console import login_page
 from console.theme import INK, PAPER, Y_400, Y_500
 from core import storage
 
@@ -110,6 +115,14 @@ POLL_BATCH = 50   # generous vs. how many commands land in one poll interval
 
 @api.websocket("/ws/events")
 async def ws_events(websocket: WebSocket):
+    # Gated HERE rather than in the session middleware above, because HTTP
+    # middleware never runs for a WebSocket scope -- it would have looked
+    # protected from the outside while streaming every command to anyone who
+    # opened a socket. Closed before accept(), so an unauthenticated client
+    # gets a handshake failure and never a single frame.
+    if not dash_auth.read_session(websocket.cookies.get(dash_auth.COOKIE, "")):
+        await websocket.close(code=1008)      # 1008 = policy violation
+        return
     await websocket.accept()
     last_id = None
     try:
@@ -209,6 +222,219 @@ def api_fallback(rest: str):
     return JSONResponse(status_code=404,
                         content={"detail": f"no such endpoint: {path}",
                                  "docs": "/docs"})
+
+
+# ── Operator login ───────────────────────────────────────────────────────
+# ONE gate for the whole operator surface: the Dash UI, /docs, and the
+# Database page's SQL console. Attached as middleware rather than as a
+# dependency per route, for the same reason api/v1 attaches its key check to
+# the router rather than to each endpoint -- a page added later is protected
+# by existing, not by someone remembering.
+#
+# Three things are exempt, and only these: the login/logout routes, /assets/*
+# so the login page can load its own logo, and /api/v1/* which carries its own
+# X-API-Key gate (api/auth.py) so a SIEM never needs a browser cookie. The
+# list is regexes in config.yaml -- see DashboardAuthCfg.open_paths.
+
+
+def _safe_next(raw: str) -> str:
+    """A path to return to after login, or "/" if it isn't one.
+
+    Only same-origin, absolute PATHS survive. Without this the `next`
+    parameter is an open redirect: a link to our own trusted login page could
+    bounce the operator to an attacker's copy of it the moment they
+    authenticate. "//evil.test" is rejected too -- browsers read a
+    protocol-relative URL as another host.
+    """
+    value = (raw or "").strip()
+    if not value.startswith("/") or value.startswith("//"):
+        return "/"
+    if "\\" in value or "\n" in value or "\r" in value:
+        return "/"
+    return value
+
+
+def _client_ip(request: Request) -> str:
+    """The address the throttle counts against.
+
+    request.client.host, which uvicorn rewrites from X-Forwarded-For only when
+    started with --forwarded-allow-ips. That is the right default: trusting the
+    header unconditionally would let any client pick its own throttle bucket by
+    sending a different one each try.
+    """
+    return (request.client.host if request.client else "") or ""
+
+
+def _secure_cookies(request: Request) -> bool:
+    """Whether to mark cookies Secure.
+
+    Not hardcoded True: the documented loopback deployment is plain HTTP over
+    an SSH tunnel, and a Secure cookie is simply never sent there, which
+    presents as "login succeeds, then bounces straight back to the form".
+    """
+    proto = request.headers.get("x-forwarded-proto", "").split(",")[0].strip()
+    return (proto or request.url.scheme) == "https"
+
+
+def _set_session_cookie(response: Response, value: str, request: Request):
+    response.set_cookie(
+        dash_auth.COOKIE, value,
+        max_age=int(dash_auth.cfg().session_lifetime_minutes) * 60,
+        httponly=True,            # a stolen XSS cannot read it
+        samesite="lax",           # not sent on a cross-site POST: CSRF lock #1
+        secure=_secure_cookies(request),
+        path="/")
+
+
+def _wants_html(request: Request) -> bool:
+    """A browser navigation, as opposed to Dash's own fetch() calls.
+
+    The distinction decides 302-to-login versus 401: a redirect is what the
+    operator wants in the address bar, and JSON is the only thing Dash's
+    callback endpoint can do anything sensible with.
+    """
+    return "text/html" in request.headers.get("accept", "")
+
+
+@api.middleware("http")
+async def require_operator_session(request: Request, call_next):
+    path = request.url.path
+
+    # No account yet: serve one page saying how to make one, and nothing else.
+    # /api/v1 keeps working -- it has an independent gate and an existing SIEM
+    # must not break because the dashboard has not been set up yet.
+    if not dash_auth.configured():
+        # Same regex list as below, not a second hardcoded copy: an exempt
+        # path that stopped being exempt before setup would mean the API
+        # breaks exactly until someone creates a dashboard account.
+        if dash_auth.is_open_path(path):
+            return await call_next(request)
+        return HTMLResponse(login_page.no_account(), status_code=503)
+
+    if dash_auth.is_open_path(path):
+        return await call_next(request)
+
+    if dash_auth.read_session(request.cookies.get(dash_auth.COOKIE, "")):
+        return await call_next(request)
+
+    if _wants_html(request):
+        target = f"{dash_auth.LOGIN_PATH}?next={quote(path, safe='/')}"
+        return RedirectResponse(target, status_code=302)
+    return JSONResponse(status_code=401,
+                        content={"detail": "operator session required",
+                                 "login": dash_auth.LOGIN_PATH})
+
+
+@api.get(dash_auth.LOGIN_PATH, include_in_schema=False)
+async def login_form(request: Request, next: str = "/"):
+    if not dash_auth.configured():
+        return HTMLResponse(login_page.no_account(), status_code=503)
+    # Already signed in: nothing to ask for.
+    if dash_auth.read_session(request.cookies.get(dash_auth.COOKIE, "")):
+        return RedirectResponse(_safe_next(next), status_code=302)
+
+    cfg = dash_auth.cfg()
+    if dash_auth.locked_out(_client_ip(request)):
+        return HTMLResponse(login_page.locked(int(cfg.lockout_minutes)),
+                            status_code=429)
+
+    # The form has no session yet, so its CSRF protection is a double submit:
+    # the same random value in a cookie and in a hidden field, which must
+    # match on POST. An attacker can forge the field but cannot set a cookie
+    # on this origin, so they cannot make the two agree.
+    token = dash_auth.new_form_token()
+    response = HTMLResponse(login_page.login(token, next_path=_safe_next(next)))
+    response.set_cookie(dash_auth.CSRF_COOKIE, token, httponly=True,
+                        samesite="lax", secure=_secure_cookies(request),
+                        max_age=900, path="/")
+    return response
+
+
+@api.post(dash_auth.LOGIN_PATH, include_in_schema=False)
+async def login_submit(request: Request,
+                       username: str = Form(""),
+                       password: str = Form(""),
+                       csrf_token: str = Form(""),
+                       next: str = Form("/")):
+    if not dash_auth.configured():
+        return HTMLResponse(login_page.no_account(), status_code=503)
+
+    cfg = dash_auth.cfg()
+    ip = _client_ip(request)
+    target = _safe_next(next)
+
+    # Throttle first. Checked before the password so a locked-out address
+    # cannot keep testing guesses, and before the scrypt call so it cannot be
+    # used to burn ~100ms of CPU per request either.
+    if dash_auth.locked_out(ip):
+        return HTMLResponse(login_page.locked(int(cfg.lockout_minutes)),
+                            status_code=429)
+
+    if not dash_auth.form_token_ok(request.cookies.get(dash_auth.CSRF_COOKIE, ""),
+                                   csrf_token):
+        # Not counted as a failed password: a missing token is usually a stale
+        # form or a blocked cookie, not an attacker.
+        return HTMLResponse(
+            login_page.login(dash_auth.new_form_token(), next_path=target,
+                             error="This form expired. Please try again."),
+            status_code=400)
+
+    cred = dash_auth.load_credential()
+    # Both checks always run. Returning early on an unknown username would
+    # make the response time a username oracle, since only the password path
+    # pays for scrypt.
+    name_ok = hmac.compare_digest(username or "", cred.get("username", ""))
+    pass_ok = dash_auth.verify_password(password or "",
+                                        cred.get("password_hash", ""))
+    if not (name_ok and pass_ok):
+        dash_auth.record_failure(ip)
+        left = dash_auth.attempts_remaining(ip)
+        if left <= 0:
+            return HTMLResponse(login_page.locked(int(cfg.lockout_minutes)),
+                                status_code=429)
+        token = dash_auth.new_form_token()
+        response = HTMLResponse(
+            login_page.login(token, next_path=target,
+                             error="Incorrect operator name or password.",
+                             attempts_left=left),
+            status_code=401)
+        response.set_cookie(dash_auth.CSRF_COOKIE, token, httponly=True,
+                            samesite="lax", secure=_secure_cookies(request),
+                            max_age=900, path="/")
+        return response
+
+    dash_auth.clear_failures(ip)
+    dash_auth.prune_sessions()
+    cookie = dash_auth.open_session(cred["username"], ip)
+    response = RedirectResponse(target, status_code=302)
+    _set_session_cookie(response, cookie, request)
+    response.delete_cookie(dash_auth.CSRF_COOKIE, path="/")
+    return response
+
+
+@api.get(dash_auth.LOGOUT_PATH, include_in_schema=False)
+async def logout_confirm(request: Request):
+    """GET only confirms. The actual revocation is the POST below, so that a
+    third-party page cannot sign the operator out with an <img> tag."""
+    session = dash_auth.read_session(request.cookies.get(dash_auth.COOKIE, ""))
+    if not session:
+        return RedirectResponse(dash_auth.LOGIN_PATH, status_code=302)
+    cookie = request.cookies.get(dash_auth.COOKIE, "")
+    return HTMLResponse(login_page.confirm_logout(
+        dash_auth.csrf_token(cookie), session.get("username", "")))
+
+
+@api.post(dash_auth.LOGOUT_PATH, include_in_schema=False)
+async def logout_submit(request: Request, csrf_token: str = Form("")):
+    cookie = request.cookies.get(dash_auth.COOKIE, "")
+    if not dash_auth.csrf_ok(cookie, csrf_token):
+        return RedirectResponse(dash_auth.LOGOUT_PATH, status_code=302)
+    # Deleted from the store, not just from the browser. Clearing the cookie
+    # alone would leave a copied value working until it expired on its own.
+    dash_auth.close_session(cookie)
+    response = HTMLResponse(login_page.signed_out())
+    response.delete_cookie(dash_auth.COOKIE, path="/")
+    return response
 
 
 # ── Mount Dash last -- catches everything /api and /ws don't ─────────────

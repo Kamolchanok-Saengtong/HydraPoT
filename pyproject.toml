@@ -52,6 +52,13 @@ dependencies = [
     "fastapi>=0.110",
     "uvicorn[standard]>=0.29",
     "a2wsgi>=1.10",
+    # Signs the operator session cookie (console/auth.py). Already present as
+    # a Flask dependency, so nothing new is installed -- declared because
+    # console/auth.py imports it directly, and deptry fails an undeclared
+    # import rather than waiting for the transitive chain to change under us.
+    "itsdangerous>=2.1",
+    # Parses the login form's multipart body; FastAPI's Form() needs it.
+    "python-multipart>=0.0.9",
 
     # Imported inside functions, so a missing one only shows when that path runs
     "matplotlib>=3.8",

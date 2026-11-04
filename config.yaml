@@ -69,6 +69,41 @@ static_commands:
 - emacs
 - less
 - more
+# ── Operator console (the dashboard YOU look at) ─────────────────────────────
+# Not the fake machine: that is `honeypot` above. This surface shows captured
+# credentials and runs a read-only SQL console, so it requires a login. Create
+# the account with `hp --dashboard-passwd`; the dashboard refuses to serve
+# until one exists.
+dashboard:
+  host: 127.0.0.1
+  port: 8050
+  # Leave false and keep it on loopback, reached over an SSH tunnel:
+  #   ssh -N -L 8050:127.0.0.1:8050 <user>@<sensor> -p <admin-ssh-port>
+  # Setting it true still requires an account AND --i-accept-public-exposure,
+  # and you still want TLS in front of it.
+  allow_public_bind: false
+  auth:
+    credential_file: data/operator.json
+    session_db: data/dashboard_auth.db
+    session_lifetime_minutes: 480
+    session_idle_minutes: 60
+    max_attempts: 5
+    lockout_minutes: 15
+    min_password_length: 12
+    scrypt_n: 16384
+    scrypt_r: 8
+    scrypt_p: 1
+    # Regexes, matched against the whole request path. /api is exempt from the
+    # SESSION gate only -- v1 has its own X-API-Key gate so a SIEM never needs
+    # a browser cookie, and the rest of /api is the 404/410 that tells a client
+    # where an endpoint went.
+    open_paths:
+    - ^/_hp/(?:login|logout)$
+    - ^/assets/
+    - ^/_favicon\.ico$
+    - ^/api(?:/|$)
+    - ^/(?:docs|redoc|openapi\.json)$
+
 logging:
   session_dir: data/logs/sessions
   impactful_dir: data/logs/impactful
