@@ -24,7 +24,11 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, ".."))
 sys.path.insert(0, _ROOT)
 
-OUT_DIR = os.path.join(_HERE, "out")
+# PRODUCTION lives in out/ and that is what an operator's `--train` writes.
+# HONEYROUTER_OUT redirects it, so a hyperparameter sweep can train and then
+# --review its OWN checkpoints without touching production's. See
+# predictor.py; unset, nothing about this path changes.
+OUT_DIR = os.environ.get("HONEYROUTER_OUT") or os.path.join(_HERE, "out")
 STATE_PATH = os.path.join(OUT_DIR, "router_state.json")
 EXTRA_PATH = os.path.join(OUT_DIR, "extra_models.json")
 PY = sys.executable
@@ -35,8 +39,26 @@ ARTIFACTS = {
     "rl":        "routing_policy_rl.pt",
 }
 
-DEFAULTS = {"p1_epochs": 300, "p2_steps": 4000, "p2_batch": 256,
-            "p3_steps": 3000, "run_rl": True, "mixup": True}
+# The paper's own training lengths, so a default run reproduces its method
+# rather than a longer schedule of ours:
+#
+#     Yang Li, "LLM Bandit: Cost-Efficient LLM Generation via
+#     Preference-Conditioned Dynamic Routing", arXiv:2502.02743
+#
+# These were 300 / 4000 / 256 / 3000 -- 30x, 8x and 6x the paper's lengths at a
+# quarter its stage-2 batch -- and because _phases() passes every one of them
+# to the stage scripts explicitly, those scripts' own paper-matching defaults
+# never applied on this path. The run in out/router_state.json (2026-10-19,
+# 2179 commands) was trained that way, so it does NOT reproduce the paper and
+# must not be described as doing so. Retrain to compare against it.
+#
+# Each value is cited to the appendix section that states it.
+DEFAULTS = {"p1_epochs": 10,     # E.3  stage 1, joint IRT training: 10 epochs
+            "p2_steps": 500,     # E.4  stage 2, policy pretraining: 500 steps
+            "p2_batch": 1024,    # E.4  stage 2 batch size
+            "p3_steps": 500,     # E.5  stage 3, multi-objective PPO: 500 steps
+            "run_rl": True,      # Algorithm 1 lines 11-21
+            "mixup": True}       # E.5  Beta(0.2, 0.2)
 
 
 # ── state ───────────────────────────────────────────────────────────────────
@@ -324,9 +346,9 @@ def baselines() -> list:
             for k, a in enumerate(AGENTS)]
 
 
-def print_review(which: str = "rl") -> list:
+def print_review(which: str = "rl", points: int = 9) -> list:
     from honeyrouter.action import AGENTS
-    rows = sweep(which)
+    rows = sweep(which, points=points)
     if not rows:
         print("Nothing to review — train first.")
         return []
@@ -468,6 +490,8 @@ def main():
     ap.add_argument("--review", action="store_true", help="sweep omega and print")
     ap.add_argument("--policy", default="rl", choices=["rl", "policy"],
                     help="which policy to review (default: rl)")
+    ap.add_argument("--points", type=int, default=9,
+                    help="omega values to sweep over [0, w_max] (default: 9)")
     ap.add_argument("--approve-omega", type=float, default=None,
                     help="record approval of this omega, no prompts")
     a = ap.parse_args()
@@ -479,7 +503,7 @@ def main():
         print_status()
         raise SystemExit(0 if ok else 1)
     elif a.review:
-        print_review(a.policy)
+        print_review(a.policy, points=a.points)
     elif a.approve_omega is not None:
         print(f"Approved -> {approve(a.policy, a.approve_omega)}")
     else:
