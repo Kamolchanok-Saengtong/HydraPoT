@@ -326,6 +326,70 @@ class GuardrailCfg:
 
 
 @dataclass
+class DashboardAuthCfg:
+    """Operator login for the dashboard. See console/auth.py.
+
+    There is no `enabled` flag, unlike the REST API's key. The API defaults to
+    open because its consumer is a script that can be handed a header; the
+    dashboard's consumer is a browser pointed at a SQL console over captured
+    credentials, so "open" is not a state it should be able to reach.
+    """
+    credential_file: str = "data/operator.json"
+    # NOT the capture database. The Database page runs a read-only SQL console
+    # over that one, so sessions living there would be selectable from the very
+    # UI they gate.
+    session_db: str = "data/dashboard_auth.db"
+    session_lifetime_minutes: int = 480   # hard cap, even on an active session
+    session_idle_minutes: int = 60        # cap since the last request
+    max_attempts: int = 5                 # failures per IP before a lockout
+    lockout_minutes: int = 15
+    # Length only, no character-class rules: NIST SP 800-63B dropped
+    # composition requirements because they push people toward P@ssw0rd1 and
+    # away from length, which is what actually costs an attacker.
+    min_password_length: int = 12
+    # scrypt cost. RFC 7914's interactive-login baseline; ~100ms and ~16MB per
+    # verification here, which is the point -- it is what makes a stolen hash
+    # expensive to grind.
+    scrypt_n: int = 16384
+    scrypt_r: int = 8
+    scrypt_p: int = 1
+    # Paths reachable WITHOUT a session cookie, as regexes against the full
+    # path. Regexes rather than prefixes so a rule can be exact: `/assets/`
+    # must stay open for the login page's own logo, but nothing else should
+    # inherit that openness by sharing a prefix.
+    open_paths: list = field(default_factory=lambda: [
+        r"^/_hp/(?:login|logout)$",
+        r"^/assets/",
+        r"^/_favicon\.ico$",
+        # The whole machine surface, not just /api/v1. Everything under /api
+        # is either v1 -- which has its OWN gate (api/auth.py's X-API-Key), so
+        # a SIEM never needs a browser cookie -- or an error telling a client
+        # where an endpoint moved. Gating the errors means a SIEM calling a
+        # retired path gets a login page instead of the 410 naming its
+        # replacement, which is the one response that would have fixed it.
+        r"^/api(?:/|$)",
+        # Swagger and the schema behind it. They describe the public contract
+        # and carry no captured data; a client that cannot authenticate still
+        # needs to be told how.
+        r"^/(?:docs|redoc|openapi\.json)$",
+    ])
+
+
+@dataclass
+class DashboardCfg:
+    """The analytics console. Separate from `honeypot` -- that section
+    describes the fake machine an attacker sees; this one describes the real
+    operator-facing surface."""
+    host: str = "127.0.0.1"
+    port: int = 8050
+    # Exposure is a deliberate configuration act, never a default. hp.py
+    # refuses a non-loopback bind unless this is true AND an operator account
+    # exists.
+    allow_public_bind: bool = False
+    auth: DashboardAuthCfg = field(default_factory=DashboardAuthCfg)
+
+
+@dataclass
 class Config:
     honeypot: HoneypotCfg = field(default_factory=HoneypotCfg)
     agents: AgentsCfg = field(default_factory=AgentsCfg)
@@ -333,6 +397,7 @@ class Config:
     ai_assistant: AIAssistantCfg = field(default_factory=AIAssistantCfg)
     routing: RoutingCfg = field(default_factory=RoutingCfg)
     guardrail: GuardrailCfg = field(default_factory=GuardrailCfg)
+    dashboard: DashboardCfg = field(default_factory=DashboardCfg)
     logging: LoggingCfg = field(default_factory=LoggingCfg)
     static_commands: list = field(default_factory=lambda: [...])
     # MEA/PEA residential tariff (ประเภท 1.2) — plain dict like system_state
@@ -553,6 +618,9 @@ def load_config(path: str = CONFIG_PATH) -> Config:
     guardrail = _merge_dict_into_dataclass(GuardrailCfg, _g)
     guardrail.detector = _merge_dict_into_dataclass(
         GuardrailDetectorCfg, _g.get("detector"))
+    _d = raw.get("dashboard") or {}
+    dashboard = _merge_dict_into_dataclass(DashboardCfg, _d)
+    dashboard.auth = _merge_dict_into_dataclass(DashboardAuthCfg, _d.get("auth"))
 
     static_cmds   = raw.get("static_commands")
     system_state  = raw.get("system_state")
@@ -623,6 +691,7 @@ def load_config(path: str = CONFIG_PATH) -> Config:
         agents=agents,
         routing=routing,
         guardrail=guardrail,
+        dashboard=dashboard,
         logging=logging_,
         static_commands=static_cmds,
         system_state=system_state,
