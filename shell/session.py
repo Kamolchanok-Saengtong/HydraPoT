@@ -56,6 +56,7 @@ from shell.cowrie_link import CowrieLink
 from shell.telemetry import Telemetry
 from shell.routing import Routing
 from shell.execution import Executor
+from shell.register import Register, SystemState
 
 
 def _state_snapshot(state: dict, content_chars: int = 2000) -> dict:
@@ -162,19 +163,24 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
     if plugins:
         plugins.apply_fi_rules(fi_manager.scorer)
 
-    # Per-session state; dict(...) copies avoid leaking into the shared config.
-    SYSTEM_STATE = {
-        "cwd":       "/root",
-        "files":     dict(config.system_state.get("starting_files", {})),
-        "versions":  {},
-        "installed": {},
-        "services":  {},
-        "users":     {u: dict(v) for u, v in config.system_state.get("users", {}).items()},
-        "shadow":    dict(config.system_state.get("shadow", {})),
+    # Per-session state. Files and cwd live in the register (shell/register.py),
+    # which checks every change and logs it; dict(...) copies avoid leaking
+    # into the shared config.
+    register = Register(seed=os.urandom(16))
+    SYSTEM_STATE = SystemState(
+        register,
+        versions={},
+        installed={},
+        services={},
+        users={u: dict(v) for u, v in config.system_state.get("users", {}).items()},
+        shadow=dict(config.system_state.get("shadow", {})),
         # Shell variables the attacker set. Written by StateTracker._assign,
         # read by the agent prompt -- see that method for why.
-        "vars":      {},
-    }
+        vars={},
+    )
+    register.load_profile(config.system_state.get("starting_files", {}),
+                          config.system_state.get("known_dirs", []))
+    SYSTEM_STATE["cwd"] = "/root"
 
     # Unknown login → conventional /home/<user> so `cd ~` and `pwd` look real.
     if username not in SYSTEM_STATE["users"]:
@@ -476,6 +482,7 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
         session_dir=getattr(getattr(config, "logging", None), "session_dir", ""),
         tag=mitre_tag,
         export=(plugins.export_event if plugins else None))
+    register.writer = telemetry.record_state
 
     def _finish(cmd, agent, output, fi_score, t_start, streamed=False):
         handle.last_agent  = agent
@@ -489,6 +496,7 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
                            method=getattr(handle, "fi_method", None))
         session.append({"cmd": cmd, "agent": agent, "response": output})
         telemetry.record(cmd, agent, output, fi_score, latency_ms)
+        register.flush()
         return ("", "") if streamed else (output, "")
 
     # ── main dispatch ─────────────────────────────────────────────────────
@@ -571,6 +579,8 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
         output   = ""
         streamed = False
         handle.last_usage = None
+        # Tag every state change this command makes with its sequence number
+        register.begin(len(session), cmd)
 
         actual_cmd, actual_base, lookup_base, from_busybox = parse_command(cmd)
         fi_score, fi_method = fi_manager.scorer.score(actual_cmd)
@@ -1022,6 +1032,7 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
 
     handle.fi_manager = fi_manager
     handle.prompt_manager = prompt_manager
+    handle.register = register
     # Production's own prompt assembly, so Part A's standalone arm can send the
     # real prompt rather than rebuild one that matches. See _build_agent_prompt.
     handle.build_agent_prompt = _build_agent_prompt

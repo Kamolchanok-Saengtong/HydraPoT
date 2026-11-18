@@ -31,9 +31,14 @@ from dataclasses import dataclass, field
 FUNCTIONAL = frozenset({
     "kind", "content", "size", "mode", "owner", "group", "mtime", "inode",
     "target", "uid", "gid", "home", "shell", "env", "proc", "cwd",
+    "backend", "source",
+    # How older modules wrote a file (raw echo text, display size). Kept
+    # beside the real facts so Sigma always checks bytes, not display text.
+    "raw", "size_text",
 })
 # sealed(dir): closed-world; the procedural generator invents no children
-PRESENCE = frozenset({"absent", "user", "sealed"})
+# listed(path): shown in the old SYSTEM_STATE["files"] view
+PRESENCE = frozenset({"absent", "user", "sealed", "listed"})
 RELATIONS = FUNCTIONAL | PRESENCE
 KINDS = frozenset({"file", "dir", "symlink"})
 
@@ -124,6 +129,15 @@ def chase(inst: Instance, witness=default_witness) -> Instance:
     for p in out.keys("kind"):
         if out.get("kind", p) not in KINDS:
             raise Violation("kind", f"{p!r} has kind {out.get('kind', p)!r}")
+
+    # The working directory is a directory
+    for key in out.keys("cwd"):
+        cwd = out.get("cwd", key)
+        kind = out.get("kind", cwd)
+        if kind is None:
+            out.add(Fact("kind", cwd, "dir"))
+        elif kind != "dir":
+            raise Violation("cwd", f"{cwd!r} is a {kind}, not a directory")
 
     # sigma1: ancestor-directory completion
     work = out.keys("kind")
