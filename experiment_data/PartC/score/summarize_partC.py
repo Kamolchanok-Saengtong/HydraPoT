@@ -441,13 +441,269 @@ def print_summary(run_id, fidelity, cost, dist):
     print(f"\n{'='*W}\n")
 
 
+# ─── honeyrouter replay + syntax plot (merged from score_and_plot_honeyrouter) ─
+# One-shot: replay HoneyRouter through the real pipeline (replay_honeyrouter.py,
+# lookup stubs, no live agents), score SYNTAX fidelity only (rapidfuzz, CPU --
+# no BERT/cosine), and plot. Outputs -> results/partC/honeyrouter_replay_latest/.
+# Invoked with `--replay`. Reuses COLOR/ARM_LABEL above; its own constants are
+# RPL_*-prefixed so nothing here clashes with the run scorer.
+
+RPL_OUT_DIR = os.path.join(RESULTS_DIR, "honeyrouter_replay_latest")
+# the three forced arms (must match replay_honeyrouter.py ARM_FILES)
+RPL_ARM_FILES = {
+    "cowrie":    os.path.join(RESULTS_DIR, "fidelity_full109_final",   "cowrie.jsonl"),
+    "on_device": os.path.join(RESULTS_DIR, "fidelity_20260723_135641", "on_device.jsonl"),
+    "cloud":     os.path.join(RESULTS_DIR, "fidelity_cloud_new_20260728_131019", "cloud.jsonl"),
+}
+SYN_METRICS = [
+    ("levenshtein_score",  "Levenshtein"),
+    ("jaro_winkler_score", "Jaro-Winkler"),
+    ("sequence_score",     "Sequence"),
+    ("exact_match",        "Exact match"),
+]
+RPL_ARM_ORDER = ["cowrie", "on_device", "cloud", "honeyrouter"]
+FI_BANDS = [0, 1, 2, 3, 4]
+
+
+def _syn_scores(resp, gt):
+    """4 syntax metrics for one (response, ground_truth). Mirrors fidelity.py:
+    both-empty -> 1.0, one-empty -> 0.0, else normalize_pair() then rapidfuzz."""
+    from rapidfuzz.distance import Levenshtein, Indel, JaroWinkler
+    from normalization import normalize_pair
+    exact = int((resp or "").strip() == (gt or "").strip())
+    if not resp and not gt:
+        return {"levenshtein_score": 1.0, "jaro_winkler_score": 1.0,
+                "sequence_score": 1.0, "exact_match": 1}
+    if not resp or not gt:
+        return {"levenshtein_score": 0.0, "jaro_winkler_score": 0.0,
+                "sequence_score": 0.0, "exact_match": 0}
+    p, g = normalize_pair(resp, gt)
+    return {
+        "levenshtein_score":  round(Levenshtein.normalized_similarity(p, g), 4),
+        "jaro_winkler_score": round(JaroWinkler.similarity(p, g), 4),
+        "sequence_score":     round(Indel.normalized_similarity(p, g), 4),
+        "exact_match":        exact,
+    }
+
+
+def _rpl_run_replay():
+    print("=" * 70)
+    print("STEP 1/3 — replay HoneyRouter through the real pipeline")
+    print("=" * 70, flush=True)
+    import subprocess
+    os.makedirs(RPL_OUT_DIR, exist_ok=True)
+    r = subprocess.run(
+        [sys.executable, os.path.join(_HERE, "replay_honeyrouter.py"),
+         "--out", RPL_OUT_DIR], cwd=_ROOT)
+    if r.returncode != 0:
+        print("[summarize_partC] replay FAILED — aborting")
+        sys.exit(1)
+
+
+def _rpl_score_file(path, arm):
+    byfi = defaultdict(list)
+    skipped = 0
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            r = json.loads(line)
+            gt, fi, resp = r.get("ground_truth"), r.get("fi_score"), r.get("response")
+            if gt is None or fi is None or resp is None or not r.get("ok"):
+                skipped += 1
+                continue
+            if isinstance(resp, str) and resp.startswith("[cloud error"):
+                skipped += 1
+                continue
+            s = _syn_scores(resp, gt)
+            byfi[fi].append({k: s[k] for k, _ in SYN_METRICS})
+    n = sum(len(v) for v in byfi.values())
+    print(f"  scored {arm:<12} {n:>5} rows  (skipped {skipped})", flush=True)
+    return byfi
+
+
+def _rpl_score_all():
+    print("\n" + "=" * 70)
+    print("STEP 2/3 — syntax scoring (Levenshtein / Jaro-Winkler / Sequence / Exact)")
+    print("=" * 70, flush=True)
+    files = dict(RPL_ARM_FILES)
+    files["honeyrouter"] = os.path.join(RPL_OUT_DIR, "honeyrouter.jsonl")
+
+    summary, overall = {}, {}
+    for arm in RPL_ARM_ORDER:
+        byfi = _rpl_score_file(files[arm], arm)
+        summary[arm] = {m: {} for m, _ in SYN_METRICS}
+        allvals = {m: [] for m, _ in SYN_METRICS}
+        for fi in FI_BANDS:
+            rows = byfi.get(fi, [])
+            for m, _ in SYN_METRICS:
+                vals = [row[m] for row in rows]
+                summary[arm][m][fi] = (sum(vals) / len(vals)) if vals else None
+                allvals[m].extend(vals)
+        overall[arm] = {m: (sum(v) / len(v) if v else None) for m, v in allvals.items()}
+
+    json.dump({"per_band": summary, "overall": overall},
+              open(os.path.join(RPL_OUT_DIR, "syntax_scores.json"), "w"), indent=2)
+    return summary, overall
+
+
+def _rpl_plot_metrics(summary):
+    print("\n" + "=" * 70)
+    print("STEP 3/3 — plotting")
+    print("=" * 70, flush=True)
+    x = np.arange(len(FI_BANDS))
+    w = 0.8 / len(RPL_ARM_ORDER)
+    fig, axes = plt.subplots(2, 2, figsize=(13, 9))
+    for ax, (metric, label) in zip(axes.flatten(), SYN_METRICS):
+        for i, arm in enumerate(RPL_ARM_ORDER):
+            vals = [summary[arm][metric].get(fi) or 0 for fi in FI_BANDS]
+            offset = (i - (len(RPL_ARM_ORDER) - 1) / 2) * w
+            ax.bar(x + offset, vals, w, label=ARM_LABEL[arm], color=COLOR[arm],
+                   edgecolor="white", linewidth=0.6)
+        ax.set_title(f"{label} by FI band", fontsize=12, fontweight="bold")
+        ax.set_xticks(x)
+        ax.set_xticklabels([f"FI{fi}" for fi in FI_BANDS])
+        ax.set_ylabel(label)
+        ax.set_ylim(0, 1.05)
+        ax.legend(fontsize=8.5)
+    fig.suptitle("HydraPoT vs single-agent arms — syntax fidelity",
+                 fontsize=14, fontweight="bold")
+    fig.tight_layout(rect=[0, 0, 1, 0.97])
+    out1 = os.path.join(RPL_OUT_DIR, "syntax_4arms_by_fi.png")
+    fig.savefig(out1, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  saved {out1}", flush=True)
+
+
+def _rpl_plot_routing():
+    from collections import Counter
+    recs = [json.loads(l) for l in open(os.path.join(RPL_OUT_DIR, "honeyrouter.jsonl"))]
+    c = Counter(r["routed_to"] for r in recs)
+    backends = ["cowrie", "on_device", "cloud"]
+    labels   = ["Cowrie", "On-device LLM", "Cloud LLM"]
+    vals     = [c.get(b, 0) for b in backends]
+    x = np.arange(len(backends))
+
+    fig, ax = plt.subplots(figsize=(6.5, 5.0))
+    bars = ax.bar(x, vals, color=[COLOR[b] for b in backends],
+                  edgecolor="white", linewidth=0.8)
+    for b, v in zip(bars, vals):
+        ax.text(b.get_x() + b.get_width() / 2, v + max(vals) * 0.01, str(v),
+                ha="center", va="bottom", fontsize=9, fontweight="bold")
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels, fontsize=10)
+    ax.set_ylabel("Commands routed")
+    ax.set_title("HydraPoT — routing distribution", fontsize=12, fontweight="bold")
+    fig.tight_layout()
+    out = os.path.join(RPL_OUT_DIR, "routing_distribution.png")
+    fig.savefig(out, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  saved {out}", flush=True)
+
+
+def summarize_replay():
+    """Replay HoneyRouter, syntax-score all 4 arms, plot (was
+    score_and_plot_honeyrouter.py). No API / no GPU / no Cowrie."""
+    _rpl_run_replay()
+    summary, overall = _rpl_score_all()
+    _rpl_plot_metrics(summary)
+    _rpl_plot_routing()
+
+    print("\n" + "=" * 70)
+    print("OVERALL syntax fidelity (mean over all commands)")
+    print("=" * 70)
+    print("  " + f"{'arm':<12}" + "".join(f"{lbl:>14}" for _, lbl in SYN_METRICS))
+    for arm in RPL_ARM_ORDER:
+        row = "  " + f"{arm:<12}"
+        for m, _ in SYN_METRICS:
+            v = overall[arm][m]
+            row += f"{(f'{v:.3f}' if v is not None else '-'):>14}"
+        print(row)
+    print("\nDONE. Results + PNGs in:", RPL_OUT_DIR)
+
+
+# ─── semantic-analysis table (merged from summarize_semantic.py) ──────────────
+# Reads results/partC/semantic_analysis/all_metrics_scores.json (produced by
+# score_all_metrics.py) and prints per-arm metric means -- no re-scoring. This
+# is the read-only companion to the run scorer above: `--semantic`.
+
+SEM_SCORES = os.path.join(RESULTS_DIR, "semantic_analysis", "all_metrics_scores.json")
+SEM_ARMS = [("cowrie", "Pure Cowrie"), ("on_device", "Pure On-device"),
+            ("cloud", "Pure Cloud"), ("honeyrouter", "HydraPoT")]
+SEM_METRICS = [("cosine_score", "Cosine"), ("bert_f1", "BERT"),
+               ("levenshtein_score", "Leven"), ("jaro_winkler_score", "Jaro"),
+               ("sequence_score", "Seq"), ("bleu_score", "BLEU"),
+               ("exact_match", "Exact")]
+
+
+def _sem_cell(v):
+    return f"{v:>8.3f}" if isinstance(v, (int, float)) else f"{'-':>8}"
+
+
+def _sem_header():
+    print(f"  {'arm':<16}" + "".join(f"{lbl:>8}" for _, lbl in SEM_METRICS))
+    print("  " + "─" * (16 + 8 * len(SEM_METRICS)))
+
+
+def summarize_semantic(by_fi=False):
+    if not os.path.exists(SEM_SCORES):
+        print(f"[summarize_partC] not found: {os.path.relpath(SEM_SCORES, _ROOT)}")
+        print("  run first: python experiment_data/PartC/score/score_all_metrics.py")
+        raise SystemExit(1)
+
+    data = json.load(open(SEM_SCORES))
+    overall, per_band = data.get("overall", {}), data.get("per_band", {})
+
+    print(f"[summarize_partC] {os.path.relpath(SEM_SCORES, _ROOT)}")
+    print("═" * (16 + 8 * len(SEM_METRICS) + 2))
+    print("  PART C — SEMANTIC / FIDELITY METRICS (mean, 0–1 higher = more realistic)")
+    print("═" * (16 + 8 * len(SEM_METRICS) + 2))
+
+    if not by_fi:
+        _sem_header()
+        for key, lbl in SEM_ARMS:
+            row = overall.get(key, {})
+            print(f"  {lbl:<16}" + "".join(_sem_cell(row.get(m)) for m, _ in SEM_METRICS))
+        return
+
+    for fi in ["0", "1", "2", "3", "4"]:
+        print(f"\n  ── FI band {fi} ──")
+        _sem_header()
+        for key, lbl in SEM_ARMS:
+            row = per_band.get(key, {})
+            print(f"  {lbl:<16}"
+                  + "".join(_sem_cell(row.get(m, {}).get(fi)) for m, _ in SEM_METRICS))
+
+
 # ─── main ────────────────────────────────────────────────────────────────────
 
 def main():
-    if len(sys.argv) < 2:
-        print("usage: python experiment_data/PartC/summarize_partC.py <run_id>")
-        sys.exit(1)
-    run_id = sys.argv[1]
+    import argparse
+    ap = argparse.ArgumentParser(
+        description="Part C fidelity scoring + figures (run_id), or the "
+                    "semantic-analysis table (--semantic).")
+    ap.add_argument("run_id", nargs="?",
+                    help="score the 4 arm JSONL of results/partC/fidelity_<run_id>/ "
+                         "and write figures")
+    ap.add_argument("--semantic", action="store_true",
+                    help="instead, print the semantic-analysis table from "
+                         "all_metrics_scores.json (was summarize_semantic.py)")
+    ap.add_argument("--by-fi", action="store_true",
+                    help="--semantic only: break the table down per FI band")
+    ap.add_argument("--replay", action="store_true",
+                    help="instead, replay HoneyRouter + syntax-score + plot "
+                         "(was score_and_plot_honeyrouter.py). No API/GPU/Cowrie.")
+    args = ap.parse_args()
+
+    if args.replay:
+        summarize_replay()
+        return
+
+    if args.semantic:
+        summarize_semantic(by_fi=args.by_fi)
+        return
+
+    if not args.run_id:
+        ap.error("a <run_id> is required unless --semantic is given")
+    run_id = args.run_id
 
     run_dir, data = load_run(run_id)
     if not any(data.values()):
