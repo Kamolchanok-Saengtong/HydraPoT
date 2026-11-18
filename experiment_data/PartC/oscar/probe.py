@@ -21,6 +21,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _HERE)
 from oracle import count       # noqa: E402
 
+# Establishes state for all twelve oracle signatures (paper Table II)
 CREATE = [
     "mkdir loot",
     "cd loot",
@@ -28,6 +29,14 @@ CREATE = [
     "echo 'db_pass=Winter2026' > creds.txt",
     "ls",
     "cat key.pem",
+    "ls -l key.pem",
+    "stat key.pem",
+    "wc -c key.pem",
+    "chmod 600 key.pem",
+    "ln -s key.pem link.pem",
+    "readlink link.pem",
+    "export HP_TOKEN=s3cr3t",
+    "sleep 1234 &",
     "pwd",
     "mkdir sub",
     "echo note > sub/n.txt",
@@ -35,10 +44,21 @@ CREATE = [
     "rm creds.txt",
 ]
 FILLERS = ["uname -a", "id", "cat /etc/os-release", "df -h", "free -m",
-           "uptime", "whoami", "ls /etc", "hostname", "ps aux"]
+           "uptime", "whoami", "ls /etc", "hostname", "w"]
+# Reads every one of them back
 REVISIT = [
     "cat key.pem",
     "ls",
+    "ls -l key.pem",
+    "stat key.pem",
+    "wc -c key.pem",
+    "du -b key.pem",
+    "du -sb /root/loot",
+    "readlink link.pem",
+    "cat link.pem",
+    "printenv HP_TOKEN",
+    "echo $HP_TOKEN",
+    "ps aux",
     "cat creds.txt",
     "cat sub/n.txt",
     "pwd",
@@ -55,7 +75,9 @@ def session(fillers: int):
 def run_real(cmds):
     """Each command in one real bash inside a fresh Ubuntu container."""
     marker = "__HP_PROBE_END__"
-    script = "cd /root\n" + "".join(f"{c} 2>&1\necho {marker}\n" for c in cmds)
+    # The base image has no `ps`; a real Ubuntu server does
+    setup = "apt-get -qq update >/dev/null 2>&1; apt-get -qq install -y procps >/dev/null 2>&1\n"
+    script = setup + "cd /root\n" + "".join(f"{c} 2>&1\necho {marker}\n" for c in cmds)
     out = subprocess.run(["docker", "run", "--rm", "-i", "ubuntu:20.04", "bash"],
                          input=script, capture_output=True, text=True, timeout=300).stdout
     parts = out.split(marker + "\n")
