@@ -90,6 +90,82 @@ def config_hash(cfg: dict) -> str:
     return hashlib.sha256(blob.encode()).hexdigest()[:12]
 
 
+def run_dir_name(cfg: dict) -> str:
+    """A name you can read: "<identity>_<what differs from the paper>".
+
+        irt_paper            irt, every hyperparameter at the paper's value
+        vector_paper         vector, likewise
+        irt_p1e20            irt, but p1_epochs=20
+        irt_norl             irt, but --no-rl
+        vector_p3s2000_nomixup
+
+    So "paper" means nothing was touched, and a longer name lists exactly
+    what was. No hash: a folder name should say what the run IS.
+
+    Dropping the hash means the name is no longer unique on its own -- two
+    runs can differ in a key the name does not show, such as data_rev. That
+    is caught instead of encoded: main() compares the config recorded in an
+    existing folder's config.json and refuses to overwrite a run that was
+    trained differently. See _check_run_dir.
+
+    Folders from before this change are named config_<hash>; left alone, so
+    the paths recorded inside their own irt_model.json stay correct.
+    """
+    short = {"p1_epochs": "p1e", "p2_steps": "p2s", "p2_batch": "p2b",
+             "p3_steps": "p3s"}
+    bits = []
+    # The benchmark axis has no paper default to compare against -- the paper
+    # learns ability, it does not look one up -- so the baseline is our own
+    # first choice, Terminal-Bench 2.1, and only a departure from it is named.
+    # main() leaves the key out of cfg entirely when it is the default, so
+    # vector_paper's recorded config stays byte-identical to the run already
+    # on disk and _check_run_dir does not flag it.
+    if cfg.get("axis"):
+        bits.append(cfg["axis"])
+    for k, v in sorted(cfg.items()):
+        if k not in DEFAULTS or v == DEFAULTS[k]:
+            continue
+        if isinstance(v, bool):
+            bits.append(k if v else f"no{k.replace('run_', '').replace('_', '')}")
+        else:
+            bits.append(f"{short.get(k, k)}{v}")
+    return f"{cfg.get('identity', 'irt')}_{'_'.join(bits) if bits else 'paper'}"
+
+
+def _check_run_dir(run_dir: str, cfg: dict, force: bool) -> None:
+    """Refuse to reuse a folder that holds a run trained from a DIFFERENT cfg.
+
+    The folder name no longer carries a hash, so it cannot by itself tell two
+    configs apart. config.json inside can: it records the exact cfg. Without
+    this check a changed data_rev would silently overwrite results it is meant
+    to be compared against -- which nearly happened once already, to
+    config_a23a86b14ed9.
+    """
+    marker = os.path.join(run_dir, "config.json")
+    if not os.path.isfile(marker):
+        return
+    try:
+        with open(marker, encoding="utf-8") as fh:
+            old = json.load(fh).get("config")
+    except (OSError, ValueError):
+        return
+    if old is None or old == cfg:
+        return
+    differs = {k: (old.get(k), cfg.get(k))
+               for k in set(old) | set(cfg) if old.get(k) != cfg.get(k)}
+    if force:
+        print(f"  OVERWRITING a run trained with {differs} (--force)\n")
+        return
+    raise SystemExit(
+        f"{os.path.relpath(run_dir, _ROOT)}/ already holds a run trained "
+        f"from a different config.\n"
+        f"  differs (old -> new): {differs}\n"
+        f"Its name cannot distinguish the two, so this would overwrite "
+        f"results you may still need.\n"
+        f"  keep both: rename or move the old folder, then re-run\n"
+        f"  discard the old one: re-run with --force")
+
+
 def train_phases(cfg: dict, out_dir: str) -> str:
     """Run the paper's three phases from scratch into out_dir.
 
@@ -104,10 +180,14 @@ def train_phases(cfg: dict, out_dir: str) -> str:
     """
     env = dict(os.environ, HONEYROUTER_OUT=out_dir)
 
-    print(f"[phase 1/3] IRT predictor · {cfg['p1_epochs']} epochs", flush=True)
-    subprocess.run([sys.executable, "-u", STAGES["p1"],
-                    "--epochs", str(cfg["p1_epochs"])],
-                   cwd=_ROOT, env=env, check=True)
+    print(f"[phase 1/3] {cfg['identity']} predictor · "
+          f"{cfg['p1_epochs']} epochs", flush=True)
+    p1 = [sys.executable, "-u", STAGES["p1"], "--identity", cfg["identity"]]
+    # vector fits nothing, so epochs is meaningless there and predictor.py
+    # short-circuits before the optimiser is built.
+    if cfg["identity"] != "vector":
+        p1 += ["--epochs", str(cfg["p1_epochs"])]
+    subprocess.run(p1, cwd=_ROOT, env=env, check=True)
 
     print(f"[phase 2/3] policy pretraining · {cfg['p2_steps']} steps, "
           f"batch {cfg['p2_batch']}", flush=True)
@@ -172,10 +252,15 @@ def rows_in_build_order():
     The policy returns one arm index per row in that order and nothing else
     carries the mapping, so a mismatch here would silently serve the wrong
     command's response.
+
+    Delegates to routing_policy.rows_kept() rather than re-listing the rows:
+    this used to walk every command in load_sessions(), which is 2179, while
+    the policy only ever decides for the 2135 the judge scored. The sweep then
+    indexed past the end of the policy's output.
     """
-    from honeyrouter.sessions import load_sessions
-    sess = load_sessions()
-    return [(sid, c["position"]) for sid, cmds in sess.items() for c in cmds]
+    from honeyrouter.routing_policy import rows_kept
+    rows, _ = rows_kept(verbose=False)
+    return [(sid, c["position"]) for sid, c in rows]
 
 
 def arm_lookup():
@@ -248,6 +333,11 @@ def route_and_replay(pol, omega, build_rows, lut):
     """
     from honeyrouter import cli as HR
     pick = HR._picks(pol, omega)                 # arm index per row, build order
+    if len(pick) != len(build_rows):
+        raise SystemExit(
+            f"policy decided for {len(pick)} rows but {len(build_rows)} were "
+            f"passed in -- these must come from the same row set, see "
+            f"routing_policy.rows_kept()")
     picks, out = [], []
     for n, (sid, pos) in enumerate(build_rows):
         arm = ARMS[pick[n]]
@@ -357,35 +447,74 @@ def main():
                     default=DEFAULTS["run_rl"], help="skip phase 3 (PPO)")
     ap.add_argument("--no-mixup", dest="mixup", action="store_false",
                     default=DEFAULTS["mixup"], help="phase 3 without mixup")
+    ap.add_argument("--identity", choices=("irt", "vector", "vector_irt"),
+                    default="irt",
+                    help="phase 1 ability source. irt: learned from the "
+                         "replay, per command (the paper). vector: one "
+                         "published figure per arm, read not learned. "
+                         "vector_irt: paper's trained head, identity FROZEN to "
+                         "the benchmark score.")
+    ap.add_argument("--axis", default="terminal_bench",
+                    help="--identity vector only: which published benchmark "
+                         "becomes each arm's ability. terminal_bench "
+                         "(default, Terminal-Bench 2.1, shell tasks) or gpqa "
+                         "(GPQA Diamond, general reasoning). The names are "
+                         "predictor.BL_AXES -- no list is repeated here, so "
+                         "an unknown one is rejected by phase 1 with the "
+                         "valid set.")
+    ap.add_argument("--cpu", action="store_true",
+                    help="train on CPU, leaving the GPU to whatever else is "
+                         "running")
     ap.add_argument("--reuse", action="store_true",
                     help="if this exact config was already trained, keep "
                          "that model instead of retraining it")
+    ap.add_argument("--force", action="store_true",
+                    help="overwrite a folder of the same name even if it "
+                         "holds a run trained from a different config")
     args = ap.parse_args()
 
+    # Set before any CUDA call, and inherited by the three phase subprocesses
+    # through train_phases' dict(os.environ, ...). Deliberately NOT part of
+    # cfg: the device changes how long a run takes, not what it learns, so a
+    # CPU run and a GPU run of the same config belong in the same folder.
+    if args.cpu:
+        os.environ["CUDA_VISIBLE_DEVICES"] = ""
+        print("[device] CPU only (CUDA_VISIBLE_DEVICES=\"\")")
+
     cfg = {k: getattr(args, k) for k in
-           ("p1_epochs", "p2_steps", "p2_batch", "p3_steps", "run_rl", "mixup")}
+           ("p1_epochs", "p2_steps", "p2_batch", "p3_steps", "run_rl", "mixup",
+            "identity")}
     # Folder identity has to cover how the DATA was prepared, not just the
     # hyperparameters. routing_policy.build_pairwise_dataset changed on
     # 2026-10-26 -- judge scores rescaled 1-5 -> [0,1], and commands the judge
     # failed to score dropped instead of counted as 0. Same hyperparameters,
-    # different training signal: without this key the new run would hash to
-    # config_a23a86b14ed9 and overwrite results it is meant to be compared
-    # against. Bump it whenever the signal changes.
+    # different training signal. It is not in the folder NAME -- _check_run_dir
+    # catches a mismatch instead. Bump it whenever the signal changes.
     cfg["data_rev"] = "unit-score-drop-unjudged"
+    # Read by predictor.py in the phase-1 subprocess (train_phases passes the
+    # environment through). Recorded in cfg -- so it names the folder and
+    # config.json -- ONLY when it departs from the default: irt never reads a
+    # benchmark at all, and adding the key unconditionally would make every
+    # existing folder's config.json look like a different run.
+    os.environ["HONEYROUTER_BENCH_AXIS"] = args.axis
+    if args.identity in ("vector", "vector_irt") and args.axis != ap.get_default("axis"):
+        cfg["axis"] = args.axis
     h = config_hash(cfg)
     # Only the hyperparameters have a paper default to compare against;
     # data_rev describes our own preprocessing and is not in DEFAULTS.
     paper = {k: DEFAULTS[k] for k in cfg if k in DEFAULTS}
-    run_dir = os.path.join(OUT_DIR, f"config_{h}")
+    run_dir = os.path.join(OUT_DIR, run_dir_name(cfg))
     trained = os.path.isfile(os.path.join(run_dir, "routing_policy.pt"))
 
-    print(f"config {h} -> {os.path.relpath(run_dir, _ROOT)}/")
+    print(f"{os.path.relpath(run_dir, _ROOT)}/   (config {h})")
     print(f"  {cfg}")
     off = {k: f"{v} (paper {paper[k]})" for k, v in cfg.items()
            if k in paper and v != paper[k]}
     if off:
         print("  DEPARTS FROM THE PAPER: " + str(off))
     print("  production in honeyrouter/out/ is NOT touched\n", flush=True)
+    if not (trained and args.reuse):
+        _check_run_dir(run_dir, cfg, args.force)
 
     os.makedirs(run_dir, exist_ok=True)
     # Before ANY honeyrouter stage module is imported, so predictor/
