@@ -609,6 +609,13 @@ def load_config(path: str = CONFIG_PATH) -> Config:
     # build Config from raw dict
     honeypot = _merge_dict_into_dataclass(HoneypotCfg, raw.get("honeypot"))
     cowrie   = _merge_dict_into_dataclass(CowrieCfg,   raw.get("agents", {}).get("cowrie"))
+    # Deployment override: inside Docker the app reaches Cowrie at the Compose
+    # service hostname ("cowrie"), not config.yaml's native 127.0.0.1 (which, in
+    # a container, is the app itself). COWRIE_HOST lets the container rewire the
+    # host WITHOUT a second config file -- config.yaml stays the single source of
+    # truth for everything else, and native runs (no env set) are unaffected.
+    if os.environ.get("COWRIE_HOST"):
+        cowrie.host = os.environ["COWRIE_HOST"]
     ondev    = _merge_dict_into_dataclass(OnDeviceCfg,  raw.get("agents", {}).get("on_device"))
     cloud    = _merge_dict_into_dataclass(CloudCfg,     raw.get("agents", {}).get("cloud"))
     agents   = AgentsCfg(cowrie=cowrie, on_device=ondev, cloud=cloud)

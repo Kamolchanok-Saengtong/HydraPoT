@@ -1,0 +1,36 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# HydraPoT — GPU image (the full research variant: on-device LLM arm ON)
+#
+# Same source code as docker/Dockerfile — the ONLY differences are a CUDA base
+# image and that the on-device model can load. Build this when you have an
+# NVIDIA GPU and want all three arms (Cowrie + on-device + Cloud).
+#
+#   docker build -f docker/Dockerfile.gpu -t hydrapot:gpu .
+#   # run with the GPU exposed (needs the NVIDIA Container Toolkit):
+#   docker run --gpus all ... hydrapot:gpu
+#
+# NOTE: this is the Step-7 variant. Get the CPU image (docker/Dockerfile)
+# working and tested first; this reuses everything it establishes.
+# ─────────────────────────────────────────────────────────────────────────────
+FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
+
+WORKDIR /app
+
+# Python + build tools on the CUDA base (it ships no Python by default).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3.11 python3-pip git build-essential \
+    && ln -sf /usr/bin/python3.11 /usr/bin/python \
+    && rm -rf /var/lib/apt/lists/*
+
+# Dependency layer first (cache-friendly), then source + install — identical to
+# the CPU image. bitsandbytes / torch resolve to their CUDA wheels here.
+COPY pyproject.toml README.md ./
+RUN pip install --no-cache-dir --upgrade pip
+COPY . .
+RUN pip install --no-cache-dir .
+
+ENV HF_HOME=/app/data/hf-cache
+# The on-device arm is enabled through config.yaml (agents.on_device.enabled),
+# not here — config stays the single source of truth for both images.
+
+ENTRYPOINT ["bash", "docker/entrypoint.sh"]
