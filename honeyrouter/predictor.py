@@ -397,20 +397,29 @@ class VectorPredictor(nn.Module):
         return torch.zeros((), device=self.mu.device)
 
 
-def build_vector(cache=BENCH_CACHE, verbose=True):
-    """(model, profile, provenance) for --identity vector. Fits nothing."""
+def benchmark_identity(cache=BENCH_CACHE):
+    """(I, p, profile, provenance): the frozen benchmark identity shared by
+    --identity vector (read, no head) and vector_irt (frozen, trained head).
+
+    The identity is the published capability score ALONE -- one number per arm,
+    in [0,1] (vector_profile's `score`, the mean over the capability axes /100).
+    NOT price: price is a descriptive rate, and the real cost term the policy
+    trades against is the MEASURED c_bar in Stage 2/3, so it would double-count
+    here. So I_k is 1-dimensional: the benchmark score that represents the arm.
+    """
     prof, src = vector_profile(cache)
-    axes = [p for p, _ in BENCH_FIELDS if all(p in prof[a] for a in AGENTS)]
-    if not axes:
-        raise SystemExit("no axis is present for every arm -- refresh the "
-                         "benchmark cache or check BL_IDS")
-    scale = dict(BENCH_FIELDS)
-    I = torch.tensor([[float(prof[a][p]) / scale[p] for p in axes]
-                      for a in AGENTS], dtype=torch.float32)
+    I = torch.tensor([[float(prof[a]["score"])] for a in AGENTS],
+                     dtype=torch.float32)                     # (K, 1)
     p = torch.tensor([float(prof[a]["score"]) for a in AGENTS],
                      dtype=torch.float32)
+    return I, p, prof, src
+
+
+def build_vector(cache=BENCH_CACHE, verbose=True):
+    """(model, profile, provenance) for --identity vector. Fits nothing."""
+    I, p, prof, src = benchmark_identity(cache)
     if verbose:
-        print(f"[vector] axes={[x.split('.')[-1] for x in axes]}")
+        print("[vector] identity = benchmark score only (1-d)")
         for k, a in enumerate(AGENTS):
             print(f"  {a:10} score={p[k]:.3f}  mu={[round(v,4) for v in I[k].tolist()]}")
             print(f"             source: {src[a]}")
@@ -447,13 +456,25 @@ class Predictor(nn.Module):
     """
 
     def __init__(self, emb_dim: int, n_arms: int, dim: int = 128,
-                 hidden: int = 128, identity: str = "irt"):
+                 hidden: int = 128, identity: str = "irt", init_mu=None):
         super().__init__()
         self.identity = identity
         # Posterior q(I_k) = N(mu_k, softplus(rho_k)^2); prior p(I_k) = N(0, I).
         # rho init -3 => sigma ~ 0.049, a tight start the KL pulls toward 1.
-        self.mu = nn.Parameter(torch.randn(n_arms, dim) * 0.1)
+        self.mu = nn.Parameter(init_mu.clone() if init_mu is not None
+                               else torch.randn(n_arms, dim) * 0.1)
         self.rho = nn.Parameter(torch.full((n_arms, dim), -3.0))
+
+        # vector_irt: the paper's Phase 1 (f/g heads trained on judge labels),
+        # but the identity is the FIXED benchmark vector, not learned. Freeze
+        # mu, and collapse the posterior to a point (sigma -> 0) so I_k is
+        # deterministic -- there is no q(I_k) to regularise, so KL is dropped
+        # (train() sets beta=0). Only the backbone and heads train.
+        if identity == "vector_irt":
+            self.mu.requires_grad_(False)
+            with torch.no_grad():
+                self.rho.fill_(-20.0)                 # softplus(-20) ~ 2e-9 ~ 0
+            self.rho.requires_grad_(False)
 
         self.backbone = nn.Sequential(
             nn.Linear(emb_dim + dim, hidden), nn.ReLU(),
@@ -466,8 +487,12 @@ class Predictor(nn.Module):
         return torch.nn.functional.softplus(self.rho)
 
     def sample_identity(self, train: bool = True) -> torch.Tensor:
-        """I_k = mu_k + sigma_k * eps while training; mu_k at inference."""
-        if not train:
+        """I_k = mu_k + sigma_k * eps while training; mu_k at inference.
+
+        vector_irt pins the identity: mu is the fixed benchmark vector, so it is
+        returned as-is with no reparam noise.
+        """
+        if not train or self.identity == "vector_irt":
             return self.mu
         return self.mu + self.sigma() * torch.randn_like(self.mu)
 
@@ -493,6 +518,10 @@ class Predictor(nn.Module):
 
         KL summed over the d dims of an arm, then averaged over arms.
         """
+        # vector_irt has no learned posterior (mu fixed, sigma -> 0), so there
+        # is nothing to regularise; also avoids a huge log(sigma) term.
+        if self.identity == "vector_irt":
+            return torch.zeros((), device=self.mu.device)
         s, mu = self.sigma(), self.mu
         return (0.5 * (s ** 2 + mu ** 2 - 1.0 - 2.0 * torch.log(s))
                 ).sum(dim=1).mean()
@@ -555,7 +584,20 @@ def train(dim=128, epochs=10, lr=1e-3, batch=256, lr_decay=0.95,
     Et, Yt, Rt = (torch.tensor(x[tr]) for x in (E, Y, raw))
     Ev, Yv, Rv = (torch.tensor(x[va]) for x in (E, Y, raw))
 
-    model = Predictor(E.shape[1], len(AGENTS), dim=dim, identity=identity)
+    # vector_irt: paper Phase 1, but identity FROZEN to the benchmark vector.
+    # mu comes from benchmark_identity (1-d score per arm), the KL is dropped
+    # (no posterior), and only the backbone + f/g heads train on judge labels.
+    if identity == "vector_irt":
+        init_mu, _p, _prof, bench_src = benchmark_identity()
+        dim = int(init_mu.shape[1])
+        w_kl = 0.0
+        model = Predictor(E.shape[1], len(AGENTS), dim=dim,
+                          identity=identity, init_mu=init_mu)
+        if verbose:
+            print(f"[vector_irt] identity frozen to benchmark score (dim={dim}); "
+                  f"training f/g heads on judge labels, KL off")
+    else:
+        model = Predictor(E.shape[1], len(AGENTS), dim=dim, identity=identity)
     opt = torch.optim.Adam(model.parameters(), lr=lr)
     sched = torch.optim.lr_scheduler.ExponentialLR(opt, gamma=lr_decay)
 
@@ -685,10 +727,13 @@ def main():
     ap.add_argument("--w-pair", type=float, default=1.0)
     ap.add_argument("--w-kl", type=float, default=None,
                     help="KL weight beta; default 1/N (ELBO amortisation)")
-    ap.add_argument("--identity", choices=("irt", "vector"), default="irt",
+    ap.add_argument("--identity", choices=("irt", "vector", "vector_irt"),
+                    default="irt",
                     help="irt: learn each arm's ability from the replay (the "
                          "paper). vector: one published figure per arm, read "
-                         "not learned -- same for every command")
+                         "not learned -- same for every command. vector_irt: "
+                         "the paper's trained f/g heads, but the identity is "
+                         "FROZEN to that benchmark score instead of learned.")
     ap.add_argument("--refresh-benchmarks", action="store_true",
                     help="re-pull the scores from benchmarklist.com before "
                          "training, instead of reusing the cached copy")
