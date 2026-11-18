@@ -32,7 +32,8 @@ FUNCTIONAL = frozenset({
     "kind", "content", "size", "mode", "owner", "group", "mtime", "inode",
     "target", "uid", "gid", "home", "shell", "env", "proc", "cwd",
 })
-PRESENCE = frozenset({"absent", "user"})
+# sealed(dir): closed-world; the procedural generator invents no children
+PRESENCE = frozenset({"absent", "user", "sealed"})
 RELATIONS = FUNCTIONAL | PRESENCE
 KINDS = frozenset({"file", "dir", "symlink"})
 
