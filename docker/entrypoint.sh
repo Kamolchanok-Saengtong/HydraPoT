@@ -12,7 +12,13 @@ case "${SERVICE:-honeypot}" in
     exec hp --run --host 0.0.0.0
     ;;
   dashboard)
-    exec hp --dashboard --host 0.0.0.0
+    # Binds 0.0.0.0 INSIDE the container so the TLS layer in front (or an
+    # org's own proxy) can reach it over the Compose network. That is safe
+    # here: the container is isolated and nothing is world-reachable unless
+    # compose `ports:` publishes it. The app's public-bind guard can't know
+    # it's containerised, so the flag states the bind is deliberate.
+    # TLS is NOT this container's job — see proxy/README.md.
+    exec hp --dashboard --host 0.0.0.0 --i-accept-public-exposure
     ;;
   *)
     # Any other value: run it as a raw command (handy for one-off tasks,

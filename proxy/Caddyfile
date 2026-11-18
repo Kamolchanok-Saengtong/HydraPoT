@@ -1,0 +1,32 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# REFERENCE TLS layer for the HydraPoT dashboard — configured entirely from .env
+#
+# HydraPoT does NOT do TLS itself: the dashboard serves plain HTTP on the
+# Compose network (dashboard:8050). This layer puts HTTPS in front of it, and is
+# swappable for your org's own proxy (nginx, load balancer, ingress) — the only
+# contract is "terminate TLS, then forward to dashboard:8050". See README.md.
+#
+# You should NOT need to edit this file. Point it at your own certificate from
+# .env instead:
+#
+#   TLS_SITE=:443                 # or honeypot.myorg.internal
+#   TLS_CERT=/certs/org.crt       # your cert  (mounted from ./certs)
+#   TLS_KEY=/certs/org.key        # your key
+#
+# Or leave the defaults to use Caddy's own internal CA (no cert files, no
+# external calls — ideal for LAN):
+#
+#   TLS_SITE=:443
+#   TLS_CERT=internal
+#   TLS_KEY=
+# ─────────────────────────────────────────────────────────────────────────────
+
+# {$VAR:default} = read the env var, or use the default if it is unset.
+{$TLS_SITE::443} {
+	# tls internal          -> Caddy's own local CA (when TLS_CERT=internal)
+	# tls /path/crt /path/key -> your organisation's certificate
+	tls {$TLS_CERT:internal} {$TLS_KEY:}
+
+	reverse_proxy dashboard:8050
+	encode gzip
+}
