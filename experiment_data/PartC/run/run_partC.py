@@ -290,13 +290,17 @@ def main():
     log(f"[partC] workload: {len(sessions)} sessions, {total_cmds} commands  breakdown={breakdown}")
 
     from agents import build_agents
-    # cowrie connection only needed if cowrie itself or honeyrouter (which may
-    # naturally route to cowrie) is actually being run this time
-    needs_cowrie    = "cowrie" in selected_arms or "honeyrouter" in selected_arms
+    # cowrie connection only needed if cowrie itself or a router that may pick it
+    # is actually being run. honeyrouter (regex) AND irt_router (trained policy)
+    # both route to cowrie per command, so each needs the container connected --
+    # without it the forced cowrie pick returns an empty response.
+    _ROUTER_ARMS = ("honeyrouter", "irt_router")
+    needs_cowrie    = "cowrie" in selected_arms or any(a in selected_arms for a in _ROUTER_ARMS)
     # on_device (GPU) only loads when an arm actually routes there: the forced
-    # on_device arm, or honeyrouter (whose FI1/FI2 go to on_device). A cloud- or
-    # cowrie-only run then needs no GPU and won't fail if the GPU is busy.
-    needs_on_device = "on_device" in selected_arms or "honeyrouter" in selected_arms
+    # on_device arm, or a router (honeyrouter FI1/FI2, or irt_router's policy)
+    # that can pick it. A cloud-only run then needs no GPU and won't fail if the
+    # GPU is busy.
+    needs_on_device = "on_device" in selected_arms or any(a in selected_arms for a in _ROUTER_ARMS)
     base = build_agents(connect_cowrie=needs_cowrie, load_on_device=needs_on_device)
 
     # Part C cloud arm: deepseek-v4.1-flash via PARTC_BASE_URL (pooled API_KEY_*
