@@ -38,7 +38,7 @@ import os
 import re
 import time
 import random
-from datetime import datetime
+from datetime import datetime, timezone
 
 from agent_manager.cowrie_agent import CowrieAgent
 from agent_manager.static_handler import is_static, dispatch_static
@@ -57,6 +57,11 @@ from shell.telemetry import Telemetry
 from shell.routing import Routing
 from shell.execution import Executor
 from shell.register import Register, SystemState
+from shell.gate import CONTRACT, Gate
+from shell.procfs import Generator
+
+# Candidates sampled per LLM turn before the gate falls back (Alg. 1, k)
+GATE_CANDIDATES = 2
 
 
 def _state_snapshot(state: dict, content_chars: int = 2000) -> dict:
@@ -274,6 +279,30 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
 
     routing = Routing(SYSTEM_STATE, fs, sw)
     executor = Executor(SYSTEM_STATE, fs, config.honeypot.arch)
+    gate = Gate(resolve=fs.resolve)
+    generator = Generator(register.seed, hostname=config.honeypot.hostname,
+                          epoch=datetime.now(timezone.utc))
+
+    def _gated_llm(agent_obj, system_prompt, user_prompt, cmd, source):
+        """Ask for (output, effects, claims); commit the first consistent one."""
+        contract = system_prompt + "\n\n" + CONTRACT
+
+        def candidates():
+            for _ in range(GATE_CANDIDATES):
+                yield _llm_send(agent_obj, contract, user_prompt, cmd=cmd)
+
+        output, successor = gate.turn(register.inst, cmd, candidates(), source)
+        register.adopt(successor)
+        register.note("gate", gate.log[-1])
+        return output
+
+    def _materialize(cmd_text: str) -> None:
+        """Alg. 1 line 10: complete a never-seen path from the generator."""
+        parts = cmd_text.split()
+        if len(parts) == 2 and parts[0] == "cat" and not parts[1].startswith("-"):
+            facts = generator.materialize(register.inst, fs.resolve(parts[1]))
+            if facts:
+                register.commit(set(facts), why=f"generate {parts[1]}")
 
     def _needs_llm(cmd: str, cmd_base: str, state: dict) -> bool:
         return routing.needs_llm(cmd, cmd_base)
@@ -485,6 +514,13 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
     register.writer = telemetry.record_state
 
     def _finish(cmd, agent, output, fi_score, t_start, streamed=False):
+        # Gate every answer before the attacker sees it. Streamed output has
+        # already been sent; forced experiment arms measure the raw agent.
+        if not streamed and not handle.forced:
+            output, successor = gate.check_text(
+                register.inst, parse_command(cmd)[0], output or "", agent)
+            register.adopt(successor)
+            register.note("gate", gate.log[-1])
         handle.last_agent  = agent
         handle.state_size  = len(SYSTEM_STATE["files"]) + len(SYSTEM_STATE["installed"])
         handle.state_snapshot = _state_snapshot(SYSTEM_STATE)
@@ -581,6 +617,7 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
         handle.last_usage = None
         # Tag every state change this command makes with its sequence number
         register.begin(len(session), cmd)
+        handle.forced = force_agent is not None
 
         actual_cmd, actual_base, lookup_base, from_busybox = parse_command(cmd)
         fi_score, fi_method = fi_manager.scorer.score(actual_cmd)
@@ -936,13 +973,15 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
                 print(f"[guardrail] detect failed: {type(e).__name__}: {e}")
 
         if agent == "cloud":
+            _materialize(actual_cmd)
             sys_p, usr_p = prompt_manager.build_cloud_prompt(actual_cmd)
             usr_p += _cat_file_content_extra(actual_cmd, actual_base)
-            output = _llm_send(cloud, sys_p, usr_p, cmd=actual_cmd)
+            output = _gated_llm(cloud, sys_p, usr_p, actual_cmd, "cloud")
             link.sync_history(cmd)
             tracker.record(actual_cmd, output)
 
         elif agent == "on_device" or needs_llm:
+            _materialize(actual_cmd)
             if re.search(r'--version\b|-V\b', cmd):
                 agent  = "on_device"
                 output = sw.version(lookup_base)
@@ -1033,6 +1072,8 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
     handle.fi_manager = fi_manager
     handle.prompt_manager = prompt_manager
     handle.register = register
+    handle.gate = gate
+    handle.forced = False
     # Production's own prompt assembly, so Part A's standalone arm can send the
     # real prompt rather than rebuild one that matches. See _build_agent_prompt.
     handle.build_agent_prompt = _build_agent_prompt

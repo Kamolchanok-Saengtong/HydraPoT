@@ -127,6 +127,12 @@ class Register:
         self._rows.append({"seq": self.seq, "op": "!", "rel": "violation",
                            "key": why, "value": reason})
 
+    def note(self, op: str, record: dict) -> None:
+        """Log a non-state event for this command, e.g. a gate decision."""
+        self._rows.append({"seq": self.seq, "op": op,
+                           "rel": record.get("status", ""),
+                           "key": record.get("source", ""), "value": record})
+
     def _row(self, op, fact):
         return {"seq": self.seq, "op": op, "rel": fact.rel,
                 "key": _encode(fact.key), "value": _encode(fact.value)}
