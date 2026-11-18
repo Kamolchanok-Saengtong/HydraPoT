@@ -156,14 +156,28 @@ def build_agents(connect_cowrie: bool = True, model_override: str | None = None,
     # It's a ~6.5 GB GPU load, wasted (and a hard failure if the GPU is busy)
     # for runs that never touch on_device — e.g. `--arms cloud`. Callers that
     # do route to on_device (on_device / honeyrouter arms) pass load_on_device=True.
-    ondevice = OnDeviceAgent(
-        model        = od_model,
-        quantization = config.agents.on_device.quantization,
-        gguf_file    = config.agents.on_device.gguf_file,
-        temperature  = config.agents.on_device.temperature,
-        max_tokens   = config.agents.on_device.max_tokens,
-        do_sample    = config.agents.on_device.do_sample,
-    ) if (load_on_device and config.agents.on_device.enabled) else None
+    # On-device load is best-effort: on a shared GPU the GGUF context can fail
+    # to allocate (another job holding VRAM). That must NOT kill the whole run.
+    # A config that never routes to on_device (e.g. vector / vector_irt, which
+    # only use cowrie+cloud) then proceeds untouched; one that DOES route there
+    # surfaces the failure at routing time instead of a silent empty response.
+    ondevice = None
+    if load_on_device and config.agents.on_device.enabled:
+        try:
+            ondevice = OnDeviceAgent(
+                model        = od_model,
+                quantization = config.agents.on_device.quantization,
+                gguf_file    = config.agents.on_device.gguf_file,
+                temperature  = config.agents.on_device.temperature,
+                max_tokens   = config.agents.on_device.max_tokens,
+                do_sample    = config.agents.on_device.do_sample,
+            )
+        except (Exception, SystemExit) as e:
+            # The GGUF loader calls sys.exit(1) on failure (SystemExit is NOT an
+            # Exception), so catch both: a busy GPU must not kill the whole run.
+            print(f"[agents] ⚠ on_device unavailable ({e}); continuing without "
+                  f"it — routes to on_device will error rather than run.")
+            ondevice = None
 
     # CloudAgent reads its key itself from CLOUD_AGENT_API_KEY (core.config_loader
     # .CLOUD_API_KEY_ENV); it no longer takes an api_key_env arg after the refactor.
