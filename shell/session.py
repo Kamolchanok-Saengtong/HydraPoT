@@ -55,6 +55,7 @@ from shell.responders import Responders
 from shell.cowrie_link import CowrieLink
 from shell.telemetry import Telemetry
 from shell.routing import Routing
+from shell.execution import Executor
 
 
 def _state_snapshot(state: dict, content_chars: int = 2000) -> dict:
@@ -266,6 +267,7 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
         return responders.passwd()
 
     routing = Routing(SYSTEM_STATE, fs, sw)
+    executor = Executor(SYSTEM_STATE, fs, config.honeypot.arch)
 
     def _needs_llm(cmd: str, cmd_base: str, state: dict) -> bool:
         return routing.needs_llm(cmd, cmd_base)
@@ -868,6 +870,12 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
         if agent == "cowrie" and not getattr(cowrie, "available", True):
             agent     = "on_device"
             needs_llm = True
+
+        # Running a file we hold: the kernel's answer is exact, a model guesses it
+        handled, exec_out = executor.check(cmd)
+        if handled:
+            link.sync_history(cmd)
+            return _finish(cmd, agent, exec_out, fi_score, t_start)
 
         # ── SECURITY BOUNDARY ───────────────────────────────────────────────
         # False here means no prompt is ever built, so there is nothing to
