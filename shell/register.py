@@ -87,6 +87,7 @@ class Register:
 
     def __init__(self, seed: bytes = b"", writer=None):
         self.inst = chase(Instance())
+        self.before = self.inst
         self.seed = seed
         # -1 = before the first command, matching storage.sessions' seq from 0
         self.seq = -1
@@ -99,6 +100,9 @@ class Register:
 
     def begin(self, seq: int, cmd: str) -> None:
         self.seq, self.cmd = seq, cmd
+        # I_t for Def. 1: claims are checked against the state BEFORE this
+        # command's effects (instances are replaced, never mutated)
+        self.before = self.inst
 
     # ── transitions ────────────────────────────────────────────────────────
 

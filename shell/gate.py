@@ -115,9 +115,21 @@ class Gate:
         self._record(cmd, source, "fallback", len(reasons), reasons)
         return output, nxt
 
-    def check_text(self, inst: Instance, cmd: str, output: str, source: str):
-        """Gate a free-text answer (Cowrie): claims come from the extractor alone."""
-        verdict = self._check(inst, self.proposal(inst, cmd, {"output": output}))
+    def check_text(self, inst: Instance, cmd: str, output: str, source: str,
+                   before: Instance = None):
+        """Gate a free-text answer (Cowrie): claims come from the extractor alone.
+
+        `inst` may already hold the command's effects; `before` is the state
+        the command started from, which Def. 1 checks the claims against.
+        """
+        before = before if before is not None else inst
+        prop = self.proposal(before, cmd, {"output": output})
+        # Def. 1 (i): what the output asserts must hold before the command ran
+        verdict = self._check(before, Proposal(output, claims=prop.claims,
+                                               denies=prop.denies))
+        if verdict.ok:
+            # Def. 1 (ii): and the committed post-state must stay valid
+            verdict = self._check(inst, prop)
         if verdict.ok:
             self._record(cmd, source, "accepted", 1, [])
             return output, verdict.successor

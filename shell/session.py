@@ -518,7 +518,8 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
         # already been sent; forced experiment arms measure the raw agent.
         if not streamed and not handle.forced:
             output, successor = gate.check_text(
-                register.inst, parse_command(cmd)[0], output or "", agent)
+                register.inst, parse_command(cmd)[0], output or "", agent,
+                before=register.before)
             register.adopt(successor)
             register.note("gate", gate.log[-1])
         handle.last_agent  = agent
