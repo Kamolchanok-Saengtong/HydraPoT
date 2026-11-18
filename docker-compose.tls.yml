@@ -1,0 +1,44 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# OPTIONAL TLS overlay — adds an HTTPS layer in front of the dashboard.
+#
+# This is a SEPARATE file on purpose, so TLS is opt-in and swappable. The base
+# docker-compose.yml runs the dashboard on plain HTTP (for an SSH tunnel, or for
+# an org's own proxy). Add this overlay to put the reference Caddy layer in
+# front — or write your own overlay pointing at your org's proxy/cert.
+#
+#   # plain (no TLS, reach via tunnel or your own proxy):
+#   docker-compose up
+#
+#   # with the reference HTTPS layer:
+#   docker-compose -f docker-compose.yml -f docker-compose.tls.yml up
+#
+# To plug in YOUR organisation's TLS instead, copy this file, drop the caddy
+# service, and add your own proxy service that forwards to dashboard:8050.
+# ─────────────────────────────────────────────────────────────────────────────
+services:
+  # The reference TLS layer. Swap this whole service for your org's proxy.
+  caddy:
+    image: caddy:2
+    ports:
+      - "${HTTPS_PORT:-443}:443"
+    environment:
+      # Point the proxy at YOUR certificate here (via .env) — no file edits.
+      # Defaults use Caddy's internal CA (no cert files needed).
+      TLS_SITE: ${TLS_SITE:-:443}
+      TLS_CERT: ${TLS_CERT:-internal}
+      TLS_KEY:  ${TLS_KEY:-}
+    volumes:
+      - ./proxy/Caddyfile:/etc/caddy/Caddyfile:ro   # reads the env vars above
+      - ./certs:/certs:ro                           # drop your org cert+key here
+      - caddy-data:/data                            # Caddy's CA + certs persist
+      - caddy-config:/config
+    depends_on:
+      - dashboard
+
+# The dashboard keeps its loopback-only 8050 from the base file (harmless —
+# local only). Caddy reaches it over the Compose network as dashboard:8050, not
+# through that host port, so LAN users get ONLY the encrypted :443 path.
+
+volumes:
+  caddy-data:
+  caddy-config:

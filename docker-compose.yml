@@ -41,7 +41,10 @@ services:
     environment:
       SERVICE: dashboard
     ports:
-      - "${DASHBOARD_PORT:-8050}:8050"
+      # Loopback ONLY by default: reach it via an SSH tunnel, or let the TLS
+      # layer (docker-compose.tls.yml) / your own proxy front it. It is never
+      # on the LAN in clear -- TLS is a deliberate add-on, not a default.
+      - "127.0.0.1:${DASHBOARD_PORT:-8050}:8050"
     volumes:
       - ./config.yaml:/app/config.yaml:ro
       - ./data:/app/data                   # reads the same SQLite the honeypot writes
