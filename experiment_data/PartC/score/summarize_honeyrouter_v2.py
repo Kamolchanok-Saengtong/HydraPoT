@@ -113,18 +113,41 @@ def regex_judge():
     return sum(scores) / len(scores) if scores else None
 
 
+def regex_routing():
+    """The regex HoneyRouter's own arm split (cowrie/on_device/cloud), counted
+    from each routed row -- the baseline's data distribution. Returns a dict or
+    None if the file is absent. Fixed (does not depend on omega)."""
+    import sys
+    sys.path.insert(0, os.path.join(_HERE, "run"))
+    try:
+        from train_ml_router import FIDELITY
+        path = os.path.join(FIDELITY, "honeyrouter.jsonl")
+        dist = {a: 0 for a in ARMS}
+        for r in (json.loads(l) for l in open(path)):
+            a = r.get("routed_to")
+            if a in dist:
+                dist[a] += 1
+        return dist
+    except Exception:
+        return None
+
+
 def _savings(cost, baseline):
     return (1 - cost / baseline) * 100 if baseline else 0.0
 
 
-def summarize_run(label: str, run_dir: str, hr_judge=None):
+def summarize_run(label: str, run_dir: str, hr_judge=None, all_metrics=False,
+                  regex_dist=None):
     """One run: per-omega arm mix, cost, savings vs the regex baseline, and
-    ml_router cosine fidelity. Judge column appears only if review.json exists.
+    ml_router fidelity. With all_metrics the fidelity side shows all 6 semantic
+    metrics instead of only cosine. Judge column appears only if review.json
+    exists (and is suppressed in all_metrics mode to keep the row readable).
     Returns the sweep rows so the caller can compare runs."""
     sweep = load_sweep(run_dir)
     review = load_review(run_dir)
     judge_by_omega = ({r["omega"]: r["judge"] for r in review["sweep"]}
                       if review else {})
+    show_judge = bool(review) and not all_metrics
 
     n = sweep[0].get("n")
     baseline = sweep[0]["cost"]["honeyrouter"]["total_usd"]
@@ -135,20 +158,44 @@ def summarize_run(label: str, run_dir: str, hr_judge=None):
     print(f"  regex HoneyRouter baseline: ${baseline:.4f}"
           + (f"   judge {hr_judge:.3f}" if hr_judge is not None else ""))
     print("=" * 84)
-    judge_hdr = f"{'judge':>7}" if review else ""
+    # fidelity header: all 6 named metrics, or just cosine
+    if all_metrics:
+        fid_hdr = "".join(f"{h:>7}" for _, h in METRICS)
+    else:
+        fid_hdr = f"{'cosine':>7}"
+    judge_hdr = f"{'judge':>7}" if show_judge else ""
     print(f"  {'omega':>5} | {'cowrie':>12} {'on_device':>12} {'cloud':>11} | "
-          f"{'cost $':>8} {'save':>6} {'cosine':>7}{judge_hdr}")
-    print("  " + "-" * 78)
+          f"{'cost $':>8} {'save':>6} {fid_hdr}{judge_hdr}")
+    print("  " + "-" * (78 + (7 * (len(METRICS) - 1) if all_metrics else 0)))
+    # regex HoneyRouter reference row: the baseline the ml_router is beating.
+    # Its fidelity/cost/arm-split don't depend on omega, so show it once on top.
+    rf = sweep[0]["fidelity"].get("honeyrouter", {})
+    if all_metrics:
+        rcells = "".join(f"{rf.get(m, 0):>7.3f}" for m, _ in METRICS)
+    else:
+        rcells = f"{rf.get('cosine_score', 0):>7.3f}"
+    if regex_dist:
+        rc, ro, rcl = (regex_dist.get("cowrie", 0),
+                       regex_dist.get("on_device", 0), regex_dist.get("cloud", 0))
+        arms = (f"{rc:>5} ({100*rc/n:>4.1f}%) {ro:>5} ({100*ro/n:>4.1f}%) "
+                f"{rcl:>4} ({100*rcl/n:>4.1f}%)")
+    else:
+        arms = f"{'--':>12} {'--':>12} {'--':>11}"
+    print(f"  {'regex':>5} | {arms} | {baseline:>8.4f} {0:>5.0f}% {rcells}")
     for r in sweep:
         rd = r["routing_distribution"]
         c, o, cl = rd.get("cowrie", 0), rd.get("on_device", 0), rd.get("cloud", 0)
         cost = r["cost"]["ml_router"]["total_usd"]
-        cos = r["fidelity"]["ml_router"]["cosine_score"]
+        fid = r["fidelity"]["ml_router"]
+        if all_metrics:
+            fid_cells = "".join(f"{fid[m]:>7.3f}" for m, _ in METRICS)
+        else:
+            fid_cells = f"{fid['cosine_score']:>7.3f}"
         line = (f"  {r['omega']:>5} | "
                 f"{c:>5} ({100*c/n:>4.1f}%) {o:>5} ({100*o/n:>4.1f}%) "
                 f"{cl:>4} ({100*cl/n:>4.1f}%) | "
-                f"{cost:>8.4f} {_savings(cost, baseline):>5.0f}% {cos:>7.3f}")
-        if review:
+                f"{cost:>8.4f} {_savings(cost, baseline):>5.0f}% {fid_cells}")
+        if show_judge:
             jv = judge_by_omega.get(r["omega"])
             line += f"{jv:>7.3f}" if jv is not None else f"{'-':>7}"
         print(line)
@@ -196,6 +243,9 @@ def main():
                     help="label=run pairs; run is a folder name under "
                          "results/partC_ml_router/ or a path. Default: "
                          "paper=vector_paper benchmark=vector_gpqa")
+    ap.add_argument("--metrics", action="store_true",
+                    help="show all 6 semantic metrics per omega "
+                         "(Cosine/Lev/JW/Seq/BLEU/Exact), not just cosine")
     args = ap.parse_args()
 
     if args.runs:
@@ -209,9 +259,12 @@ def main():
         runs = DEFAULT_RUNS
 
     hr_judge = regex_judge()
+    regex_dist = regex_routing()
     summaries = {}
     for label, run in runs:
-        summaries[label] = summarize_run(label, _resolve(run), hr_judge)
+        summaries[label] = summarize_run(label, _resolve(run), hr_judge,
+                                         all_metrics=args.metrics,
+                                         regex_dist=regex_dist)
 
     compare_runs(summaries)
 
