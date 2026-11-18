@@ -1,0 +1,39 @@
+# Keep the build context small and SAFE. Anything listed here is never copied
+# into the image — which matters because the image is distributed to everyone.
+#
+# The golden rule: secrets and large runtime data must NOT be baked in.
+
+# ── never ship secrets ──
+.env
+*.key
+*.pem
+
+# ── version control / caches ──
+.git
+.github
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# ── large model weights: downloaded at runtime to a cache volume, not baked ──
+models/
+data/hf-cache/
+
+# ── runtime state / logs: mounted from the host, not part of the image ──
+data/
+var/
+cowrie-logs/
+
+# ── research + experiment trees: not part of the shipped honeypot ──
+experiment_data/results/
+archive_code/
+evaluation/
+honeypot_new/
+dataset/
+
+# ── local dev noise ──
+*.log
+.DS_Store

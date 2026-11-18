@@ -7,6 +7,50 @@ services:
     ports:
       - "127.0.0.1:${COWRIE_PORT:-2222}:2222"
 
+  # ── HydraPoT SSH honeypot (the attacker-facing front end) ──────────────────
+  hydrapot:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: hydrapot:latest
+    environment:
+      SERVICE: honeypot
+      # Compose puts every service on one private network; the app reaches
+      # Cowrie by its SERVICE NAME, not 127.0.0.1 (which, in a container, is the
+      # app itself). config_loader applies this over config.yaml's native host.
+      COWRIE_HOST: cowrie
+      # Secrets + endpoint come from .env at runtime -- NEVER baked into the
+      # image. Missing ones are simply absent (cloud arm then needs a real key).
+      CLOUD_AGENT_API_KEY: ${CLOUD_AGENT_API_KEY:-}
+      CLOUD_AGENT_BASE_URL: ${CLOUD_AGENT_BASE_URL:-}
+    ports:
+      - "${HONEYPOT_PORT:-2223}:2223"      # attacker-facing SSH
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro  # single source of truth, mounted
+      - ./data:/app/data                   # logs + SQLite persist on the host
+      - hf-cache:/app/data/hf-cache        # model weights download once
+    depends_on:
+      - cowrie
+
+  # ── Dashboard (same image, different role via SERVICE) ─────────────────────
+  dashboard:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: hydrapot:latest
+    environment:
+      SERVICE: dashboard
+    ports:
+      - "${DASHBOARD_PORT:-8050}:8050"
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ./data:/app/data                   # reads the same SQLite the honeypot writes
+    depends_on:
+      - hydrapot
+
+volumes:
+  hf-cache:        # named volume: survives restarts, keeps model downloads
+
 # Stock Cowrie, with its own built-in filesystem. Nothing here depends on a
 # generated file, so bringing it up works on a fresh clone.
 #
@@ -16,3 +60,8 @@ services:
 # That writes docker-compose.override.yml, which Compose merges automatically
 # (both v1 `docker-compose` and v2 `docker compose`).
 # Delete the override to go back to stock.
+#
+# hydrapot + dashboard share ONE image (hydrapot:latest, built from
+# docker/Dockerfile) and differ only by the SERVICE env var. The on-device LLM
+# arm is OFF unless config.yaml enables it AND you run the GPU image
+# (docker/Dockerfile.gpu); this CPU stack runs Cowrie + Cloud on any machine.
