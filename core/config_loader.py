@@ -334,11 +334,10 @@ class DashboardAuthCfg:
     dashboard's consumer is a browser pointed at a SQL console over captured
     credentials, so "open" is not a state it should be able to reach.
     """
-    credential_file: str = "data/operator.json"
-    # NOT the capture database. The Database page runs a read-only SQL console
-    # over that one, so sessions living there would be selectable from the very
-    # UI they gate.
-    session_db: str = "data/dashboard_auth.db"
+    # Accounts AND sessions live here -- NOT the capture database. The Database
+    # page runs a read-only SQL console over that one, so operator accounts or
+    # sessions living there would be selectable from the very UI they gate.
+    session_db: str = "data/users.db"
     session_lifetime_minutes: int = 480   # hard cap, even on an active session
     session_idle_minutes: int = 60        # cap since the last request
     max_attempts: int = 5                 # failures per IP before a lockout
@@ -464,6 +463,9 @@ class Config:
         "ft_surcharge_thb_per_unit": 0.1623,
         "vat_rate": 0.07,
     })
+    # The fake filesystem plugins/cowrie_fs.py builds (base/out pickle paths,
+    # relative to plugins/). The world-state reads the same file Cowrie serves.
+    filesystem: dict = field(default_factory=lambda: {"out": "cowrie/fs.pickle"})
     system_state: dict = field(default_factory=lambda: {
         "pre_installed": [
             "coreutils", "bash", "ssh", "apt", "apt-get", "dpkg",
@@ -702,6 +704,7 @@ def load_config(path: str = CONFIG_PATH) -> Config:
         logging=logging_,
         static_commands=static_cmds,
         system_state=system_state,
+        filesystem=raw.get("filesystem") or Config().filesystem,
         power_tariff=power_tariff,
         cost_model=cost_model,
         aggregation=aggregation,
