@@ -901,26 +901,6 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
             else:
                 return _finish(cmd, "on_device", "", fi_score, t_start)
 
-        # ── find — return plausible results for common attacker queries ───
-        if actual_base == "find" and not re.search(r'--version\b', cmd):
-            if re.search(r'-perm\s+-?4000', actual_cmd):
-                output = "\n".join([
-                    "/usr/bin/sudo", "/usr/bin/passwd", "/usr/bin/su",
-                    "/usr/bin/newgrp", "/usr/bin/gpasswd", "/usr/bin/chsh",
-                    "/usr/bin/chfn", "/bin/mount", "/bin/umount", "/bin/ping",
-                ])
-                return _finish(cmd, "cowrie", output, fi_score, t_start)
-            if re.search(r'-name\s+["\']?\*\.conf', actual_cmd):
-                output = "\n".join([
-                    "/etc/ssh/sshd_config", "/etc/mysql/mysql.conf.d/mysqld.cnf",
-                    "/etc/nginx/nginx.conf", "/etc/php/8.1/cli/php.ini",
-                    "/etc/fail2ban/fail2ban.conf", "/etc/logrotate.conf",
-                ])
-                return _finish(cmd, "cowrie", output, fi_score, t_start)
-            if re.search(r'-name\s+["\']?\*\.env', actual_cmd):
-                output = "/var/www/html/.env\n/opt/app/.env"
-                return _finish(cmd, "cowrie", output, fi_score, t_start)
-
         # ── static commands — guaranteed dispatch, independent of FI/agent ──
         # nmap/ping/traceroute/tracepath/top/htop/watch/tail-f/vim-nano-emacs/
         # less-more must ALWAYS produce their dedicated safe fake output
@@ -973,6 +953,11 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
         if agent == "cowrie" and not getattr(cowrie, "available", True):
             agent     = "on_device"
             needs_llm = True
+        # Cowrie's own `find` walks its whole 29k-entry tree on the reactor thread;
+        # one `find / -name X` froze the container. The rule core answers the
+        # common shapes; the rest go to a model (and the gate), never to Cowrie.
+        if actual_base == "find" and agent == "cowrie":
+            agent, needs_llm = "on_device", True
 
         # Running a file we hold: the kernel's answer is exact, a model guesses it
         handled, exec_out = executor.check(cmd)
