@@ -366,10 +366,11 @@ class RuleCore:
                 dirs.append((arg, path))
             else:
                 files.append((arg, path))
+        join = "\n" if "1" in flags else "  "
         blocks = []
         if files:
             files.sort(key=order)
-            blocks.append(self._long(files) if long else "  ".join(a for a, _ in files))
+            blocks.append(self._long(files) if long else join.join(a for a, _ in files))
         for arg, path in sorted(dirs, key=order):
             body = self._ls_dir(path, flags, long, show_all)
             blocks.append(body if len(args) <= 1 else f"{arg}:" + (f"\n{body}" if body else ""))
@@ -382,7 +383,7 @@ class RuleCore:
         if "a" in flags:
             entries = [(".", path), ("..", posixpath.dirname(path) or "/")] + entries
         if not long:
-            return "  ".join(name for name, _ in entries)
+            return ("\n" if "1" in flags else "  ").join(name for name, _ in entries)
         total = sum(self._blocks_1k(p) for _, p in entries)
         body = self._long(entries)
         return f"total {total}" + (f"\n{body}" if body else "")
