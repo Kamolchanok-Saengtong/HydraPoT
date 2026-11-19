@@ -30,6 +30,8 @@ _SPECIAL = set("|;<>`")
 _NON_PATH_RELS = frozenset({"session", "event", "env", "proc", "cwd", "user", "uid", "gid", "home", "shell"})
 _PS_NUMERIC = frozenset({"PID", "PPID", "%CPU", "%MEM", "VSZ", "RSS", "C"})
 _LS_FLAGS = set("laA1hd")
+# Kernel-provided trees: a write there is not a file in a directory
+_VIRTUAL = ("/proc", "/sys", "/dev", "/run")
 
 
 def _human(kib: int) -> str:
@@ -949,6 +951,9 @@ class RuleCore:
 
     # ── creating, copying, moving, removing (OSCAR Sec. IV-A) ───────────────
 
+    def _virtual(self, *paths) -> bool:
+        return any(p == v or p.startswith(v + "/") for p in paths for v in _VIRTUAL)
+
     def _parent(self, path):
         """('dir'|'notdir'|'missing'|'unknown', real parent) for path's directory."""
         parent = posixpath.dirname(path) or "/"
@@ -1002,6 +1007,8 @@ class RuleCore:
         if flags is None or not args:
             return False, None
         paths = [self._resolve(a) for a in args]
+        if self._virtual(*paths):
+            return False, None
         plans = []
         for arg, path in zip(args, paths):
             if self._kind(path) is not None:
@@ -1048,6 +1055,8 @@ class RuleCore:
     def _cmd_touch(self, argv):
         flags, args = self._flags(argv, "c")
         if flags is None or not args:
+            return False, None
+        if self._virtual(*[self._resolve(a) for a in args]):
             return False, None
         errors = []
         for arg in args:
@@ -1100,6 +1109,8 @@ class RuleCore:
             return False, None
         recursive, force = bool(set(flags) & set("rR")), "f" in flags
         paths = [self._resolve(a) for a in args]
+        if self._virtual(*paths):
+            return False, None
         for path in paths:
             if path == "/" or (self._kind(path) is None and not self._missing(path)):
                 return False, None
@@ -1181,6 +1192,8 @@ class RuleCore:
         if self._kind(real) == "dir" and not (set(flags) & set("rR")):
             return True, f"cp: -r not specified; omitting directory '{src_arg}'"
         dst, _ = self._dest(src_arg, dst_arg, "cp")
+        if self._virtual(src, dst):
+            return False, None
         state, parent = self._parent(dst)
         if state == "unknown":
             return False, None
@@ -1216,6 +1229,8 @@ class RuleCore:
             return (True, f"mv: cannot stat '{src_arg}': No such file or directory") \
                 if self._missing(src) else (False, None)
         dst, _ = self._dest(src_arg, dst_arg, "mv")
+        if self._virtual(src, dst):
+            return False, None
         if dst == src:
             return True, f"mv: '{src_arg}' and '{dst_arg}' are the same file"
         if dst.startswith(src.rstrip("/") + "/"):
@@ -1269,6 +1284,10 @@ class RuleCore:
         newline = not (words and words[0] == "-n")
         data = (" ".join(words[1:] if not newline else words) + ("\n" if newline else "")).encode()
         path = self._resolve(arg)
+        if path == "/dev/null":
+            return True, ""                  # the kernel throws the bytes away
+        if self._virtual(path):
+            return None
         real = self._target(path) if self._kind(path) else None
         if real is not None and self._kind(real) == "dir":
             return True, f"bash: {arg}: Is a directory"
