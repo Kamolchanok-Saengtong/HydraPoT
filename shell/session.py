@@ -559,10 +559,12 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
         export=(plugins.export_event if plugins else None))
     register.writer = telemetry.record_state
 
-    def _finish(cmd, agent, output, fi_score, t_start, streamed=False):
-        # Gate every answer before the attacker sees it. Streamed output has
-        # already been sent; forced experiment arms measure the raw agent.
-        if not streamed and not handle.forced:
+    def _finish(cmd, agent, output, fi_score, t_start, streamed=False, trusted=False):
+        # Gate every non-deterministic answer before the attacker sees it.
+        # `trusted` answers are computed from the register itself (rule core,
+        # Layer 0): the paper's Algorithm 1 sends only the LLM through the gate.
+        # Streamed output has already been sent; forced arms measure the raw agent.
+        if not streamed and not handle.forced and not trusted:
             output = rulecore.patch(parse_command(cmd)[0], output or "")
             output, successor = gate.check_text(
                 register.inst, parse_command(cmd)[0], output or "", agent,
@@ -972,7 +974,7 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
         handled, exec_out = executor.check(cmd)
         if handled:
             link.sync_history(cmd)
-            return _finish(cmd, agent, exec_out, fi_score, t_start)
+            return _finish(cmd, agent, exec_out, fi_score, t_start, trusted=True)
 
         # Rule core (OSCAR Sec. IV-A): facts answered from the register
         _materialize(actual_cmd)
@@ -983,7 +985,7 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
             link.sync_history(cmd)
             # Logged as the agent it displaced, like the other computed answers
             displaced = "on_device" if needs_llm and agent == "cowrie" else agent
-            return _finish(cmd, displaced, rc_out, fi_score, t_start)
+            return _finish(cmd, displaced, rc_out, fi_score, t_start, trusted=True)
 
         # ── SECURITY BOUNDARY ───────────────────────────────────────────────
         # False here means no prompt is ever built, so there is nothing to
