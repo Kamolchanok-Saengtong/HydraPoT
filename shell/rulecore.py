@@ -115,6 +115,10 @@ class RuleCore:
         # Same answer with or without sudo, as routing treats it (flags like -u differ)
         if text.startswith("sudo ") and not text[5:].lstrip().startswith("-"):
             text = text[5:].strip()
+        quiet = False
+        stderr = re.search(r"\s+2>\s*/dev/null\s*$", text)
+        if stderr:                       # the shell discards stderr: errors never print
+            text, quiet = text[:stderr.start()], True
         redirect = self._redirect(text)
         if redirect is not None:
             return redirect
@@ -134,10 +138,15 @@ class RuleCore:
         except ValueError:
             return False, None
         argv = self._expand(argv)
-        if argv is None:
+        if argv is None or not argv:
             return False, None
         handler = getattr(self, f"_cmd_{argv[0]}", None)
-        return handler(argv) if handler else (False, None)
+        if not handler:
+            return False, None
+        handled, out = handler(argv)
+        if handled and quiet and out:
+            out = "\n".join(l for l in out.split("\n") if not l.startswith(f"{argv[0]}: "))
+        return handled, out
 
     def patch(self, cmd: str, output: str) -> str:
         """Repair an answer Cowrie or a model gave so it agrees with the register."""
@@ -740,6 +749,98 @@ class RuleCore:
             return {"-eq": x == y, "-ne": x != y, "-gt": x > y,
                     "-lt": x < y, "-ge": x >= y, "-le": x <= y}[a[1]]
         return None
+
+    # ── find ───────────────────────────────────────────────────────────────
+
+    def _meta(self, path):
+        """(kind, mode, owner) from the register, else from the filesystem design."""
+        kind = self._kind(path)
+        if kind is not None:
+            return kind, self.inst.get("mode", path), self.inst.get("owner", path)
+        node = self.materializer.profile.node(path) if self.materializer else None
+        if node is None or self.inst.get("absent", path):
+            return None
+        who = self.materializer.users.get(node[2], str(node[2]))
+        return {0: "symlink", 1: "dir", 2: "file"}.get(node[1], "file"), node[5] & 0o7777, who
+
+    def _cmd_find(self, argv):
+        args, i, roots = argv[1:], 0, []
+        while i < len(args) and not args[i].startswith(("-", "(", "!")):
+            roots.append(args[i])
+            i += 1
+        tests, maxd, mind = [], None, 0
+        while i < len(args):
+            t = args[i]
+            if t == "-print":
+                i += 1
+                continue
+            if t not in ("-name", "-iname", "-type", "-maxdepth", "-mindepth", "-perm",
+                         "-user") or i + 1 >= len(args):
+                return False, None
+            v = args[i + 1]
+            if t == "-maxdepth" or t == "-mindepth":
+                if not v.isdigit():
+                    return False, None
+                maxd, mind = (int(v), mind) if t == "-maxdepth" else (maxd, int(v))
+            elif t == "-type" and v not in ("f", "d", "l"):
+                return False, None
+            elif t == "-perm" and not re.fullmatch(r"[-/]?[0-7]{1,4}", v):
+                return False, None
+            else:
+                tests.append((t, v))
+            i += 2
+        reg = {}
+        for p in self.inst.keys("kind"):
+            reg.setdefault(posixpath.dirname(p) or "/", set()).add(posixpath.basename(p))
+
+        def names(directory):
+            found = set(reg.get(directory, ()))
+            if self.materializer:
+                found |= set(self.materializer.profile.children(directory))
+            return sorted((n for n in found if n and self._meta(posixpath.join(directory, n))),
+                          key=lambda n: n.lower().lstrip("."))
+
+        def matches(path, meta):
+            kind, mode, owner = meta
+            for t, v in tests:
+                if t == "-name" and not fnmatch.fnmatchcase(posixpath.basename(path) or "/", v):
+                    return False
+                if t == "-iname" and not fnmatch.fnmatch(posixpath.basename(path).lower(), v.lower()):
+                    return False
+                if t == "-type" and {"f": "file", "d": "dir", "l": "symlink"}[v] != kind:
+                    return False
+                if t == "-user" and owner != v:
+                    return False
+                if t == "-perm":
+                    want, bits = int(v.lstrip("-/"), 8), (mode or 0) & 0o7777
+                    if v[0] == "-" and bits & want != want:
+                        return False
+                    if v[0] == "/" and not bits & want:
+                        return False
+                    if v[0] not in "-/" and bits != want:
+                        return False
+            return True
+
+        lines = []
+        for root in roots or ["."]:
+            start = self._resolve(root)
+            meta = self._meta(start)
+            if meta is None:
+                if not self._missing(start):
+                    return False, None
+                lines.append(f"find: '{root}': No such file or directory")
+                continue
+            stack = [(root, start, 0)]
+            while stack:
+                shown, path, depth = stack.pop()
+                meta = self._meta(path)
+                if depth >= mind and matches(path, meta):
+                    lines.append(shown)
+                if meta[0] == "dir" and (maxd is None or depth < maxd):
+                    kids = names(path)
+                    stack += [(posixpath.join(shown, n), posixpath.join(path, n), depth + 1)
+                              for n in reversed(kids)]
+        return True, "\n".join(lines)
 
     def _cmd_sudo(self, argv):
         """`sudo -l` as Ubuntu 20.04 prints it for an account with full rights."""
