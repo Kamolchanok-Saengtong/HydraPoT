@@ -102,8 +102,11 @@ class Generator:
         rng = PRF(self.seed, path, kind)
         return _REALIZERS[kind](self, rng, path).encode()
 
-    def materialize(self, inst: Instance, path: str):
+    def materialize(self, inst: Instance, path: str, extra: bytes = b""):
         """Facts that complete `path` from the generator, or [] if it must not.
+
+        `extra` is appended after the generated part: live events of this
+        session, such as the attacker's own login in auth.log.
 
         Respects the closed-world region: nothing is invented for an absent
         path, a path already known, or inside a sealed directory.
@@ -122,6 +125,7 @@ class Generator:
         data = self.content(path)
         if data is None:
             return []
+        data += extra
         owner, group, mode = _META[path_type(path)]
         rng = PRF(self.seed, path, "meta")
         mtime = self.epoch - timedelta(seconds=rng.int(3600, 90 * 86400))

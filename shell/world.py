@@ -33,6 +33,10 @@ FUNCTIONAL = frozenset({
     "ctime", "inode",
     "target", "uid", "gid", "home", "shell", "env", "proc", "cwd",
     "backend", "source",
+    # The login this session is: session(ip|user|tty|port|login_ns|sshd_pid|shell_pid)
+    "session",
+    # Session events a log would record, keyed by command seq
+    "event",
     # How older modules wrote a file (raw echo text, display size). Kept
     # beside the real facts so Sigma always checks bytes, not display text.
     "raw", "size_text",

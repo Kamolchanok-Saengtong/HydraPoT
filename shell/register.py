@@ -291,6 +291,22 @@ class Register:
         remove = {Fact("cwd", "session", cur)} if cur is not None else set()
         return self.commit({Fact("cwd", "session", path)}, remove, why=f"cd {path}")
 
+    def start_session(self, ip: str, user: str, tty: str = "pts/0",
+                      pid_floor: int = 1000) -> None:
+        """Record this login once; logs, ps, who and last all read it."""
+        sshd = pid_floor + self.prf("sshd_pid", "session", 20, 400)
+        facts = {
+            "ip": ip, "user": user, "tty": tty, "login_ns": self.epoch_ns,
+            "port": self.prf("port", "session", 32768, 60999),
+            "sshd_pid": sshd, "shell_pid": sshd + self.prf("shell_pid", "session", 2, 9),
+            "logind_session": self.prf("logind", "session", 2, 60),
+        }
+        self.commit({Fact("session", k, v) for k, v in facts.items()}, why="login")
+
+    def session(self, key, default=None):
+        value = self.inst.get("session", key)
+        return default if value is None else value
+
     def load_profile(self, starting_files: dict, known_dirs=()) -> None:
         """The box as it ships: known directories and pre-seeded files."""
         for path in known_dirs:

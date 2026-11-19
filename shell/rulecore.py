@@ -83,7 +83,7 @@ class RuleCore:
 
     def __init__(self, register, fs, hostname: str, users=None, variables=None,
                  username: str = "root", device: str = "801h/2049d",
-                 processes=()):
+                 processes=(), kernel: str = "5.15.0-generic"):
         self.reg = register
         self.fs = fs
         self.hostname = hostname
@@ -97,6 +97,7 @@ class RuleCore:
         self._started = {}            # pid -> spawn time (ns), for ps START
         # Base process table (Cowrie's data: VSZ/RSS bytes, TIME minutes)
         self.processes = sorted(processes, key=lambda p: p["PID"])
+        self.kernel = kernel
 
     @property
     def inst(self):
@@ -426,6 +427,200 @@ class RuleCore:
             self.changed = True
         return True, ""
 
+    # ── reading files: head / tail / grep ──────────────────────────────────
+
+    def _text_of(self, arg, tool):
+        """(handled, lines-or-error) for a file the register holds."""
+        path = self._resolve(arg)
+        if self._missing(path):
+            return True, None, f"{tool}: cannot open '{arg}' for reading: No such file or directory"
+        real = self._target(path)
+        if real is None or self._kind(real) != "file" or not self._owned(real):
+            return False, None, None
+        data = self.inst.get("content", real)
+        if b"\x00" in data:
+            return False, None, None
+        text = data.decode("utf-8", "replace")
+        body = text[:-1] if text.endswith("\n") else text
+        return True, (body.split("\n") if body else []), None
+
+    def _head_tail(self, argv, tail):
+        n, files, args, i = 10, [], argv[1:], 0
+        while i < len(args):
+            a = args[i]
+            if a == "-n" and i + 1 < len(args) and args[i + 1].isdigit():
+                n, i = int(args[i + 1]), i + 2
+                continue
+            m = re.fullmatch(r"-n?(\d+)", a)
+            if m:
+                n, i = int(m.group(1)), i + 1
+                continue
+            if a.startswith("-"):
+                return False, None
+            files.append(a)
+            i += 1
+        if len(files) != 1:
+            return False, None
+        handled, lines, err = self._text_of(files[0], argv[0])
+        if not handled:
+            return False, None
+        if err:
+            return True, err
+        return True, "\n".join(lines[-n:] if tail and n else lines[:n])
+
+    def _cmd_head(self, argv):
+        return self._head_tail(argv, tail=False)
+
+    def _cmd_tail(self, argv):
+        return self._head_tail(argv, tail=True)
+
+    def _cmd_grep(self, argv):
+        flags, args = set(), []
+        for a in argv[1:]:
+            if a.startswith("-") and len(a) > 1 and not args:
+                flags |= set(a[1:])
+            else:
+                args.append(a)
+        if flags - set("ivcnF") or len(args) != 2:
+            return False, None
+        pattern, arg = args
+        path = self._resolve(arg)
+        if self._missing(path):
+            return True, f"grep: {arg}: No such file or directory"
+        handled, lines, _ = self._text_of(arg, "grep")
+        if not handled or lines is None:
+            return False, None
+        if "F" in flags:
+            needle = pattern.lower() if "i" in flags else pattern
+            hit = lambda line: needle in (line.lower() if "i" in flags else line)
+        else:
+            try:
+                rx = re.compile(pattern, re.I if "i" in flags else 0)
+            except re.error:
+                return False, None
+            hit = lambda line: rx.search(line) is not None
+        matched = [(i + 1, line) for i, line in enumerate(lines)
+                   if hit(line) != ("v" in flags)]
+        if "c" in flags:
+            return True, str(len(matched))
+        return True, "\n".join(f"{i}:{line}" if "n" in flags else line for i, line in matched)
+
+    # ── this login: who / w / last / uptime / auth.log ─────────────────────
+
+    def _dt(self, ns):
+        return datetime.fromtimestamp(ns / 1e9, tz=timezone.utc)
+
+    def _syslog(self, ns):
+        dt = self._dt(ns)
+        return f"{dt:%b} {dt.day:>2} {dt:%H:%M:%S} {self.hostname}"
+
+    def _boot_ns(self) -> int:
+        """Boot time agrees with ps: pid 1's START, at a seeded hour."""
+        now = self._dt(self.reg.now_ns())
+        first = next((p for p in self.processes if p["PID"] == 1), None)
+        if first:
+            try:
+                day = datetime.strptime(f"{now.year} {first['START']}", "%Y %b%d").replace(
+                    tzinfo=timezone.utc, hour=self.reg.prf("boot_h", "boot", 0, 23),
+                    minute=self.reg.prf("boot_m", "boot", 0, 59))
+                if day > now:
+                    day = day.replace(year=now.year - 1)
+                return int(day.timestamp() * 1e9)
+            except ValueError:
+                pass
+        return self.reg.epoch_ns - self.reg.prf("uptime", "boot", 3, 200) * 86_400 * 10**9
+
+    def _uptime_line(self) -> str:
+        now = self._dt(self.reg.now_ns())
+        delta = now - self._dt(self._boot_ns())
+        h, m = divmod(delta.seconds // 60, 60)
+        up = (f"{delta.days} day{'s' if delta.days != 1 else ''}, {h:2d}:{m:02d}"
+              if delta.days else f"{h:2d}:{m:02d}")
+        loads = [self.reg.prf(f"load{i}", "load", 0, 30) / 100 for i in range(3)]
+        users = 1 if self.reg.session("ip") is not None else 0
+        return (f" {now:%H:%M:%S} up {up},  {users} user{'s' if users != 1 else ''},  "
+                f"load average: {loads[0]:.2f}, {loads[1]:.2f}, {loads[2]:.2f}")
+
+    def _cmd_uptime(self, argv):
+        return (True, self._uptime_line()) if len(argv) == 1 else (False, None)
+
+    def _cmd_who(self, argv):
+        if len(argv) != 1 or self.reg.session("ip") is None:
+            return False, None
+        dt = self._dt(self.reg.session("login_ns"))
+        return True, (f"{self.reg.session('user'):<8} {self.reg.session('tty'):<12} "
+                      f"{dt:%Y-%m-%d %H:%M} ({self.reg.session('ip')})")
+
+    def _cmd_w(self, argv):
+        if len(argv) != 1 or self.reg.session("ip") is None:
+            return False, None
+        dt = self._dt(self.reg.session("login_ns"))
+        return True, "\n".join([
+            self._uptime_line(),
+            "USER     TTY      FROM             LOGIN@   IDLE   JCPU   PCPU WHAT",
+            f"{self.reg.session('user'):<8} {self.reg.session('tty'):<8} "
+            f"{self.reg.session('ip'):<16} {dt:%H:%M}   {'0.00s':>6} {'0.04s':>6} {'0.00s':>6} w"])
+
+    def _cmd_last(self, argv):
+        if len(argv) != 1 or self.reg.session("ip") is None:
+            return False, None
+        login, boot = self._dt(self.reg.session("login_ns")), self._dt(self._boot_ns())
+
+        def when(dt):
+            return f"{dt:%a %b} {dt.day:>2} {dt:%H:%M}"
+        return True, "\n".join([
+            f"{self.reg.session('user'):<8} {self.reg.session('tty'):<12} "
+            f"{self.reg.session('ip'):<16} {when(login)}   still logged in",
+            f"{'reboot':<8} {'system boot':<12} {self.kernel[:16]:<16} {when(boot)}   still running",
+            "",
+            f"wtmp begins {boot:%a %b} {boot.day:>2} {boot:%H:%M:%S %Y}"])
+
+    def live_lines(self, path: str) -> bytes:
+        """Lines this session added to a log: the login, then sudo events."""
+        if path != "/var/log/auth.log" or self.reg.session("ip") is None:
+            return b""
+        stamp, pid = self._syslog(self.reg.session("login_ns")), self.reg.session("sshd_pid")
+        user, ip = self.reg.session("user"), self.reg.session("ip")
+        logind = next((p["PID"] for p in self.processes
+                       if "systemd-logind" in p["COMMAND"]), None) or self.reg.prf(
+                           "logind_pid", "boot", 500, 900)
+        lines = [f"{stamp} sshd[{pid}]: Accepted password for {user} from {ip} "
+                 f"port {self.reg.session('port')} ssh2",
+                 f"{stamp} sshd[{pid}]: pam_unix(sshd:session): session opened for user "
+                 f"{user} by (uid=0)",
+                 f"{stamp} systemd-logind[{logind}]: New session "
+                 f"{self.reg.session('logind_session')} of user {user}."]
+        lines += [self.inst.get("event", k) for k in sorted(self.inst.keys("event"))]
+        return ("\n".join(lines) + "\n").encode()
+
+    def note_sudo(self, command: str) -> None:
+        """A real sudo logs to auth.log; record it, and append if the log exists."""
+        try:
+            argv = shlex.split(command)
+        except ValueError:
+            return
+        if not argv:
+            return
+        exe = argv[0] if "/" in argv[0] else f"/usr/bin/{argv[0]}"
+        stamp, user = self._syslog(self.reg.now_ns()), self.reg.session("user", "root")
+        lines = [f"{stamp} sudo: {user:>8} : TTY={self.reg.session('tty', 'pts/0')} ; "
+                 f"PWD={self.reg.cwd()} ; USER=root ; COMMAND={' '.join([exe] + argv[1:])}",
+                 f"{stamp} sudo: pam_unix(sudo:session): session opened for user root by "
+                 f"{user}(uid=0)",
+                 f"{stamp} sudo: pam_unix(sudo:session): session closed for user root"]
+        base = (self.reg.seq + 1) * 10
+        self.reg.commit({Fact("event", base + i, line) for i, line in enumerate(lines)},
+                        why="sudo")
+        log = "/var/log/auth.log"
+        old = self.inst.get("content", log)
+        if old is None:
+            return
+        new = old + ("\n".join(lines) + "\n").encode()
+        remove = {Fact(r, log, self.inst.get(r, log)) for r in ("content", "size", "mtime")
+                  if self.inst.get(r, log) is not None}
+        self.reg.commit({Fact("content", log, new), Fact("size", log, len(new)),
+                         Fact("mtime", log, self.reg.now_ns())}, remove, why="sudo log")
+
     # ── links ──────────────────────────────────────────────────────────────
 
     def _cmd_ln(self, argv):
@@ -527,14 +722,17 @@ class RuleCore:
     def _new_pid(self) -> int:
         """PIDs only grow, starting above the base table, like a real kernel."""
         if self._next_pid is None:
-            top = max([p["PID"] for p in self.processes] or [1000])
+            top = max([p["PID"] for p in self.processes] + [self._shell_pid()])
             self._next_pid = top + self.reg.prf("pid", "session", 100, 900)
         self._next_pid += self.reg.prf("pidstep", str(self._next_pid), 1, 3)
         return self._next_pid
 
     def _shell_pid(self) -> int:
-        top = max([p["PID"] for p in self.processes] or [1000])
-        return top + self.reg.prf("shellpid", "session", 1, 99)
+        pid = self.reg.session("shell_pid")
+        if pid is None:
+            top = max([p["PID"] for p in self.processes] or [1000])
+            pid = top + self.reg.prf("shellpid", "session", 1, 99)
+        return pid
 
     def _rows(self, me: str):
         """The process table: base, the login shell, jobs, then this ps."""
@@ -552,7 +750,13 @@ class RuleCore:
                          "stat": p["STAT"], "start": p["START"],
                          "time": int(minutes * 60), "cmd": p["COMMAND"].rstrip()})
         shell = self._shell_pid()
-        rows.append({"user": self.username, "pid": shell, "ppid": 1, "cpu": 0.0,
+        sshd = self.reg.session("sshd_pid")
+        if sshd is not None:
+            rows.append({"user": self.username, "pid": sshd, "ppid": 1, "cpu": 0.0,
+                         "mem": 0.2, "vsz": 13788, "rss": 8964, "tty": "?",
+                         "stat": "Ss", "start": hhmm(self.reg.epoch_ns), "time": 0,
+                         "cmd": f"sshd: {self.username}@{self.reg.session('tty', 'pts/0')}"})
+        rows.append({"user": self.username, "pid": shell, "ppid": sshd or 1, "cpu": 0.0,
                      "mem": 0.1, "vsz": 10036, "rss": 5136, "tty": "pts/0",
                      "stat": "Ss", "start": hhmm(self.reg.epoch_ns), "time": 0,
                      "cmd": "-bash"})

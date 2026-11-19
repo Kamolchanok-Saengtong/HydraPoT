@@ -202,6 +202,9 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
     )
     register.load_profile(config.system_state.get("starting_files", {}),
                           config.system_state.get("known_dirs", []))
+    processes = _load_processes(config)
+    register.start_session(src_ip, username,
+                           pid_floor=max([p["PID"] for p in processes] or [1000]))
     SYSTEM_STATE["cwd"] = "/root"
 
     # Unknown login → conventional /home/<user> so `cd ~` and `pwd` look real.
@@ -300,7 +303,7 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
     rulecore = RuleCore(register, fs, hostname=config.honeypot.hostname,
                         users=lambda: SYSTEM_STATE["users"],
                         variables=SYSTEM_STATE["vars"], username=username,
-                        processes=_load_processes(config))
+                        processes=processes, kernel=config.honeypot.kernel)
     generator = Generator(register.seed, hostname=config.honeypot.hostname,
                           epoch=datetime.now(timezone.utc))
 
@@ -317,13 +320,22 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
         register.note("gate", gate.log[-1])
         return output
 
+    _READERS = ("cat", "head", "tail", "grep", "stat", "wc", "du", "ls", "less", "more")
+
     def _materialize(cmd_text: str) -> None:
-        """Alg. 1 line 10: complete a never-seen path from the generator."""
+        """Alg. 1 line 10: complete never-seen paths a read touches."""
         parts = cmd_text.split()
-        if len(parts) == 2 and parts[0] == "cat" and not parts[1].startswith("-"):
-            facts = generator.materialize(register.inst, fs.resolve(parts[1]))
+        if not parts or parts[0] not in _READERS or set(cmd_text) & set("|;<>`$"):
+            return
+        args = [a for a in parts[1:] if not a.startswith("-")]
+        if parts[0] == "grep":
+            args = args[1:]                  # the first operand is the pattern
+        for arg in args:
+            path = fs.resolve(arg)
+            facts = generator.materialize(register.inst, path,
+                                          extra=rulecore.live_lines(path))
             if facts:
-                register.commit(set(facts), why=f"generate {parts[1]}")
+                register.commit(set(facts), why=f"generate {arg}")
 
     def _needs_llm(cmd: str, cmd_base: str, state: dict) -> bool:
         return routing.needs_llm(cmd, cmd_base)
@@ -641,6 +653,8 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
         # Tag every state change this command makes with its sequence number
         register.begin(len(session), cmd)
         handle.forced = force_agent is not None
+        if force_agent is None and cmd.strip().startswith("sudo "):
+            rulecore.note_sudo(cmd.strip()[5:])
 
         actual_cmd, actual_base, lookup_base, from_busybox = parse_command(cmd)
         fi_score, fi_method = fi_manager.scorer.score(actual_cmd)
@@ -948,6 +962,7 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
             return _finish(cmd, agent, exec_out, fi_score, t_start)
 
         # Rule core (OSCAR Sec. IV-A): facts answered from the register
+        _materialize(actual_cmd)
         handled, rc_out = rulecore.answer(actual_cmd)
         if handled:
             if rulecore.changed:
