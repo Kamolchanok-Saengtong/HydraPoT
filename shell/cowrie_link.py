@@ -56,6 +56,12 @@ def _perms_to_octal(perms: str):
     return out
 
 
+def _levels(path: str):
+    """/a/b/c -> ['/a', '/a/b', '/a/b/c']"""
+    parts = [p for p in path.split("/") if p]
+    return ["/" + "/".join(parts[:i + 1]) for i in range(len(parts))]
+
+
 class CowrieLink:
     """One session's connection to Cowrie.
 
@@ -194,7 +200,10 @@ class CowrieLink:
             if rec is None:
                 return [f"rm -rf {q}"]
             perms = str(rec.get("perms", ""))
-            cmds = [f"mkdir -p {q}"] if perms.startswith("d") else [_write_cmd(q, rec)]
+            # Cowrie's mkdir has no -p (it makes a folder named "-p"): one plain mkdir
+            # per level, parents first. An existing level just errors, unseen.
+            cmds = ([f"mkdir {shlex.quote(d)}" for d in _levels(path)]
+                    if perms.startswith("d") else [_write_cmd(q, rec)])
             octal = _perms_to_octal(perms)
             if octal:
                 cmds.append(f"chmod {octal} {q}")
