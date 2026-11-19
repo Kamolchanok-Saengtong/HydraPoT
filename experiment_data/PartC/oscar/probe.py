@@ -84,15 +84,42 @@ def run_real(cmds):
     return list(zip(cmds, [p.rstrip("\n") for p in parts[:len(cmds)]]))
 
 
-def make_handler(repo):
+def disable_gate():
+    """Ablation: the gate stops rejecting. The rule core and register stay on."""
+    from shell.gate import Gate, parse_triple
+
+    def turn(self, inst, cmd, candidates, source="llm"):
+        for raw in candidates:
+            triple = parse_triple(raw)
+            if triple is not None:
+                verdict = self._check(inst, self.proposal(inst, cmd, triple))
+                self._record(cmd, source, "accepted", 1, [])
+                return triple["output"], (verdict.successor if verdict.ok else inst)
+        out, nxt = self.fallback(inst, cmd)      # nothing parseable to show
+        self._record(cmd, source, "fallback", 1, ["malformed"])
+        return out, nxt
+
+    def check_text(self, inst, cmd, output, source, before=None):
+        self._record(cmd, source, "accepted", 1, [])
+        return output, inst
+
+    Gate.turn, Gate.check_text = turn, check_text
+
+
+def make_handler(repo, gate=True):
     """A HydraPoT session from `repo`, all model-served commands on the cloud LLM."""
     sys.path[:0] = [repo, os.path.join(repo, "experiment_data"),
                     os.path.join(repo, "experiment_data", "PartA")]
     from agents import build_agents
     import main
+    if not gate:
+        disable_gate()
     from openai import OpenAI
 
     base = build_agents(connect_cowrie=True, load_on_device=False)
+    # A run without Cowrie measures a different system: refuse rather than report it
+    if base.cowrie is None or not getattr(base.cowrie, "available", True):
+        raise SystemExit("Cowrie is not connected; refusing to run without it")
     cloud = base.cloud
     # Same cloud arm as Part C (run_partC.py)
     url = (os.environ.get("PARTC_BASE_URL") or "").rstrip("/") or cloud._base_url
@@ -102,9 +129,12 @@ def make_handler(repo):
     # On-device GPU is busy: the cloud model answers its share too
     main.ondevice = cloud
     main.cloud = cloud
-    return lambda: main.make_command_handler(
-        base.cowrie, src_ip="probe", public_ip="probe", plugins=None,
-        capture_cost=True, store="json", store_dir=tempfile.mkdtemp(prefix="probe_"))
+    def new_handler():
+        return main.make_command_handler(
+            base.cowrie, src_ip="probe", public_ip="probe", plugins=None,
+            capture_cost=True, store="json", store_dir=tempfile.mkdtemp(prefix="probe_"))
+    new_handler.cowrie = base.cowrie
+    return new_handler
 
 
 def run_hydrapot(new_handler, cmds):
@@ -125,9 +155,11 @@ def main():
     ap.add_argument("--fillers", type=int, nargs="+", default=[5])
     ap.add_argument("--runs", type=int, default=1)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--no-gate", action="store_true",
+                    help="ablation: let every answer through unchecked")
     args = ap.parse_args()
 
-    new_handler = None if args.real else make_handler(os.path.abspath(args.repo))
+    new_handler = None if args.real else make_handler(os.path.abspath(args.repo), gate=not args.no_gate)
     results = []
     for fillers in args.fillers:
         for run in range(args.runs):
