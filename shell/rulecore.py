@@ -109,6 +109,9 @@ class RuleCore:
     def answer(self, cmd: str):
         self.changed = False
         text = cmd.strip()
+        # Same answer with or without sudo, as routing treats it (flags like -u differ)
+        if text.startswith("sudo ") and not text[5:].lstrip().startswith("-"):
+            text = text[5:].strip()
         if not text or _SPECIAL & set(text) or "$(" in text or "&&" in text:
             return False, None
         if text.endswith("&"):
@@ -133,6 +136,8 @@ class RuleCore:
             argv = shlex.split(cmd.strip())
         except ValueError:
             return output
+        if argv[:1] == ["sudo"] and argv[1:2] and not argv[1].startswith("-"):
+            argv = argv[1:]
         if not argv or _SPECIAL & set(cmd):
             return output
         if argv[0] == "ps":
