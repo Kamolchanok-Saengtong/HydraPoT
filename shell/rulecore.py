@@ -633,6 +633,17 @@ class RuleCore:
         lines += [self.inst.get("event", k) for k in sorted(self.inst.keys("event"))]
         return ("\n".join(lines) + "\n").encode()
 
+    def _cmd_sudo(self, argv):
+        """`sudo -l` as Ubuntu 20.04 prints it for an account with full rights."""
+        if argv[1:] != ["-l"]:
+            return False, None
+        host, user = self.hostname, self.username
+        return True, (f"Matching Defaults entries for {user} on {host}:\n"
+                      "    env_reset, mail_badpass, secure_path=/usr/local/sbin\\:"
+                      "/usr/local/bin\\:/usr/sbin\\:/usr/bin\\:/sbin\\:/bin\\:/snap/bin\n\n"
+                      f"User {user} may run the following commands on {host}:\n"
+                      "    (ALL : ALL) ALL")
+
     def note_sudo(self, command: str) -> None:
         """A real sudo logs to auth.log; record it, and append if the log exists."""
         try:
@@ -642,6 +653,8 @@ class RuleCore:
         if not argv:
             return
         exe = argv[0] if "/" in argv[0] else f"/usr/bin/{argv[0]}"
+        if argv[0] == "-l":
+            exe, argv = "list", ["list"]
         stamp, user = self._syslog(self.reg.now_ns()), self.reg.session("user", "root")
         lines = [f"{stamp} sudo: {user:>8} : TTY={self.reg.session('tty', 'pts/0')} ; "
                  f"PWD={self.reg.cwd()} ; USER=root ; COMMAND={' '.join([exe] + argv[1:])}",

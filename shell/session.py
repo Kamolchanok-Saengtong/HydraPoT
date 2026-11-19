@@ -142,7 +142,9 @@ def parse_command(cmd: str):
     command was invoked.
     """
     text = cmd.strip()
-    actual_cmd = text[5:].strip() if text.startswith("sudo ") else text
+    # `sudo -l` / `sudo -u x cmd` keep their prefix: stripping it left "-l" as the command
+    actual_cmd = (text[5:].strip() if text.startswith("sudo ")
+                  and not text[5:].lstrip().startswith("-") else text)
     actual_base = actual_cmd.split()[0] if actual_cmd else ""
     lookup_base = os.path.basename(actual_base)     # full path -> bare name
 
