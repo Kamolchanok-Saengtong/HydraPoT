@@ -16,6 +16,7 @@ A command is only answered when the register fully knows the answer; anything
 touching paths it does not own falls through to Cowrie or a model. `patch`
 then repairs those answers for listings and the process table.
 """
+import fnmatch
 import math
 import posixpath
 import re
@@ -132,6 +133,9 @@ class RuleCore:
             argv = shlex.split(text)
         except ValueError:
             return False, None
+        argv = self._expand(argv)
+        if argv is None:
+            return False, None
         handler = getattr(self, f"_cmd_{argv[0]}", None)
         return handler(argv) if handler else (False, None)
 
@@ -152,6 +156,31 @@ class RuleCore:
         return output
 
     # ── what the register owns ─────────────────────────────────────────────
+
+    def _expand(self, argv):
+        """What the shell does before a command runs: ~ and one-level globs.
+
+        None when a glob names a directory the register does not fully know.
+        """
+        out = [argv[0]]
+        for arg in argv[1:]:
+            arg = self._tilde(arg)
+            if arg.startswith("-") or not any(c in arg for c in "*?["):
+                out.append(arg)
+                continue
+            head, pattern = posixpath.split(arg)
+            if any(c in head for c in "*?["):
+                return None
+            directory = self._resolve(head) if head else self.reg.cwd()
+            if self._kind(directory) != "dir" or not self._closed(directory):
+                return None
+            names = [n for n in self._children(directory)
+                     if pattern.startswith(".") or not n.startswith(".")]
+            hits = sorted(fnmatch.filter(names, pattern),
+                          key=lambda n: n.lower().lstrip("."))
+            # an unmatched pattern stays literal, as in bash
+            out += [posixpath.join(head, n) if head else n for n in hits] or [arg]
+        return out
 
     def _tilde(self, arg: str) -> str:
         if arg == "~" or arg.startswith("~/"):
@@ -292,29 +321,41 @@ class RuleCore:
     def _cmd_ls(self, argv):
         flags = "".join(a[1:] for a in argv[1:] if a.startswith("-"))
         args = [a for a in argv[1:] if not a.startswith("-")]
-        if set(flags) - _LS_FLAGS or len(args) > 1:
-            return False, None
-        arg = args[0] if args else "."
-        path = self._resolve(arg if args else self.reg.cwd())
-        if self._missing(path):
-            return True, f"ls: cannot access '{arg}': No such file or directory"
-        if not self._owned(path):
+        if set(flags) - _LS_FLAGS:
             return False, None
         long, show_all = "l" in flags, "a" in flags or "A" in flags
-        if "d" in flags:                      # the directory itself, not its contents
-            return True, self._long([(arg, path)]) if long else arg
-        if self._kind(path) != "dir":
-            return True, self._long([(arg, path)]) if long else arg
-        names = self._children(path)
-        entries = [(n, posixpath.join(path, n)) for n in names
+        errors, files, dirs = [], [], []
+        order = lambda item: item[0].lower().lstrip(".")
+        for arg in args or ["."]:
+            path = self._resolve(arg if args else self.reg.cwd())
+            if self._missing(path):
+                errors.append(f"ls: cannot access '{arg}': No such file or directory")
+            elif not self._owned(path):
+                return False, None
+            elif self._kind(path) == "dir" and "d" not in flags:
+                dirs.append((arg, path))
+            else:
+                files.append((arg, path))
+        blocks = []
+        if files:
+            files.sort(key=order)
+            blocks.append(self._long(files) if long else "  ".join(a for a, _ in files))
+        for arg, path in sorted(dirs, key=order):
+            body = self._ls_dir(path, flags, long, show_all)
+            blocks.append(body if len(args) <= 1 else f"{arg}:" + (f"\n{body}" if body else ""))
+        text = "\n\n".join(blocks)
+        return True, "\n".join(errors + ([text] if text else []))
+
+    def _ls_dir(self, path, flags, long, show_all) -> str:
+        entries = [(n, posixpath.join(path, n)) for n in self._children(path)
                    if show_all or not n.startswith(".")]
         if "a" in flags:
             entries = [(".", path), ("..", posixpath.dirname(path) or "/")] + entries
         if not long:
-            return True, "  ".join(name for name, _ in entries)
+            return "  ".join(name for name, _ in entries)
         total = sum(self._blocks_1k(p) for _, p in entries)
         body = self._long(entries)
-        return True, f"total {total}" + (f"\n{body}" if body else "")
+        return f"total {total}" + (f"\n{body}" if body else "")
 
     def _long(self, entries) -> str:
         rows = []
