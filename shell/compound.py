@@ -13,7 +13,9 @@ _FAILED = re.compile(
     r"|Not a directory|File exists|cannot (access|stat|remove|create|open|move|copy|touch)"
     r"|invalid option|missing operand|omitting directory|applet not found"
     r"|Operation not permitted|unable to resolve", re.I)
-_KEYWORDS = re.compile(r"(^|[\s;&|(])(if|then|else|fi|for|while|until|do|done|case|esac|function)\b")
+# Shell keywords only mean something where a command starts; `echo done` is an argument
+_KEYWORDS = re.compile(r"(^|[;&|(]\s*|\{\s+)"
+                       r"(if|then|else|elif|fi|for|while|until|do|done|case|esac|function)\b")
 
 
 def split(text: str):
