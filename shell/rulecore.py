@@ -252,7 +252,9 @@ class RuleCore:
 
     def _closed(self, path) -> bool:
         """A directory whose full contents are known: attacker-made, or listed by
-        the filesystem design."""
+        the filesystem design. Never the kernel's trees: their contents are not ours."""
+        if self._virtual(path):
+            return False
         while path:
             if self.inst.get("sealed", path) or self.inst.get("profiled", path):
                 return True
@@ -274,6 +276,8 @@ class RuleCore:
 
     def _missing(self, path) -> bool:
         """Known not to exist: denied before, or under a directory we fully know."""
+        if self._virtual(path):
+            return self.inst.get("absent", path) is not None
         return (self.inst.get("absent", path) is not None
                 or (self._kind(path) is None and self._closed(posixpath.dirname(path))))
 
