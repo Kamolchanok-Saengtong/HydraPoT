@@ -133,11 +133,10 @@ class RuleCore:
             return self._echo_var(m.group(1))
         if "$" in text:
             return False, None
-        try:
-            argv = shlex.split(text)
-        except ValueError:
+        words = self._words(text)
+        if not words:
             return False, None
-        argv = self._expand(argv)
+        argv = self._expand(words)
         if argv is None or not argv:
             return False, None
         handler = getattr(self, f"_cmd_{argv[0]}", None)
@@ -166,18 +165,37 @@ class RuleCore:
 
     # ── what the register owns ─────────────────────────────────────────────
 
-    def _expand(self, argv):
+    _WORD = re.compile(r"""(?:'[^']*'|"(?:[^"\\]|\\.)*"|\\.|[^\s'"\\])+""")
+
+    def _words(self, text):
+        """[(value, quoted)]: shlex's words, plus whether the shell would expand them."""
+        out = []
+        for m in self._WORD.finditer(text):
+            raw = m.group(0)
+            try:
+                value = shlex.split(raw)[0]
+            except (ValueError, IndexError):
+                return None
+            out.append((value, any(c in raw for c in "'\"\\")))
+        return out
+
+    def _expand(self, words):
         """What the shell does before a command runs: ~ and one-level globs.
 
-        None when a glob names a directory the register does not fully know.
+        Quoted words are left alone. None when a glob names a directory the
+        register does not fully know.
         """
-        out = [argv[0]]
-        for arg in argv[1:]:
+        out = [words[0][0]]
+        for arg, quoted in words[1:]:
+            if quoted:
+                out.append(arg)
+                continue
             arg = self._tilde(arg)
             if arg.startswith("-") or not any(c in arg for c in "*?["):
                 out.append(arg)
                 continue
-            head, pattern = posixpath.split(arg)
+            only_dirs = arg.endswith("/")
+            head, pattern = posixpath.split(arg.rstrip("/"))
             if any(c in head for c in "*?["):
                 return None
             directory = self._resolve(head) if head else self.reg.cwd()
@@ -187,8 +205,11 @@ class RuleCore:
                      if pattern.startswith(".") or not n.startswith(".")]
             hits = sorted(fnmatch.filter(names, pattern),
                           key=lambda n: n.lower().lstrip("."))
+            if only_dirs:                     # `*/` matches directories only
+                hits = [n for n in hits if self._kind(posixpath.join(directory, n)) == "dir"]
+            suffix = "/" if only_dirs else ""
             # an unmatched pattern stays literal, as in bash
-            out += [posixpath.join(head, n) if head else n for n in hits] or [arg]
+            out += [posixpath.join(head, n) + suffix if head else n + suffix for n in hits] or [arg]
         return out
 
     def _tilde(self, arg: str) -> str:
