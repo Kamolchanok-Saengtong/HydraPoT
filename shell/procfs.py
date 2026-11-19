@@ -54,6 +54,19 @@ class PRF:
         return items[self.int(0, len(items) - 1)]
 
 
+# Typed files a stock Ubuntu server always has, listed even when the design
+# leaves them out (rsyslog default targets on Ubuntu 20.04)
+EXPECTED = {
+    "/var/log": ("auth.log", "syslog", "kern.log"),
+}
+
+
+# rsyslog's default text files; wtmp/btmp/lastlog are binary, dpkg.log has
+# its own format, so neither is ours to invent
+_SYSLOG_FILES = frozenset({"syslog", "kern.log", "messages", "daemon.log",
+                           "user.log", "mail.log", "cron.log"})
+
+
 def path_type(path: str):
     """Path oracle: the content type of a path, or None if not ours to invent."""
     if path in _RESERVED or path.startswith(_RESERVED_PREFIXES):
@@ -67,7 +80,7 @@ def path_type(path: str):
         return "ssh_config"
     if path in ("/var/log/auth.log", "/var/log/secure"):
         return "auth_log"
-    if path.startswith("/var/log/") and (name.endswith(".log") or "." not in name):
+    if posixpath.dirname(path) == "/var/log" and name in _SYSLOG_FILES:
         return "log"
     return "generic"
 

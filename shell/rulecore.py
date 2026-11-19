@@ -83,7 +83,7 @@ class RuleCore:
 
     def __init__(self, register, fs, hostname: str, users=None, variables=None,
                  username: str = "root", device: str = "801h/2049d",
-                 processes=(), kernel: str = "5.15.0-generic"):
+                 processes=(), kernel: str = "5.15.0-generic", materializer=None):
         self.reg = register
         self.fs = fs
         self.hostname = hostname
@@ -98,6 +98,7 @@ class RuleCore:
         # Base process table (Cowrie's data: VSZ/RSS bytes, TIME minutes)
         self.processes = sorted(processes, key=lambda p: p["PID"])
         self.kernel = kernel
+        self.materializer = materializer
 
     @property
     def inst(self):
@@ -143,16 +144,23 @@ class RuleCore:
     # ── what the register owns ─────────────────────────────────────────────
 
     def _resolve(self, arg: str) -> str:
-        return self.fs.resolve(arg)
+        path = self.fs.resolve(arg)
+        # Copy the path in from the filesystem design before judging it
+        if self.materializer:
+            self.materializer.ensure(path)
+        return path
 
     def _kind(self, path):
         return self.inst.get("kind", path)
 
     def _closed(self, path) -> bool:
-        """A directory whose full contents the register knows (attacker-made)."""
-        while path and path != "/":
-            if self.inst.get("sealed", path):
+        """A directory whose full contents are known: attacker-made, or listed by
+        the filesystem design."""
+        while path:
+            if self.inst.get("sealed", path) or self.inst.get("profiled", path):
                 return True
+            if path == "/":
+                return False
             path = posixpath.dirname(path)
         return False
 
@@ -161,7 +169,8 @@ class RuleCore:
         if kind == "symlink":
             return True
         if kind == "file":
-            return self.inst.get("content", path) is not None
+            return (self.inst.get("content", path) is not None
+                    or self.inst.get("psize", path) is not None)
         if kind == "dir":
             return self._closed(path)
         return False
@@ -172,6 +181,8 @@ class RuleCore:
                 or (self._kind(path) is None and self._closed(posixpath.dirname(path))))
 
     def _children(self, directory):
+        if self.materializer:
+            self.materializer.ensure_children(directory)
         prefix = directory.rstrip("/") + "/"
         return sorted({p[len(prefix):].split("/")[0] for p in self.inst.keys("kind")
                        if p.startswith(prefix) and p != directory},
@@ -184,8 +195,10 @@ class RuleCore:
         if self._kind(path) != "symlink":
             return path if self._kind(path) else None
         link = self.inst.get("target", path)
-        return self._target(posixpath.normpath(
-            posixpath.join(posixpath.dirname(path), link)), depth + 1)
+        nxt = posixpath.normpath(posixpath.join(posixpath.dirname(path), link))
+        if self.materializer:
+            self.materializer.ensure(nxt)
+        return self._target(nxt, depth + 1)
 
     # ── metadata ───────────────────────────────────────────────────────────
 
@@ -195,6 +208,8 @@ class RuleCore:
             return 4096
         if kind == "symlink":
             return len(self.inst.get("target", path) or "")
+        if self.inst.get("content", path) is None and self.inst.get("psize", path) is not None:
+            return self.inst.get("psize", path)
         return len(self.inst.get("content", path) or b"")
 
     def _blocks_1k(self, path) -> int:
@@ -224,10 +239,19 @@ class RuleCore:
         return owner, self.inst.get("group", path) or owner
 
     def _uid(self, name) -> int:
-        return int((self.users().get(name) or {}).get("uid", 0))
+        if name in self.users():
+            return int(self.users()[name].get("uid", 0))
+        return self._design_id(name, "users")
 
     def _gid(self, name) -> int:
-        return int((self.users().get(name) or {}).get("gid", 0))
+        if name in self.users():
+            return int(self.users()[name].get("gid", 0))
+        return self._design_id(name, "groups")
+
+    def _design_id(self, name, table) -> int:
+        """Accounts only the filesystem design's /etc/passwd or /etc/group names."""
+        names = getattr(self.materializer, table, None) or {}
+        return next((i for i, n in names.items() if n == name), 0)
 
     def _when(self, path, rel="mtime") -> datetime:
         self.reg.ensure_meta(path)
@@ -255,7 +279,7 @@ class RuleCore:
         if set(flags) - _LS_FLAGS or len(args) > 1:
             return False, None
         arg = args[0] if args else "."
-        path = self._resolve(arg) if args else self.reg.cwd()
+        path = self._resolve(arg if args else self.reg.cwd())
         if self._missing(path):
             return True, f"ls: cannot access '{arg}': No such file or directory"
         if not self._owned(path):
@@ -335,6 +359,8 @@ class RuleCore:
         if real is None or self._kind(real) != "file" or not self._owned(real):
             return False, None
         data = self.inst.get("content", real)
+        if data is None:          # size known, bytes not: let Cowrie answer
+            return False, None
         counts = {"l": data.count(b"\n"), "w": len(data.split()), "c": len(data)}
         fields = [counts[f] for f in "lwc" if f in (flags or "lwc")]
         width = len(str(len(data))) if len(fields) > 1 else 1
@@ -392,6 +418,8 @@ class RuleCore:
         if real is None or self._kind(real) != "file" or not self._owned(real):
             return False, None
         data = self.inst.get("content", real)
+        if data is None:          # size known, bytes not: let Cowrie answer
+            return False, None
         if b"\x00" in data:
             return False, None
         return True, data.decode("utf-8", "replace").rstrip("\n")
@@ -438,6 +466,8 @@ class RuleCore:
         if real is None or self._kind(real) != "file" or not self._owned(real):
             return False, None, None
         data = self.inst.get("content", real)
+        if data is None:          # size known, bytes not: let Cowrie answer
+            return False, None, None
         if b"\x00" in data:
             return False, None, None
         text = data.decode("utf-8", "replace")
@@ -839,7 +869,7 @@ class RuleCore:
         args = [a for a in argv[1:] if not a.startswith("-")]
         if set(flags) - _LS_FLAGS or len(args) > 1:
             return output
-        path = self._resolve(args[0]) if args else self.reg.cwd()
+        path = self._resolve(args[0] if args else self.reg.cwd())
         if self._kind(path) != "dir" or self._closed(path):
             return output
         ours = [n for n in self._children(path)

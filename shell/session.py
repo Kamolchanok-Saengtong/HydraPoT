@@ -61,10 +61,20 @@ from shell.register import Register, SystemState
 from shell.gate import CONTRACT, Gate
 from shell.procfs import Generator
 from shell.rulecore import RuleCore
+from shell.profile import Materializer, Profile
 
 # Candidates sampled per LLM turn before the gate falls back (Alg. 1, k)
 GATE_CANDIDATES = 2
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _load_profile(config) -> Profile:
+    """The filesystem design Cowrie serves (config.yaml filesystem.out)."""
+    out = (getattr(config, "filesystem", None) or {}).get("out")
+    if not out:
+        return Profile()
+    pickle_path = os.path.join(_PROJECT_ROOT, "plugins", out)
+    return Profile(pickle_path, os.path.join(os.path.dirname(pickle_path), "honeyfs"))
 
 
 def _load_processes(config) -> list:
@@ -300,12 +310,19 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
     routing = Routing(SYSTEM_STATE, fs, sw)
     executor = Executor(SYSTEM_STATE, fs, config.honeypot.arch)
     gate = Gate(resolve=fs.resolve)
+    generator = Generator(register.seed, hostname=config.honeypot.hostname,
+                          epoch=datetime.now(timezone.utc))
+    profile = _load_profile(config)
+    materializer = Materializer(register, profile, generator,
+                                users={**profile.users(),
+                                       **{int(v.get("uid", 0)): u for u, v in
+                                          SYSTEM_STATE["users"].items()}})
     rulecore = RuleCore(register, fs, hostname=config.honeypot.hostname,
                         users=lambda: SYSTEM_STATE["users"],
                         variables=SYSTEM_STATE["vars"], username=username,
-                        processes=processes, kernel=config.honeypot.kernel)
-    generator = Generator(register.seed, hostname=config.honeypot.hostname,
-                          epoch=datetime.now(timezone.utc))
+                        processes=processes, kernel=config.honeypot.kernel,
+                        materializer=materializer)
+    materializer.live = rulecore.live_lines
 
     def _gated_llm(agent_obj, system_prompt, user_prompt, cmd, source):
         """Ask for (output, effects, claims); commit the first consistent one."""
@@ -331,11 +348,7 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
         if parts[0] == "grep":
             args = args[1:]                  # the first operand is the pattern
         for arg in args:
-            path = fs.resolve(arg)
-            facts = generator.materialize(register.inst, path,
-                                          extra=rulecore.live_lines(path))
-            if facts:
-                register.commit(set(facts), why=f"generate {arg}")
+            materializer.ensure(fs.resolve(arg))
 
     def _needs_llm(cmd: str, cmd_base: str, state: dict) -> bool:
         return routing.needs_llm(cmd, cmd_base)

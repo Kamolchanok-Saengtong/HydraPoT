@@ -40,10 +40,13 @@ FUNCTIONAL = frozenset({
     # How older modules wrote a file (raw echo text, display size). Kept
     # beside the real facts so Sigma always checks bytes, not display text.
     "raw", "size_text",
+    # Size the filesystem design records while the bytes are still unknown
+    "psize",
 })
 # sealed(dir): closed-world; the procedural generator invents no children
 # listed(path): shown in the old SYSTEM_STATE["files"] view
-PRESENCE = frozenset({"absent", "user", "sealed", "listed"})
+# profiled(dir): its children are exactly those the filesystem design lists
+PRESENCE = frozenset({"absent", "user", "sealed", "listed", "profiled"})
 RELATIONS = FUNCTIONAL | PRESENCE
 KINDS = frozenset({"file", "dir", "symlink"})
 
