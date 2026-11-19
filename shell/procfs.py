@@ -138,7 +138,9 @@ class Generator:
             Fact("kind", path, "file"), Fact("content", path, data),
             Fact("size", path, len(data)), Fact("owner", path, owner),
             Fact("group", path, group), Fact("mode", path, mode),
-            Fact("mtime", path, int(mtime.timestamp())),
+            # Register times are nanoseconds, like st_mtim
+            *(Fact(rel, path, int(mtime.timestamp()) * 1_000_000_000)
+              for rel in ("mtime", "atime", "ctime")),
             Fact("inode", path, inode),
         ]
 
