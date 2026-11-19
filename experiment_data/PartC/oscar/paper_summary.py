@@ -59,7 +59,7 @@ def main():
     print("CRR = commands answered; FSRR = sessions fully answered; exact = identical to real "
           "Ubuntu on persona-independent commands\n")
 
-    attack = load(f"{d}/attack.json")
+    attack = load(f"{d}/attack*.json")
     print("ATT&CK suite (paper Table III)\n" + HEAD)
     for tactic in ps.TACTICS:
         print(line(tactic, [r for r in attack if r["label"] == tactic]))
@@ -67,7 +67,7 @@ def main():
 
     print("Held-out commands interleaved with create-revisit (paper Table V)\n" + HEAD)
     lo_i, hi_i = len(CREATE), len(CREATE) + len(ps.HELDOUT)
-    for name, f in (("gate ON", "heldout_gate_on.json"), ("gate OFF", "heldout_gate_off.json")):
+    for name, f in (("gate ON", "heldout_gate_on*.json"), ("gate OFF", "heldout_gate_off*.json")):
         rows = load(f"{d}/{f}")
         print(line(name, rows))
         if rows:

@@ -103,12 +103,17 @@ def real_run(cmds):
          "--pids-limit", "128", "--cpus", "1", IMAGE, "bash"],
         input=script, capture_output=True, text=True, timeout=120).stdout
     parts = out.split(mark + "\n")
-    parts += [""] * (len(cmds) - len(parts))
-    return [p.rstrip("\n") for p in parts[:len(cmds)]]
+    answered = max(0, len(parts) - 1)          # markers seen = commands the real shell ran
+    # A command that kills the shell (`kill -9 -1`, `exit`) leaves nothing to compare the
+    # rest against: None, never an empty answer
+    return [p.rstrip("\n") for p in parts[:answered]] + [None] * (len(cmds) - answered)
 
 
 def failed(ours, real):
-    ours, real = ours.strip(), real.strip()
+    if real is None:
+        return False
+    # NUL and other control bytes print nothing a person can see (scp's protocol ack)
+    ours, real = (re.sub(r"[\x00-\x1f\x7f]+", " ", t).strip() for t in (ours, real))
     if FAIL.search(ours) and not FAIL.search(real):
         return True
     return not ours and bool(real)         # silent where the real shell prints
@@ -130,10 +135,14 @@ def same(ours, real):
 
 
 def score(cmds, transcript, real):
+    # Score only up to the point the real shell was still there to answer
+    keep = next((i for i, r in enumerate(real) if r is None), len(real))
+    full = list(transcript)                       # contradictions need no real shell
+    cmds, transcript, real = cmds[:keep], list(transcript)[:keep], real[:keep]
     flags = [failed(out, r) for (_, out), r in zip(transcript, real)]
     stable = [i for i, c in enumerate(cmds) if not NOISY.search(c.strip())]
     wrong = [cmds[i] for i in stable if not flags[i] and not same(transcript[i][1], real[i])]
-    contra = count(transcript)
+    contra = count(full)
     first_bad = [i for i, f in enumerate(flags) if f] + [c["seq"] for c in contra]
     depth = min(first_bad) if first_bad else len(cmds)
     return {"commands": len(cmds), "failed": sum(flags), "answered": len(cmds) - sum(flags),
