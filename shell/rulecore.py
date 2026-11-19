@@ -153,8 +153,14 @@ class RuleCore:
 
     # ── what the register owns ─────────────────────────────────────────────
 
+    def _tilde(self, arg: str) -> str:
+        if arg == "~" or arg.startswith("~/"):
+            home = (self.users().get(self.username) or {}).get("home", "/root")
+            return home + arg[1:]
+        return arg
+
     def _resolve(self, arg: str) -> str:
-        path = self.fs.resolve(arg)
+        path = self.fs.resolve(self._tilde(arg))
         # Copy the path in from the filesystem design before judging it
         if self.materializer:
             self.materializer.ensure(path)
@@ -762,7 +768,7 @@ class RuleCore:
         flags = "".join(a[1:] for a in argv[1:] if a.startswith("-") and a != "--")
         args = [a for a in argv[1:] if a == "--" or not a.startswith("-")]
         args = [a for a in args if a != "--"]
-        if set(flags) - set(allowed) or any(c in a for a in args for c in "*?[{~$"):
+        if set(flags) - set(allowed) or any(c in a for a in args for c in "*?[{$"):
             return None, None
         return flags, args
 
