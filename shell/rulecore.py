@@ -114,6 +114,9 @@ class RuleCore:
         # Same answer with or without sudo, as routing treats it (flags like -u differ)
         if text.startswith("sudo ") and not text[5:].lstrip().startswith("-"):
             text = text[5:].strip()
+        redirect = self._redirect(text)
+        if redirect is not None:
+            return redirect
         if not text or _SPECIAL & set(text) or "$(" in text or "&&" in text:
             return False, None
         if text.endswith("&"):
@@ -1003,6 +1006,57 @@ class RuleCore:
         # the renamed path keeps its inode; ctime moves
         if not self.reg.commit(add, remove, why=f"mv {src_arg} {dst_arg}"):
             return False, None
+        self.changed = True
+        return True, ""
+
+    def _redirect(self, text):
+        """`echo words > file` and `>>`: the usual way an attacker makes a file."""
+        if ">" not in text or any(c in text for c in "|;&`$<(") or "\n" in text:
+            return None
+        try:
+            tokens = shlex.split(text)
+        except ValueError:
+            return None
+        if len(tokens) < 3 or tokens[0] != "echo" or tokens[-2] not in (">", ">>"):
+            return None
+        op, arg, words = tokens[-2], tokens[-1], tokens[1:-2]
+        if ">" in "".join(words) or any(w.startswith("-") and w != "-n" for w in words[:1]):
+            return None
+        newline = not (words and words[0] == "-n")
+        data = (" ".join(words[1:] if not newline else words) + ("\n" if newline else "")).encode()
+        path = self._resolve(arg)
+        real = self._target(path) if self._kind(path) else None
+        if real is not None and self._kind(real) == "dir":
+            return True, f"bash: {arg}: Is a directory"
+        if real is not None:
+            old = self.inst.get("content", real)
+            if old is None:
+                return None
+            data = old + data if op == ">>" else data
+            self.reg.ensure_meta(real)
+            now = self.reg.now_ns()
+            add = {Fact("content", real, data), Fact("size", real, len(data))}
+            remove = {Fact("content", real, old), Fact("size", real, len(old))}
+            for rel in ("mtime", "ctime"):
+                if self.inst.get(rel, real) is not None:
+                    remove.add(Fact(rel, real, self.inst.get(rel, real)))
+                add.add(Fact(rel, real, now))
+            if not self.reg.commit(add, remove, why=f"write {arg}"):
+                return None
+            self.changed = True
+            return True, ""
+        if self._kind(path) is not None:
+            return None                      # dangling link: Cowrie decides
+        state, parent = self._parent(path)
+        if state == "unknown":
+            return None
+        if state != "dir":
+            return True, f"bash: {arg}: " + ("Not a directory" if state == "notdir"
+                                              else "No such file or directory")
+        add, remove = self._fresh(path, "file", 0o644, content=data), set()
+        self._bump(parent, add, remove)
+        if not self.reg.commit(add, remove, why=f"write {arg}"):
+            return None
         self.changed = True
         return True, ""
 
