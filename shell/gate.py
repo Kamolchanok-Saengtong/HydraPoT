@@ -191,6 +191,8 @@ class Gate:
             claims |= self._content_claim(inst, path, claim.get("content", "") or "")
 
     def _content_claim(self, inst, path, text):
+        # Reading a link reads its target
+        path = _follow(inst, path)
         stored = inst.get("content", path)
         if stored is not None and _norm_text(stored) == _norm_text(text):
             data = stored
@@ -224,7 +226,7 @@ class Gate:
         parts = cmd.split()
         # Serve stored content rather than leak the contradiction (Fig. 1)
         if len(parts) == 2 and parts[0] == "cat":
-            path = self.resolve(parts[1])
+            path = _follow(inst, self.resolve(parts[1]))
             kind = inst.get("kind", path)
             if inst.get("content", path) is not None:
                 return _norm_text(inst.get("content", path)), inst
@@ -258,6 +260,16 @@ def _path_args(cmd: str):
     if parts and "/" in parts[0]:
         args.append(parts[0])
     return [a for a in args if a]
+
+
+def _follow(inst: Instance, path: str) -> str:
+    """The path a chain of symlinks ends at (bounded, like the kernel)."""
+    for _ in range(8):
+        if inst.get("kind", path) != "symlink":
+            break
+        path = posixpath.normpath(posixpath.join(posixpath.dirname(path),
+                                                 inst.get("target", path)))
+    return path
 
 
 def _mentions(line: str, arg: str) -> bool:
