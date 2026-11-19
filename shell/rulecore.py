@@ -70,6 +70,10 @@ def _apply_mode(spec: str, mode: int, is_dir: bool):
     return mode
 
 
+def _hms(seconds: int) -> str:
+    return f"{seconds // 3600:02d}:{seconds % 3600 // 60:02d}:{seconds % 60:02d}"
+
+
 class RuleCore:
     """One session's fact-backed commands.
 
@@ -78,7 +82,8 @@ class RuleCore:
     """
 
     def __init__(self, register, fs, hostname: str, users=None, variables=None,
-                 username: str = "root", device: str = "801h/2049d"):
+                 username: str = "root", device: str = "801h/2049d",
+                 processes=()):
         self.reg = register
         self.fs = fs
         self.hostname = hostname
@@ -89,6 +94,9 @@ class RuleCore:
         self.changed = False          # the last answer changed the state
         self._jobs = 0
         self._next_pid = None
+        self._started = {}            # pid -> spawn time (ns), for ps START
+        # Base process table (Cowrie's data: VSZ/RSS bytes, TIME minutes)
+        self.processes = sorted(processes, key=lambda p: p["PID"])
 
     @property
     def inst(self):
@@ -509,14 +517,77 @@ class RuleCore:
             return False, None
         if not argv or argv[0] not in ("sleep", "nohup"):
             return False, None
-        if self._next_pid is None:
-            self._next_pid = self.reg.prf("pid", "session", 2000, 30000)
-        self._next_pid += self.reg.prf("pidstep", str(self._jobs), 1, 40)
         self._jobs += 1
-        pid = self._next_pid
+        pid = self._new_pid()
+        self._started[pid] = self.reg.now_ns()
         self.reg.commit({Fact("proc", pid, command)}, why=f"spawn {command}")
         self.changed = True
         return True, f"[{self._jobs}] {pid}"
+
+    def _new_pid(self) -> int:
+        """PIDs only grow, starting above the base table, like a real kernel."""
+        if self._next_pid is None:
+            top = max([p["PID"] for p in self.processes] or [1000])
+            self._next_pid = top + self.reg.prf("pid", "session", 100, 900)
+        self._next_pid += self.reg.prf("pidstep", str(self._next_pid), 1, 3)
+        return self._next_pid
+
+    def _shell_pid(self) -> int:
+        top = max([p["PID"] for p in self.processes] or [1000])
+        return top + self.reg.prf("shellpid", "session", 1, 99)
+
+    def _rows(self, me: str):
+        """The process table: base, the login shell, jobs, then this ps."""
+        def hhmm(ns):
+            return f"{datetime.fromtimestamp(ns / 1e9, tz=timezone.utc):%H:%M}"
+
+        rows = []
+        for p in self.processes:
+            minutes = float(p.get("TIME") or 0)
+            rows.append({"user": p["USER"], "pid": p["PID"], "ppid": 2 if
+                         p["COMMAND"].startswith("[") else 1,
+                         "cpu": float(p.get("CPU") or 0), "mem": float(p.get("MEM") or 0),
+                         "vsz": int(p.get("VSZ") or 0) // 1024,
+                         "rss": int(p.get("RSS") or 0) // 1024, "tty": p["TTY"],
+                         "stat": p["STAT"], "start": p["START"],
+                         "time": int(minutes * 60), "cmd": p["COMMAND"].rstrip()})
+        shell = self._shell_pid()
+        rows.append({"user": self.username, "pid": shell, "ppid": 1, "cpu": 0.0,
+                     "mem": 0.1, "vsz": 10036, "rss": 5136, "tty": "pts/0",
+                     "stat": "Ss", "start": hhmm(self.reg.epoch_ns), "time": 0,
+                     "cmd": "-bash"})
+        for pid in sorted(self.inst.keys("proc")):
+            cmd = self.inst.get("proc", pid)
+            small = cmd.split()[0] == "sleep"
+            rows.append({"user": self.username, "pid": pid, "ppid": shell, "cpu": 0.0,
+                         "mem": 0.0, "vsz": 2516 if small else 7228,
+                         "rss": 576 if small else 1820, "tty": "pts/0", "stat": "S",
+                         "start": hhmm(self._started.get(pid, self.reg.now_ns())),
+                         "time": 0, "cmd": cmd})
+        rows.append({"user": self.username, "pid": self._new_pid(), "ppid": shell,
+                     "cpu": 0.0, "mem": 0.0, "vsz": 5900, "rss": 2828, "tty": "pts/0",
+                     "stat": "R+", "start": hhmm(self.reg.now_ns()), "time": 0,
+                     "cmd": me})
+        return rows
+
+    def _cmd_ps(self, argv):
+        style = " ".join(argv[1:])
+        if style not in ("", "aux", "-aux", "-ef", "-e", "-A", "ax"):
+            return False, None
+        rows = self._rows(" ".join(argv))
+        if style == "":
+            mine = [r for r in rows if r["tty"] == "pts/0"]
+            return True, "\n".join(["    PID TTY          TIME CMD"] + [
+                f"{r['pid']:>7} {r['tty']:<8} {_hms(r['time'])} {posixpath.basename(r['cmd'].split()[0]).lstrip('-')}"
+                for r in mine])
+        if style in ("-ef", "-e", "-A"):
+            return True, "\n".join(["UID          PID    PPID  C STIME TTY          TIME CMD"] + [
+                f"{r['user']:<8} {r['pid']:>7} {r['ppid']:>7} {0:>2} {r['start']:>5} "
+                f"{r['tty']:<8} {_hms(r['time'])} {r['cmd']}" for r in rows])
+        return True, "\n".join(["USER         PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND"] + [
+            f"{r['user'][:8]:<8} {r['pid']:>7} {r['cpu']:>4.1f} {r['mem']:>4.1f} "
+            f"{r['vsz']:>6} {r['rss']:>5} {r['tty']:<8} {r['stat']:<4} {r['start']:>5} "
+            f"{r['time'] // 60:>3}:{r['time'] % 60:02d} {r['cmd']}" for r in rows])
 
     def _cmd_kill(self, argv):
         pids = [a for a in argv[1:] if a.isdigit()]

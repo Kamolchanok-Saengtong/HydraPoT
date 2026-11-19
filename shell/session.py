@@ -34,6 +34,7 @@ config and the two model agents arrive as ARGUMENTS. They were module globals in
 main.py, read across a 1,500-line closure; passing them makes the dependency
 visible and lets a test build a session without importing main.
 """
+import json
 import os
 import re
 import time
@@ -63,6 +64,21 @@ from shell.rulecore import RuleCore
 
 # Candidates sampled per LLM turn before the gate falls back (Alg. 1, k)
 GATE_CANDIDATES = 2
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _load_processes(config) -> list:
+    """The base process table named by config.yaml system_state.process_list."""
+    path = (config.system_state or {}).get("process_list")
+    if not path:
+        return []
+    if not os.path.isabs(path):
+        path = os.path.join(_PROJECT_ROOT, path)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return json.load(fh)["processes"]
+    except (OSError, ValueError, KeyError):
+        return []
 
 
 def _state_snapshot(state: dict, content_chars: int = 2000) -> dict:
@@ -283,7 +299,8 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
     gate = Gate(resolve=fs.resolve)
     rulecore = RuleCore(register, fs, hostname=config.honeypot.hostname,
                         users=lambda: SYSTEM_STATE["users"],
-                        variables=SYSTEM_STATE["vars"], username=username)
+                        variables=SYSTEM_STATE["vars"], username=username,
+                        processes=_load_processes(config))
     generator = Generator(register.seed, hostname=config.honeypot.hostname,
                           epoch=datetime.now(timezone.utc))
 
