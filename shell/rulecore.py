@@ -28,7 +28,7 @@ _SPECIAL = set("|;<>`")
 # Facts that describe the world rather than one path
 _NON_PATH_RELS = frozenset({"session", "event", "env", "proc", "cwd", "user", "uid", "gid", "home", "shell"})
 _PS_NUMERIC = frozenset({"PID", "PPID", "%CPU", "%MEM", "VSZ", "RSS", "C"})
-_LS_FLAGS = set("laA1h")
+_LS_FLAGS = set("laA1hd")
 
 
 def _human(kib: int) -> str:
@@ -301,6 +301,8 @@ class RuleCore:
         if not self._owned(path):
             return False, None
         long, show_all = "l" in flags, "a" in flags or "A" in flags
+        if "d" in flags:                      # the directory itself, not its contents
+            return True, self._long([(arg, path)]) if long else arg
         if self._kind(path) != "dir":
             return True, self._long([(arg, path)]) if long else arg
         names = self._children(path)
