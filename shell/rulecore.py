@@ -1122,6 +1122,11 @@ class RuleCore:
         paths = [self._resolve(a) for a in args]
         if self._virtual(*paths):
             return False, None
+        dots = [a for a in args if a.rstrip("/").rsplit("/", 1)[-1] in (".", "..")]
+        if dots:
+            return True, "\n".join(
+                (f"rm: refusing to remove '.' or '..' directory: skipping '{a}'" if recursive
+                 else f"rm: cannot remove '{a}': Is a directory") for a in dots)
         for path in paths:
             if path == "/" or (self._kind(path) is None and not self._missing(path)):
                 return False, None
@@ -1151,14 +1156,6 @@ class RuleCore:
             self._replay(f"rm -rf {shlex.quote(path)}")
             self.changed = True
         return True, "\n".join(errors)
-
-    def _dest(self, src_arg, dst_arg, tool):
-        """(final path, error) for cp/mv's destination argument."""
-        dst = self._resolve(dst_arg)
-        real = self._target(dst) if self._kind(dst) else None
-        if real is not None and self._kind(real) == "dir":
-            return posixpath.join(real, posixpath.basename(src_arg.rstrip("/"))), None
-        return dst, None
 
     def _clone_facts(self, src, dst, keep_inode, stamp):
         """Facts for dst as a copy (or rename) of the subtree at src."""
@@ -1190,97 +1187,110 @@ class RuleCore:
         return add
 
     def _cmd_cp(self, argv):
-        flags, args = self._flags(argv, "rRf")
-        if flags is None or len(args) != 2:
-            return False, None
-        src_arg, dst_arg = args
-        src = self._resolve(src_arg)
-        if self._kind(src) is None:
-            return (True, f"cp: cannot stat '{src_arg}': No such file or directory") \
-                if self._missing(src) else (False, None)
-        real = self._target(src)
-        if real is None:
-            return False, None
-        if self._kind(real) == "dir" and not (set(flags) & set("rR")):
-            return True, f"cp: -r not specified; omitting directory '{src_arg}'"
-        dst, _ = self._dest(src_arg, dst_arg, "cp")
-        if self._virtual(src, dst):
-            return False, None
-        state, parent = self._parent(dst)
-        if state == "unknown":
-            return False, None
-        if state != "dir":
-            return True, (f"cp: cannot create regular file '{dst_arg}': "
-                          + ("Not a directory" if state == "notdir" else "No such file or directory"))
-        if dst == real:
-            return True, f"cp: '{src_arg}' and '{dst_arg}' are the same file"
-        if dst.startswith(real.rstrip("/") + "/"):
-            return False, None
-        stamp = self.reg.now_ns()
-        add = self._clone_facts(real, dst, False, stamp)
-        if add is None:
-            return False, None
-        remove = {f for f in self.inst.facts() if isinstance(f.key, str)
-                  and f.rel not in _NON_PATH_RELS
-                  and (f.key == dst or f.key.startswith(dst.rstrip("/") + "/"))}
-        if self._kind(dst) is not None and self._kind(dst) != self._kind(real):
-            return False, None
-        self._bump(parent, add, remove)
-        if not self.reg.commit(add, remove, why=f"cp {src_arg} {dst_arg}"):
-            return False, None
-        self._replay(f"cp -r {shlex.quote(real)} {shlex.quote(self._resolve(dst_arg))}")
-        self.changed = True
-        return True, ""
+        return self._transfer(argv, "cp")
 
     def _cmd_mv(self, argv):
-        flags, args = self._flags(argv, "f")
-        if flags is None or len(args) != 2:
+        return self._transfer(argv, "mv")
+
+    def _transfer(self, argv, tool):
+        """cp and mv: same operand rules and messages as GNU coreutils."""
+        flags, args = self._flags(argv, "rRf" if tool == "cp" else "f")
+        if flags is None:
             return False, None
-        src_arg, dst_arg = args
-        src = self._resolve(src_arg)
-        if self._kind(src) is None:
-            return (True, f"mv: cannot stat '{src_arg}': No such file or directory") \
-                if self._missing(src) else (False, None)
-        dst, _ = self._dest(src_arg, dst_arg, "mv")
-        if self._virtual(src, dst):
-            return False, None
-        if dst == src:
-            return True, f"mv: '{src_arg}' and '{dst_arg}' are the same file"
-        if dst.startswith(src.rstrip("/") + "/"):
-            return True, (f"mv: cannot move '{src_arg}' to a subdirectory of itself, "
-                          f"'{dst_arg}'")
-        sstate, sparent = self._parent(src)
-        dstate, dparent = self._parent(dst)
-        if "unknown" in (sstate, dstate) or sstate != "dir":
-            return False, None
-        if dstate != "dir":
-            return True, (f"mv: cannot move '{src_arg}' to '{dst_arg}': "
-                          + ("Not a directory" if dstate == "notdir" else "No such file or directory"))
-        cwd = self.reg.cwd() or "/"
-        if cwd == src or cwd.startswith(src.rstrip("/") + "/"):
-            return False, None
-        if self._kind(dst) is not None and (self._kind(dst) == "dir") != (self._kind(src) == "dir"):
-            return False, None
-        stamp = self.reg.now_ns()
-        add = self._clone_facts(src, dst, True, stamp)
-        if add is None:
-            return False, None
-        old = {f for f in self.inst.facts() if isinstance(f.key, str)
-               and f.rel not in _NON_PATH_RELS
-               and (f.key == src or f.key.startswith(src.rstrip("/") + "/"))}
-        over = {f for f in self.inst.facts() if isinstance(f.key, str)
-                and f.rel not in _NON_PATH_RELS
-                and (f.key == dst or f.key.startswith(dst.rstrip("/") + "/"))}
-        add.add(Fact("absent", src))
-        remove = old | over
-        for d in {sparent, dparent}:
-            self._bump(d, add, remove)
-        # the renamed path keeps its inode; ctime moves
-        if not self.reg.commit(add, remove, why=f"mv {src_arg} {dst_arg}"):
-            return False, None
-        self._replay(f"mv {shlex.quote(src)} {shlex.quote(self._resolve(dst_arg))}")
-        self.changed = True
-        return True, ""
+        hint = f"Try '{tool} --help' for more information."
+        if not args:
+            return True, f"{tool}: missing file operand\n{hint}"
+        if len(args) == 1:
+            return True, f"{tool}: missing destination file operand after '{args[0]}'\n{hint}"
+        *sources, dst_arg = args
+        dst = self._resolve(dst_arg)
+        dreal = self._target(dst) if self._kind(dst) else None
+        dst_is_dir = dreal is not None and self._kind(dreal) == "dir"
+        if len(sources) > 1 and not dst_is_dir:
+            return True, f"{tool}: target '{dst_arg}' is not a directory"
+        recursive = bool(set(flags) & set("rR"))
+
+        plans, errors = [], []
+        for src_arg in sources:
+            src = self._resolve(src_arg)
+            if self._kind(src) is None:
+                if not self._missing(src):
+                    return False, None
+                errors.append(f"{tool}: cannot stat '{src_arg}': No such file or directory")
+                continue
+            real = self._target(src) if tool == "cp" else src       # mv moves the link itself
+            if real is None:
+                return False, None
+            skind = self._kind(real)
+            base = posixpath.basename(src_arg.rstrip("/"))
+            final = posixpath.join(dreal if dst_is_dir else dst, base) if dst_is_dir else dst
+            shown = posixpath.join(dst_arg, base) if dst_is_dir else dst_arg
+            if self._virtual(real, final):
+                return False, None
+            if tool == "cp" and skind == "dir" and not recursive:
+                errors.append(f"cp: -r not specified; omitting directory '{src_arg}'")
+                continue
+            if final == real:
+                errors.append(f"{tool}: '{src_arg}' and '{shown}' are the same file")
+                continue
+            if skind == "dir" and final.startswith(real.rstrip("/") + "/"):
+                state, par = self._parent(final)
+                if tool == "cp" and state == "dir" and self._kind(final) is None:
+                    # cp makes the empty destination before it notices the loop
+                    made, gone = self._fresh(final, "dir", 0o755), set()
+                    self._bump(par, made, gone)
+                    if self.reg.commit(made, gone, why=f"cp {src_arg} {dst_arg}"):
+                        self._replay(f"mkdir {shlex.quote(final)}")
+                        self.changed = True
+                errors.append(f"cp: cannot copy a directory, '{src_arg}', into itself, '{shown}'"
+                              if tool == "cp" else
+                              f"mv: cannot move '{src_arg}' to a subdirectory of itself, '{shown}'")
+                continue
+            fstate, fparent = self._parent(final)
+            if fstate == "unknown":
+                return False, None
+            if fstate != "dir":
+                what = "directory" if skind == "dir" else "regular file"
+                reason = "Not a directory" if fstate == "notdir" else "No such file or directory"
+                errors.append(f"cp: cannot create {what} '{shown}': {reason}" if tool == "cp"
+                              else f"mv: cannot move '{src_arg}' to '{shown}': {reason}")
+                continue
+            fkind = self._kind(final)
+            if fkind == "dir" and skind != "dir":
+                errors.append(f"{tool}: cannot overwrite directory '{shown}' with non-directory")
+                continue
+            if fkind is not None and fkind != "dir" and skind == "dir":
+                errors.append(f"{tool}: cannot overwrite non-directory '{shown}' with "
+                              f"directory '{src_arg}'")
+                continue
+            if tool == "mv" and fkind == "dir" and self._children(final):
+                errors.append(f"mv: cannot move '{src_arg}' to '{shown}': Directory not empty")
+                continue
+            plans.append((src_arg, src, real, final, fparent))
+
+        for src_arg, src, real, final, fparent in plans:
+            stamp = self.reg.now_ns()
+            add = self._clone_facts(real, final, tool == "mv", stamp)
+            if add is None:
+                return False, None
+            remove = {f for f in self.inst.facts() if isinstance(f.key, str)
+                      and f.rel not in _NON_PATH_RELS
+                      and (f.key == final or f.key.startswith(final.rstrip("/") + "/"))}
+            parents = {fparent}
+            if tool == "mv":
+                add.add(Fact("absent", src))
+                remove |= {f for f in self.inst.facts() if isinstance(f.key, str)
+                           and f.rel not in _NON_PATH_RELS
+                           and (f.key == src or f.key.startswith(src.rstrip("/") + "/"))}
+                parents.add(self._parent(src)[1] or posixpath.dirname(src))
+            for d in parents:
+                self._bump(d, add, remove)
+            if not self.reg.commit(add, remove, why=f"{tool} {src_arg} {dst_arg}"):
+                return False, None
+            self._replay(f"{tool} {'-r ' if tool == 'cp' else ''}{shlex.quote(src if tool == 'mv' else real)} "
+                         f"{shlex.quote(dst)}")
+            self.changed = True
+        return True, "\n".join(errors)
 
     def _redirect(self, text):
         """`echo words > file` and `>>`: the usual way an attacker makes a file."""
