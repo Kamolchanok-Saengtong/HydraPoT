@@ -61,6 +61,7 @@ from shell.register import Register, SystemState
 from shell.gate import CONTRACT, Gate
 from shell.procfs import Generator
 from shell.rulecore import RuleCore
+from shell import compound
 from shell.profile import Materializer, Profile
 
 # Candidates sampled per LLM turn before the gate falls back (Alg. 1, k)
@@ -659,7 +660,7 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
             return _finish(cmd, "on_device", output, fi_score, t_start)
         return None
 
-    def handle(cmd: str, write_fn, read_fn, force_agent: str | None = None):
+    def _handle_one(cmd: str, write_fn, read_fn, force_agent: str | None = None):
         if cmd.strip() == "fi status":
             fi_manager.status()
             return "", ""
@@ -1134,6 +1135,29 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
                 agent  = "on_device"
                 tracker.record(actual_cmd, output)
         return _finish(cmd, agent, output, fi_score, t_start, streamed)
+
+    def handle(cmd: str, write_fn, read_fn, force_agent: str | None = None):
+        """One line can hold several commands (`a && b ; c`): run them in order.
+
+        Forced experiment arms keep measuring one raw command."""
+        parts = compound.split(cmd) if force_agent is None else None
+        if parts is None:
+            return _handle_one(cmd, write_fn, read_fn, force_agent)
+        outputs, ok = [], True
+        for text, op in parts:
+            if not compound.runs(op, ok):
+                continue
+            verdict = rulecore.test_status(text)
+            if verdict is not None:       # `test` / `[ ]` print nothing, only a status
+                ok = verdict
+                continue
+            streamed = []
+            out, _ = _handle_one(text, streamed.append, read_fn, None)
+            out = out or "".join(streamed)
+            if out:
+                outputs.append(out.rstrip("\n"))
+            ok = not compound.failed(out)
+        return "\n".join(outputs), ""
 
     handle.fi_manager = fi_manager
     handle.prompt_manager = prompt_manager

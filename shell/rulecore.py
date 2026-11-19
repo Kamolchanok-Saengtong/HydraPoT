@@ -682,6 +682,65 @@ class RuleCore:
         lines += [self.inst.get("event", k) for k in sorted(self.inst.keys("event"))]
         return ("\n".join(lines) + "\n").encode()
 
+    def test_status(self, text):
+        """True/False for `test ...` and `[ ... ]` on state the register holds, else None."""
+        if "$" in text or "&" in text or "|" in text or ";" in text:
+            return None
+        try:
+            argv = shlex.split(text)
+        except ValueError:
+            return None
+        if argv[:1] == ["["]:
+            if argv[-1:] != ["]"]:
+                return None
+            argv = argv[1:-1]
+        elif argv[:1] == ["test"]:
+            argv = argv[1:]
+        else:
+            return None
+        negate = argv[:1] == ["!"]
+        result = self._test(argv[1:] if negate else argv)
+        return None if result is None else result != negate
+
+    def _test(self, a):
+        unary = {"-e", "-f", "-d", "-s", "-r", "-w", "-x", "-L", "-h", "-z", "-n"}
+        if len(a) == 2 and a[0] in ("-z", "-n"):
+            return (a[1] == "") == (a[0] == "-z")
+        if len(a) == 2 and a[0] in unary:
+            path = self._resolve(a[1])
+            kind = self._kind(path)
+            if kind is None:
+                return False if self._missing(path) else None
+            real = self._target(path)
+            if a[0] in ("-L", "-h"):
+                return kind == "symlink"
+            if real is None:
+                return None
+            if a[0] == "-e":
+                return True
+            if a[0] == "-f":
+                return self._kind(real) == "file"
+            if a[0] == "-d":
+                return self._kind(real) == "dir"
+            if a[0] == "-s":
+                return self._size(real) > 0
+            mode = self.inst.get("mode", real)
+            if mode is None:
+                return None
+            if a[0] in ("-r", "-w"):
+                return True                    # root reads and writes anything
+            return self._kind(real) == "dir" or bool(mode & 0o111)
+        if len(a) == 3 and a[1] in ("=", "==", "!="):
+            return (a[0] == a[2]) == (a[1] != "!=")
+        if len(a) == 3 and a[1] in ("-eq", "-ne", "-gt", "-lt", "-ge", "-le"):
+            try:
+                x, y = int(a[0]), int(a[2])
+            except ValueError:
+                return None
+            return {"-eq": x == y, "-ne": x != y, "-gt": x > y,
+                    "-lt": x < y, "-ge": x >= y, "-le": x <= y}[a[1]]
+        return None
+
     def _cmd_sudo(self, argv):
         """`sudo -l` as Ubuntu 20.04 prints it for an account with full rights."""
         if argv[1:] != ["-l"]:
