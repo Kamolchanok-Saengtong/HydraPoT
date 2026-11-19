@@ -25,6 +25,8 @@ from datetime import datetime, timezone
 from shell.world import Fact
 
 _SPECIAL = set("|;<>`")
+# Facts that describe the world rather than one path
+_NON_PATH_RELS = frozenset({"session", "event", "env", "proc", "cwd", "user", "uid", "gid", "home", "shell"})
 _PS_NUMERIC = frozenset({"PID", "PPID", "%CPU", "%MEM", "VSZ", "RSS", "C"})
 _LS_FLAGS = set("laA1h")
 
@@ -697,6 +699,367 @@ class RuleCore:
         if kind == "symlink":
             return True, self.inst.get("target", path)
         return True, ""
+
+    # ── creating, copying, moving, removing (OSCAR Sec. IV-A) ───────────────
+
+    def _parent(self, path):
+        """('dir'|'notdir'|'missing'|'unknown', real parent) for path's directory."""
+        parent = posixpath.dirname(path) or "/"
+        real = self._target(parent)
+        if real is None:
+            return ("missing" if self._missing(parent) else "unknown"), None
+        return ("dir" if self._kind(real) == "dir" else "notdir"), real
+
+    def _fresh(self, path, kind, mode, content=b"", target=None, inode=None,
+               stamp=None, used=None):
+        """Facts for a new path owned by the attacker's account."""
+        now = stamp or self.reg.now_ns()
+        ino = inode or self.reg.new_inode(path)
+        while used is not None and ino in used:
+            ino += 1
+        if used is not None:
+            used.add(ino)
+        group = "root" if self.username == "root" else self.username
+        facts = {Fact("kind", path, kind), Fact("mode", path, mode),
+                 Fact("owner", path, self.username), Fact("group", path, group),
+                 Fact("inode", path, ino), Fact("listed", path)}
+        facts |= {Fact(rel, path, now) for rel in ("mtime", "atime", "ctime")}
+        if kind == "dir":
+            facts.add(Fact("sealed", path))
+        elif kind == "symlink":
+            facts |= {Fact("target", path, target), Fact("size", path, len(target))}
+        else:
+            facts |= {Fact("content", path, content), Fact("size", path, len(content))}
+        return facts
+
+    def _bump(self, directory, add, remove):
+        """A directory's mtime/ctime move when an entry is added or removed."""
+        self.reg.ensure_meta(directory)
+        now = self.reg.now_ns()
+        for rel in ("mtime", "ctime"):
+            old = self.inst.get(rel, directory)
+            if old is not None:
+                remove.add(Fact(rel, directory, old))
+            add.add(Fact(rel, directory, now))
+
+    def _flags(self, argv, allowed):
+        flags = "".join(a[1:] for a in argv[1:] if a.startswith("-") and a != "--")
+        args = [a for a in argv[1:] if a == "--" or not a.startswith("-")]
+        args = [a for a in args if a != "--"]
+        if set(flags) - set(allowed) or any(c in a for a in args for c in "*?[{~$"):
+            return None, None
+        return flags, args
+
+    def _cmd_mkdir(self, argv):
+        flags, args = self._flags(argv, "p")
+        if flags is None or not args:
+            return False, None
+        paths = [self._resolve(a) for a in args]
+        plans = []
+        for arg, path in zip(args, paths):
+            if self._kind(path) is not None:
+                plans.append(("exists", arg, path, []))
+                continue
+            chain, cur = [], path
+            while True:
+                state, real = self._parent(cur)
+                chain.append(cur)
+                if state == "dir":
+                    break
+                if state in ("missing", "unknown") and "p" in flags:
+                    cur = posixpath.dirname(cur)
+                    if self._kind(cur) is not None or cur == "/":
+                        break
+                    continue
+                break
+            state, real = self._parent(chain[-1])
+            if state == "unknown" or (state == "missing" and len(args) > 1):
+                return False, None
+            plans.append((state, arg, path, chain[::-1]))
+        errors = []
+        for state, arg, path, chain in plans:
+            if state == "exists":
+                if "p" not in flags:
+                    errors.append(f"mkdir: cannot create directory '{arg}': File exists")
+                continue
+            if state == "notdir":
+                errors.append(f"mkdir: cannot create directory '{arg}': Not a directory")
+                continue
+            if state == "missing" and "p" not in flags:
+                errors.append(f"mkdir: cannot create directory '{arg}': No such file or directory")
+                continue
+            add, remove, used = set(), set(), set()
+            top = posixpath.dirname(chain[0]) or "/"
+            for d in chain:
+                add |= self._fresh(d, "dir", 0o755, used=used)
+            self._bump(self._target(top) or top, add, remove)
+            if not self.reg.commit(add, remove, why=f"mkdir {arg}"):
+                return False, None
+            self.changed = True
+        return True, "\n".join(errors)
+
+    def _cmd_touch(self, argv):
+        flags, args = self._flags(argv, "c")
+        if flags is None or not args:
+            return False, None
+        errors = []
+        for arg in args:
+            path = self._resolve(arg)
+            real = self._target(path) if self._kind(path) else None
+            if real is not None:
+                self.reg.ensure_meta(real)
+                now, add, remove = self.reg.now_ns(), set(), set()
+                for rel in ("mtime", "atime", "ctime"):
+                    old = self.inst.get(rel, real)
+                    if old is not None:
+                        remove.add(Fact(rel, real, old))
+                    add.add(Fact(rel, real, now))
+                self.reg.commit(add, remove, why=f"touch {arg}")
+                self.changed = True
+                continue
+            if self._kind(path) is not None:
+                return False, None            # dangling link: Cowrie decides
+            state, parent = self._parent(path)
+            if state == "unknown":
+                return False, None
+            if state != "dir":
+                if "c" not in flags:
+                    errors.append(f"touch: cannot touch '{arg}': "
+                                  + ("Not a directory" if state == "notdir"
+                                     else "No such file or directory"))
+                continue
+            if "c" in flags:
+                continue
+            add, remove = self._fresh(path, "file", 0o644), set()
+            self._bump(parent, add, remove)
+            if not self.reg.commit(add, remove, why=f"touch {arg}"):
+                return False, None
+            self.changed = True
+        return True, "\n".join(errors)
+
+    def _tree(self, path):
+        """Every path at or under `path`, parents first."""
+        out, stack = [], [path]
+        while stack:
+            cur = stack.pop(0)
+            out.append(cur)
+            if self._kind(cur) == "dir":
+                stack = [posixpath.join(cur, n) for n in self._children(cur)] + stack
+        return out
+
+    def _cmd_rm(self, argv):
+        flags, args = self._flags(argv, "rRf")
+        if flags is None or not args:
+            return False, None
+        recursive, force = bool(set(flags) & set("rR")), "f" in flags
+        paths = [self._resolve(a) for a in args]
+        for path in paths:
+            if path == "/" or (self._kind(path) is None and not self._missing(path)):
+                return False, None
+        errors = []
+        for arg, path in zip(args, paths):
+            if self._kind(path) is None:
+                if not force:
+                    errors.append(f"rm: cannot remove '{arg}': No such file or directory")
+                continue
+            if self._kind(path) == "dir" and not recursive:
+                errors.append(f"rm: cannot remove '{arg}': Is a directory")
+                continue
+            state, parent = self._parent(path)
+            if state != "dir":
+                return False, None
+            # removing the attacker's own cwd or an ancestor is left to Cowrie
+            cwd = self.reg.cwd() or "/"
+            if cwd == path or cwd.startswith(path.rstrip("/") + "/"):
+                return False, None
+            add, remove = {Fact("absent", path)}, set()
+            self._bump(parent, add, remove)
+            gone = {f for f in self.inst.facts() if isinstance(f.key, str)
+                    and f.rel not in _NON_PATH_RELS
+                    and (f.key == path or f.key.startswith(path.rstrip("/") + "/"))}
+            if not self.reg.commit(add, remove | gone, why=f"rm {arg}"):
+                return False, None
+            self.changed = True
+        return True, "\n".join(errors)
+
+    def _dest(self, src_arg, dst_arg, tool):
+        """(final path, error) for cp/mv's destination argument."""
+        dst = self._resolve(dst_arg)
+        real = self._target(dst) if self._kind(dst) else None
+        if real is not None and self._kind(real) == "dir":
+            return posixpath.join(real, posixpath.basename(src_arg.rstrip("/"))), None
+        return dst, None
+
+    def _clone_facts(self, src, dst, keep_inode, stamp):
+        """Facts for dst as a copy (or rename) of the subtree at src."""
+        add, used = set(), set()
+        for old in self._tree(src):
+            new = dst + old[len(src):]
+            kind = self._kind(old)
+            mode = self.inst.get("mode", old)
+            if kind == "symlink":
+                f = self._fresh(new, "symlink", mode, target=self.inst.get("target", old),
+                                inode=self.inst.get("inode", old) if keep_inode else None,
+                                stamp=stamp, used=used)
+            elif kind == "dir":
+                f = self._fresh(new, "dir", mode, inode=self.inst.get("inode", old)
+                                if keep_inode else None, stamp=stamp, used=used)
+            else:
+                data = self.inst.get("content", old)
+                if data is None:
+                    return None
+                f = self._fresh(new, "file", mode, content=data,
+                                inode=self.inst.get("inode", old) if keep_inode else None,
+                                stamp=stamp, used=used)
+            if keep_inode:          # a rename keeps owner and times
+                for rel in ("owner", "group", "mtime", "atime"):
+                    v = self.inst.get(rel, old)
+                    if v is not None:
+                        f = {x for x in f if x.rel != rel} | {Fact(rel, new, v)}
+            add |= f
+        return add
+
+    def _cmd_cp(self, argv):
+        flags, args = self._flags(argv, "rRf")
+        if flags is None or len(args) != 2:
+            return False, None
+        src_arg, dst_arg = args
+        src = self._resolve(src_arg)
+        if self._kind(src) is None:
+            return (True, f"cp: cannot stat '{src_arg}': No such file or directory") \
+                if self._missing(src) else (False, None)
+        real = self._target(src)
+        if real is None:
+            return False, None
+        if self._kind(real) == "dir" and not (set(flags) & set("rR")):
+            return True, f"cp: -r not specified; omitting directory '{src_arg}'"
+        dst, _ = self._dest(src_arg, dst_arg, "cp")
+        state, parent = self._parent(dst)
+        if state == "unknown":
+            return False, None
+        if state != "dir":
+            return True, (f"cp: cannot create regular file '{dst_arg}': "
+                          + ("Not a directory" if state == "notdir" else "No such file or directory"))
+        if dst == real:
+            return True, f"cp: '{src_arg}' and '{dst_arg}' are the same file"
+        if dst.startswith(real.rstrip("/") + "/"):
+            return False, None
+        stamp = self.reg.now_ns()
+        add = self._clone_facts(real, dst, False, stamp)
+        if add is None:
+            return False, None
+        remove = {f for f in self.inst.facts() if isinstance(f.key, str)
+                  and f.rel not in _NON_PATH_RELS
+                  and (f.key == dst or f.key.startswith(dst.rstrip("/") + "/"))}
+        if self._kind(dst) is not None and self._kind(dst) != self._kind(real):
+            return False, None
+        self._bump(parent, add, remove)
+        if not self.reg.commit(add, remove, why=f"cp {src_arg} {dst_arg}"):
+            return False, None
+        self.changed = True
+        return True, ""
+
+    def _cmd_mv(self, argv):
+        flags, args = self._flags(argv, "f")
+        if flags is None or len(args) != 2:
+            return False, None
+        src_arg, dst_arg = args
+        src = self._resolve(src_arg)
+        if self._kind(src) is None:
+            return (True, f"mv: cannot stat '{src_arg}': No such file or directory") \
+                if self._missing(src) else (False, None)
+        dst, _ = self._dest(src_arg, dst_arg, "mv")
+        if dst == src:
+            return True, f"mv: '{src_arg}' and '{dst_arg}' are the same file"
+        if dst.startswith(src.rstrip("/") + "/"):
+            return True, (f"mv: cannot move '{src_arg}' to a subdirectory of itself, "
+                          f"'{dst_arg}'")
+        sstate, sparent = self._parent(src)
+        dstate, dparent = self._parent(dst)
+        if "unknown" in (sstate, dstate) or sstate != "dir":
+            return False, None
+        if dstate != "dir":
+            return True, (f"mv: cannot move '{src_arg}' to '{dst_arg}': "
+                          + ("Not a directory" if dstate == "notdir" else "No such file or directory"))
+        cwd = self.reg.cwd() or "/"
+        if cwd == src or cwd.startswith(src.rstrip("/") + "/"):
+            return False, None
+        if self._kind(dst) is not None and (self._kind(dst) == "dir") != (self._kind(src) == "dir"):
+            return False, None
+        stamp = self.reg.now_ns()
+        add = self._clone_facts(src, dst, True, stamp)
+        if add is None:
+            return False, None
+        old = {f for f in self.inst.facts() if isinstance(f.key, str)
+               and f.rel not in _NON_PATH_RELS
+               and (f.key == src or f.key.startswith(src.rstrip("/") + "/"))}
+        over = {f for f in self.inst.facts() if isinstance(f.key, str)
+                and f.rel not in _NON_PATH_RELS
+                and (f.key == dst or f.key.startswith(dst.rstrip("/") + "/"))}
+        add.add(Fact("absent", src))
+        remove = old | over
+        for d in {sparent, dparent}:
+            self._bump(d, add, remove)
+        # the renamed path keeps its inode; ctime moves
+        if not self.reg.commit(add, remove, why=f"mv {src_arg} {dst_arg}"):
+            return False, None
+        self.changed = True
+        return True, ""
+
+    def _cmd_cd(self, argv):
+        if len(argv) > 2 or (len(argv) == 2 and argv[1].startswith("-")):
+            return False, None
+        if len(argv) == 1 or argv[1] == "~":
+            target = (self.users().get(self.username) or {}).get("home", "/root")
+            arg = target
+        else:
+            arg, target = argv[1], argv[1]
+        path = self._resolve(target)
+        real = self._target(path) if self._kind(path) else None
+        if real is None:
+            if self._kind(path) is None and self._missing(path):
+                return True, f"bash: cd: {arg}: No such file or directory"
+            return False, None
+        if self._kind(real) != "dir":
+            return True, f"bash: cd: {arg}: Not a directory"
+        if not self.reg.set_cwd(real):
+            return False, None
+        self.changed = True
+        return True, ""
+
+    # ── hashing and the environment ────────────────────────────────────────
+
+    def _hash(self, argv, algo):
+        import hashlib
+        flags, args = self._flags(argv, "")
+        if flags is None or not args:
+            return False, None
+        lines = []
+        for arg in args:
+            path = self._resolve(arg)
+            real = self._target(path) if self._kind(path) else None
+            if real is None:
+                if self._missing(path):
+                    lines.append(f"{argv[0]}: {arg}: No such file or directory")
+                    continue
+                return False, None
+            if self._kind(real) == "dir":
+                lines.append(f"{argv[0]}: {arg}: Is a directory")
+                continue
+            data = self.inst.get("content", real)
+            if data is None:
+                return False, None
+            lines.append(f"{hashlib.new(algo, data).hexdigest()}  {arg}")
+        return True, "\n".join(lines)
+
+    def _cmd_md5sum(self, argv):
+        return self._hash(argv, "md5")
+
+    def _cmd_sha1sum(self, argv):
+        return self._hash(argv, "sha1")
+
+    def _cmd_sha256sum(self, argv):
+        return self._hash(argv, "sha256")
 
     # ── variables ──────────────────────────────────────────────────────────
 
