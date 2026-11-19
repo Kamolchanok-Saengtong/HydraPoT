@@ -29,7 +29,8 @@ import posixpath
 from dataclasses import dataclass, field
 
 FUNCTIONAL = frozenset({
-    "kind", "content", "size", "mode", "owner", "group", "mtime", "inode",
+    "kind", "content", "size", "mode", "owner", "group", "mtime", "atime",
+    "ctime", "inode",
     "target", "uid", "gid", "home", "shell", "env", "proc", "cwd",
     "backend", "source",
     # How older modules wrote a file (raw echo text, display size). Kept

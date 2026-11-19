@@ -12,7 +12,11 @@ The old SYSTEM_STATE dict API (files, cwd) is kept as a view over the facts
 so existing modules keep working while they move over one at a time.
 """
 import base64
+import hashlib
+import hmac
 import posixpath
+import re
+import time
 from collections.abc import MutableMapping
 
 from prompt.prompt_manager import _decode_echo_payload
@@ -22,6 +26,9 @@ _TYPE = {"-": "file", "d": "dir", "l": "symlink"}
 _TYPE_CHAR = {v: k for k, v in _TYPE.items()}
 # File attributes an old-style record replaces as a whole
 _RECORD_RELS = ("content", "size", "raw", "size_text", "backend", "source")
+# echo ends its output with a newline unless -n is given
+_ECHO_NO_NEWLINE = re.compile(r"^-[a-zA-Z]*n[a-zA-Z]*\s")
+_TIMES = ("mtime", "atime", "ctime")
 # Relations not keyed by a path
 _NON_PATH = frozenset({"user", "uid", "gid", "home", "shell", "env", "proc", "cwd"})
 
@@ -58,6 +65,14 @@ def mode_to_perms(kind: str, mode: int) -> str:
         if mode & bit:
             out[pos] = on if out[pos] == "x" else off
     return "".join(out)
+
+
+def file_bytes(raw: str) -> bytes:
+    """The bytes an `echo` record really wrote, including its newline."""
+    data = _decode_echo_payload(raw)
+    if raw.strip() and not _ECHO_NO_NEWLINE.match(raw.strip()):
+        data += b"\n"
+    return data
 
 
 def _encode(value):
@@ -97,6 +112,44 @@ class Register:
         self._rows = [{"seq": -1, "op": "seed", "rel": "", "key": "",
                        "value": seed.hex()}]
         self.writer = writer
+        self.clock = time.time_ns
+        self.epoch_ns = self.clock()
+
+    # ── deterministic metadata ─────────────────────────────────────────────
+
+    def prf(self, label: str, path: str, lo: int, hi: int) -> int:
+        """Same seed, same path, same number: metadata stays stable."""
+        digest = hmac.new(self.seed, f"{label}\0{path}".encode(), hashlib.sha256).digest()
+        return lo + int.from_bytes(digest[:8], "big") % (hi - lo + 1)
+
+    def new_inode(self, path: str) -> int:
+        used = {self.inst.get("inode", p) for p in self.inst.keys("inode")}
+        inode = self.prf("inode", path, 100_000, 9_999_999)
+        while inode in used:
+            inode += 1
+        return inode
+
+    def now_ns(self) -> int:
+        return self.clock()
+
+    def past_ns(self, path: str) -> int:
+        """A creation time before the session, for files the box shipped with."""
+        age = self.prf("age", path, 86_400, 300 * 86_400)
+        return self.epoch_ns - age * 1_000_000_000 - self.prf("ns", path, 0, 999_999_999)
+
+    def ensure_meta(self, path: str) -> None:
+        """Give an existing path the inode and times it lacks, once (eps3)."""
+        if self.inst.get("kind", path) is None:
+            return
+        add = set()
+        if self.inst.get("inode", path) is None:
+            add.add(Fact("inode", path, self.new_inode(path)))
+        when = self.past_ns(path)
+        for rel in _TIMES:
+            if self.inst.get(rel, path) is None:
+                add.add(Fact(rel, path, when))
+        if add:
+            self.commit(add, why=f"meta {path}")
 
     def begin(self, seq: int, cmd: str) -> None:
         self.seq, self.cmd = seq, cmd
@@ -170,6 +223,9 @@ class Register:
         """Store an old SYSTEM_STATE["files"] record as facts."""
         inst = self.inst
         add, remove = set(), set()
+        is_new = inst.get("kind", path) is None
+        old_content, old_mode = inst.get("content", path), inst.get("mode", path)
+        new_data, new_mode = None, None
         for rel in _RECORD_RELS:
             cur = inst.get(rel, path)
             if cur is not None:
@@ -179,6 +235,7 @@ class Register:
         kind = inst.get("kind", path) or "file"
         if perms:
             kind, mode = perms_to_mode(perms)
+            new_mode = mode
             if inst.get("mode", path) is not None:
                 remove.add(Fact("mode", path, inst.get("mode", path)))
             add.add(Fact("mode", path, mode))
@@ -192,8 +249,8 @@ class Register:
             # Cowrie holds the real bytes of its downloads; ours is a placeholder
             if (kind == "file" and rec.get("backend") != "cowrie"
                     and not str(raw).startswith("[downloaded from")):
-                data = _decode_echo_payload(raw)
-                add |= {Fact("content", path, data), Fact("size", path, len(data))}
+                new_data = file_bytes(raw)
+                add |= {Fact("content", path, new_data), Fact("size", path, len(new_data))}
         for rel, field in (("size_text", "size"), ("backend", "backend"),
                            ("source", "source")):
             if rec.get(field) is not None:
@@ -202,6 +259,19 @@ class Register:
             add.add(Fact("listed", path))
             if kind == "dir" and self.loaded:
                 add.add(Fact("sealed", path))
+
+        # A write moves mtime and ctime; a chmod moves only ctime
+        when = self.now_ns() if self.loaded else self.past_ns(path)
+        if is_new:
+            add.add(Fact("inode", path, self.new_inode(path)))
+            add |= {Fact(rel, path, when) for rel in _TIMES}
+        else:
+            moved = (("mtime", "ctime") if new_data is not None and new_data != old_content
+                     else ("ctime",) if new_mode is not None and new_mode != old_mode else ())
+            for rel in moved:
+                if inst.get(rel, path) is not None:
+                    remove.add(Fact(rel, path, inst.get(rel, path)))
+                add.add(Fact(rel, path, when))
         return self.commit(add, remove, why=f"write {path}")
 
     def delete_record(self, path: str) -> bool:
