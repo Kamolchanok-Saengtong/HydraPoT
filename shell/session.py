@@ -59,6 +59,7 @@ from shell.execution import Executor
 from shell.register import Register, SystemState
 from shell.gate import CONTRACT, Gate
 from shell.procfs import Generator
+from shell.rulecore import RuleCore
 
 # Candidates sampled per LLM turn before the gate falls back (Alg. 1, k)
 GATE_CANDIDATES = 2
@@ -280,6 +281,9 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
     routing = Routing(SYSTEM_STATE, fs, sw)
     executor = Executor(SYSTEM_STATE, fs, config.honeypot.arch)
     gate = Gate(resolve=fs.resolve)
+    rulecore = RuleCore(register, fs, hostname=config.honeypot.hostname,
+                        users=lambda: SYSTEM_STATE["users"],
+                        variables=SYSTEM_STATE["vars"], username=username)
     generator = Generator(register.seed, hostname=config.honeypot.hostname,
                           epoch=datetime.now(timezone.utc))
 
@@ -517,6 +521,7 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
         # Gate every answer before the attacker sees it. Streamed output has
         # already been sent; forced experiment arms measure the raw agent.
         if not streamed and not handle.forced:
+            output = rulecore.patch(parse_command(cmd)[0], output or "")
             output, successor = gate.check_text(
                 register.inst, parse_command(cmd)[0], output or "", agent,
                 before=register.before)
@@ -924,6 +929,16 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
         if handled:
             link.sync_history(cmd)
             return _finish(cmd, agent, exec_out, fi_score, t_start)
+
+        # Rule core (OSCAR Sec. IV-A): facts answered from the register
+        handled, rc_out = rulecore.answer(actual_cmd)
+        if handled:
+            if rulecore.changed:
+                link.sync(actual_cmd)       # keep Cowrie's copy close
+            link.sync_history(cmd)
+            # Logged as the agent it displaced, like the other computed answers
+            displaced = "on_device" if needs_llm and agent == "cowrie" else agent
+            return _finish(cmd, displaced, rc_out, fi_score, t_start)
 
         # ── SECURITY BOUNDARY ───────────────────────────────────────────────
         # False here means no prompt is ever built, so there is nothing to
