@@ -970,7 +970,10 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
         handled, rc_out = rulecore.answer(actual_cmd)
         if handled:
             if rulecore.changed:
-                link.sync(actual_cmd)       # keep Cowrie's copy close
+                # keep Cowrie's copy in step with Cowrie-safe commands (absolute paths,
+                # no -p or ~); the raw line only for handlers that report none
+                for sync_cmd in (rulecore.sync_cmds or [actual_cmd]):
+                    link.sync(sync_cmd)
             link.sync_history(cmd)
             # Logged as the agent it displaced, like the other computed answers
             displaced = "on_device" if needs_llm and agent == "cowrie" else agent

@@ -104,6 +104,9 @@ class RuleCore:
         self.processes = sorted(processes, key=lambda p: p["PID"])
         self.kernel = kernel
         self.materializer = materializer
+        # Cowrie-safe commands that reproduce the last answer's change in Cowrie's own
+        # filesystem: absolute quoted paths, no -p or ~ (Cowrie's mkdir lacks both)
+        self.sync_cmds = []
 
     @property
     def inst(self):
@@ -111,8 +114,12 @@ class RuleCore:
 
     # ── entry points ───────────────────────────────────────────────────────
 
+    def _replay(self, *cmds):
+        self.sync_cmds.extend(cmds)
+
     def answer(self, cmd: str):
         self.changed = False
+        self.sync_cmds = []
         text = cmd.strip()
         # Same answer with or without sudo, as routing treats it (flags like -u differ)
         if text.startswith("sudo ") and not text[5:].lstrip().startswith("-"):
@@ -544,6 +551,7 @@ class RuleCore:
                 remove.add(Fact("ctime", real, self.inst.get("ctime", real)))
             self.reg.commit({Fact("mode", real, new), Fact("ctime", real, now)},
                             remove, why=f"chmod {spec} {arg}")
+            self._replay(f"chmod {spec} {shlex.quote(real)}")
             self.changed = True
         return True, ""
 
@@ -1049,6 +1057,7 @@ class RuleCore:
             self._bump(self._target(top) or top, add, remove)
             if not self.reg.commit(add, remove, why=f"mkdir {arg}"):
                 return False, None
+            self._replay(*[f"mkdir {shlex.quote(d)}" for d in chain])
             self.changed = True
         return True, "\n".join(errors)
 
@@ -1071,6 +1080,7 @@ class RuleCore:
                         remove.add(Fact(rel, real, old))
                     add.add(Fact(rel, real, now))
                 self.reg.commit(add, remove, why=f"touch {arg}")
+                self._replay(f"touch {shlex.quote(real)}")
                 self.changed = True
                 continue
             if self._kind(path) is not None:
@@ -1090,6 +1100,7 @@ class RuleCore:
             self._bump(parent, add, remove)
             if not self.reg.commit(add, remove, why=f"touch {arg}"):
                 return False, None
+            self._replay(f"touch {shlex.quote(path)}")
             self.changed = True
         return True, "\n".join(errors)
 
@@ -1137,6 +1148,7 @@ class RuleCore:
                     and (f.key == path or f.key.startswith(path.rstrip("/") + "/"))}
             if not self.reg.commit(add, remove | gone, why=f"rm {arg}"):
                 return False, None
+            self._replay(f"rm -rf {shlex.quote(path)}")
             self.changed = True
         return True, "\n".join(errors)
 
@@ -1216,6 +1228,7 @@ class RuleCore:
         self._bump(parent, add, remove)
         if not self.reg.commit(add, remove, why=f"cp {src_arg} {dst_arg}"):
             return False, None
+        self._replay(f"cp -r {shlex.quote(real)} {shlex.quote(self._resolve(dst_arg))}")
         self.changed = True
         return True, ""
 
@@ -1265,6 +1278,7 @@ class RuleCore:
         # the renamed path keeps its inode; ctime moves
         if not self.reg.commit(add, remove, why=f"mv {src_arg} {dst_arg}"):
             return False, None
+        self._replay(f"mv {shlex.quote(src)} {shlex.quote(self._resolve(dst_arg))}")
         self.changed = True
         return True, ""
 
@@ -1283,6 +1297,7 @@ class RuleCore:
             return None
         newline = not (words and words[0] == "-n")
         data = (" ".join(words[1:] if not newline else words) + ("\n" if newline else "")).encode()
+        piece = data                         # what this command writes, before any append
         path = self._resolve(arg)
         if path == "/dev/null":
             return True, ""                  # the kernel throws the bytes away
@@ -1306,6 +1321,7 @@ class RuleCore:
                 add.add(Fact(rel, real, now))
             if not self.reg.commit(add, remove, why=f"write {arg}"):
                 return None
+            self._replay(self._echo_cmd(piece, newline, op, real))
             self.changed = True
             return True, ""
         if self._kind(path) is not None:
@@ -1320,8 +1336,15 @@ class RuleCore:
         self._bump(parent, add, remove)
         if not self.reg.commit(add, remove, why=f"write {arg}"):
             return None
+        self._replay(self._echo_cmd(piece, newline, op, path))
         self.changed = True
         return True, ""
+
+    @staticmethod
+    def _echo_cmd(piece: bytes, newline: bool, op: str, path: str) -> str:
+        text = piece.decode("utf-8", "replace")
+        text = text[:-1] if newline and text.endswith("\n") else text
+        return f"echo {'' if newline else '-n '}{shlex.quote(text)} {op} {shlex.quote(path)}"
 
     def _cmd_cd(self, argv):
         if len(argv) > 2 or (len(argv) == 2 and argv[1].startswith("-")):
@@ -1341,6 +1364,7 @@ class RuleCore:
             return True, f"bash: cd: {arg}: Not a directory"
         if not self.reg.set_cwd(real):
             return False, None
+        self._replay(f"cd {shlex.quote(real)}")
         self.changed = True
         return True, ""
 
