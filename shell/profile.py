@@ -236,7 +236,8 @@ class Materializer:
             data = self.profile.content(path)
             if data is None and path in _IDENTITY:
                 text = self.virtual(path)
-                data = text.encode() if text else None
+                # a real passwd/shadow always ends in a newline
+                data = (text if text.endswith("\n") else text + "\n").encode() if text else None
             if data is None and path_type(path) in _TYPED:
                 data = (self.gen.content(path) or b"") + self.live(path)
             if data is not None:
