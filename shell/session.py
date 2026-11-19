@@ -1140,11 +1140,13 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
                 ok = verdict
                 continue
             streamed = []
+            rulecore.handled_last = False
             out, _ = _handle_one(text, streamed.append, read_fn, None)
             out = out or "".join(streamed)
             if out:
                 outputs.append(out.rstrip("\n"))
-            ok = not compound.failed(out)
+            # the rule core knows its own exit status; anything else is judged from its text
+            ok = (rulecore.status == 0) if rulecore.handled_last else not compound.failed(out)
         return "\n".join(outputs), ""
 
     handle.fi_manager = fi_manager

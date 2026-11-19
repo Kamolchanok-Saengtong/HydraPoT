@@ -23,6 +23,7 @@ import re
 import shlex
 from datetime import datetime, timezone
 
+from shell.compound import failed as _printed_an_error
 from shell.world import Fact
 
 _SPECIAL = set("|;<>`")
@@ -107,6 +108,10 @@ class RuleCore:
         # Cowrie-safe commands that reproduce the last answer's change in Cowrie's own
         # filesystem: absolute quoted paths, no -p or ~ (Cowrie's mkdir lacks both)
         self.sync_cmds = []
+        # Exit status of the last answer, for `&&` and `||`: None until a handler sets
+        # it, then read back from the output; handled_last says the answer was ours
+        self.status = None
+        self.handled_last = False
 
     @property
     def inst(self):
@@ -120,6 +125,14 @@ class RuleCore:
     def answer(self, cmd: str):
         self.changed = False
         self.sync_cmds = []
+        self.status = None
+        handled, out = self._answer(cmd)
+        self.handled_last = handled
+        if handled and self.status is None:
+            self.status = 1 if _printed_an_error(out) else 0
+        return handled, out
+
+    def _answer(self, cmd: str):
         text = cmd.strip()
         # Same answer with or without sudo, as routing treats it (flags like -u differ)
         if text.startswith("sudo ") and not text[5:].lstrip().startswith("-"):
@@ -611,7 +624,7 @@ class RuleCore:
                 flags |= set(a[1:])
             else:
                 args.append(a)
-        if flags - set("ivcnF") or len(args) != 2:
+        if flags - set("ivcnFq") or len(args) != 2:
             return False, None
         pattern, arg = args
         path = self._resolve(arg)
@@ -631,6 +644,9 @@ class RuleCore:
             hit = lambda line: rx.search(line) is not None
         matched = [(i + 1, line) for i, line in enumerate(lines)
                    if hit(line) != ("v" in flags)]
+        self.status = 0 if matched else 1          # grep: 1 means "no match", silently
+        if "q" in flags:
+            return True, ""
         if "c" in flags:
             return True, str(len(matched))
         return True, "\n".join(f"{i}:{line}" if "n" in flags else line for i, line in matched)
@@ -873,6 +889,13 @@ class RuleCore:
                     stack += [(posixpath.join(shown, n), posixpath.join(path, n), depth + 1)
                               for n in reversed(kids)]
         return True, "\n".join(lines)
+
+    def _cmd_true(self, argv):
+        return True, ""
+
+    def _cmd_false(self, argv):
+        self.status = 1
+        return True, ""
 
     def _cmd_sudo(self, argv):
         """`sudo -l` as Ubuntu 20.04 prints it for an account with full rights."""
