@@ -65,6 +65,7 @@ class Oracle:
         self.modes = {}          # path -> perms a chmod produced
         self.seen = {}           # (path, attr) -> first value observed since the last write
         self.env = {}
+        self.seen_reads = {}     # path -> first content read (files not created here)
         self.procs = set()
         self.contradictions = []
 
@@ -156,10 +157,22 @@ class Oracle:
                 self._flag(seq, "reappear", cmd, f"{path} was removed")
             elif path in self.files:
                 known = self.files[path]
-                if known is not None and got != known:
+                # Logs grow by appending; rewriting earlier lines is still a lie
+                grew = (known is not None and path.startswith("/var/log/")
+                        and got.startswith(known))
+                if known is not None and got != known and not grew:
                     self._flag(seq, "content", cmd, f"expected {known!r}, got {got!r}")
-                if known is None:
+                if known is None or grew:
                     self.files[path] = got
+            else:
+                # Any file read once is a baseline for its next read
+                self.seen_reads[path] = self.seen_reads.get(path, got)
+                known = self.seen_reads[path]
+                grew = path.startswith("/var/log/") and got.startswith(known)
+                if got != known and not grew:
+                    self._flag(seq, "content", cmd, f"{path} read {known!r}, now {got!r}")
+                elif grew:
+                    self.seen_reads[path] = got
 
         if base == "pwd" and output.strip() and output.strip() != self.cwd:
             self._flag(seq, "cwd", cmd, f"expected {self.cwd}, got {output.strip()}")
