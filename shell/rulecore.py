@@ -878,8 +878,9 @@ class RuleCore:
         if self._kind(path) != "dir" or self._closed(path):
             return output
         ours = [n for n in self._children(path)
-                if self.inst.get("listed", posixpath.join(path, n))
-                or self._kind(posixpath.join(path, n)) == "symlink"]
+                if (self.inst.get("listed", posixpath.join(path, n))
+                    or self._kind(posixpath.join(path, n)) == "symlink")
+                and (not n.startswith(".") or set(flags) & {"a", "A"})]
         if "l" in flags:
             gone = {posixpath.basename(p) for p in self.inst.keys("absent")
                     if posixpath.dirname(p) == path}
