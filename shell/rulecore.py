@@ -894,6 +894,24 @@ class RuleCore:
                               for n in reversed(kids)]
         return True, "\n".join(lines)
 
+    def _cmd_chattr(self, argv):
+        """Attacker scripts run `chattr -i -a` before editing a file; it is silent when it works."""
+        words = argv[1:]
+        modes = [w for w in words if w[:1] in "+-=" and len(w) > 1 and not w.startswith("-v")]
+        files = [w for w in words if w[:1] not in "+-="]
+        letters = set("".join(m[1:] for m in modes))
+        if not modes or not files or letters - set("RVfpacdeijstuADSTCF"):
+            return False, None              # usage text and odd forms are left to others
+        errors = []
+        for arg in files:
+            path = self._resolve(arg)
+            if self._kind(path) is None:
+                if not self._missing(path):
+                    return False, None
+                errors.append(f"chattr: No such file or directory while trying to stat {arg}")
+        self.status = 1 if errors else 0
+        return True, "\n".join(errors)
+
     def _cmd_true(self, argv):
         return True, ""
 
