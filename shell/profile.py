@@ -128,13 +128,16 @@ class Materializer:
         mat.ensure("/etc/ssh/sshd_config")
     """
 
-    def __init__(self, register, profile: Profile, generator, users=None, live=None):
+    def __init__(self, register, profile: Profile, generator, users=None, live=None,
+                 virtual=None):
         self.reg = register
         self.profile = profile
         self.gen = generator
         self.users = users or profile.users()
         self.groups = {**self.users, **profile.groups()}
         self.live = live or (lambda path: b"")
+        # path -> text for files built from the account list (/etc/passwd, /etc/shadow)
+        self.virtual = virtual or (lambda path: None)
         self._issued = set()          # inodes handed out within one batch
 
     def ensure(self, path: str) -> None:
@@ -231,6 +234,9 @@ class Materializer:
             facts |= {Fact("target", path, shown), Fact("size", path, len(shown))}
         elif kind == "file":
             data = self.profile.content(path)
+            if data is None and path in _IDENTITY:
+                text = self.virtual(path)
+                data = text.encode() if text else None
             if data is None and path_type(path) in _TYPED:
                 data = (self.gen.content(path) or b"") + self.live(path)
             if data is not None:

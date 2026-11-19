@@ -316,6 +316,7 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
                           epoch=datetime.now(timezone.utc))
     profile = _load_profile(config)
     materializer = Materializer(register, profile, generator,
+                                virtual=lambda p: fs.virtual_file(p) if fs.is_virtual(p) else None,
                                 users={**profile.users(),
                                        **{int(v.get("uid", 0)): u for u, v in
                                           SYSTEM_STATE["users"].items()}})
