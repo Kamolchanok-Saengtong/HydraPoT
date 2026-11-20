@@ -178,6 +178,15 @@ class Register:
             self._rows.append(self._row("+", fact))
         self.inst = successor
 
+    def checkpoint(self):
+        """A point to return to: a script that cannot be finished leaves no trace."""
+        return (self.inst, len(self._rows), len(self.violations))
+
+    def rollback(self, point) -> None:
+        self.inst = point[0]
+        del self._rows[point[1]:]
+        del self.violations[point[2]:]
+
     def refuse(self, reason: str, why: str = "") -> None:
         entry = {"seq": self.seq, "cmd": self.cmd, "reason": reason, "why": why}
         self.violations.append(entry)

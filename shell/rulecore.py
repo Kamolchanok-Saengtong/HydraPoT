@@ -144,11 +144,13 @@ class RuleCore:
         redirect = self._redirect(text)
         if redirect is not None:
             return redirect
-        if not text or _SPECIAL & set(text) or "$(" in text or "&&" in text:
+        # operators only count outside quotes: `bash -c 'a && b'` is one command
+        bare = re.sub(r"""'[^']*'|"(?:[^"\\]|\\.)*\"""", "", text)
+        if not text or _SPECIAL & set(bare) or "$(" in text or "&&" in bare:
             return False, None
         if text.endswith("&"):
             return self._spawn(text[:-1].strip())
-        if "&" in text:
+        if "&" in bare:
             return False, None
         m = re.fullmatch(r"echo\s+\$\{?(\w+)\}?", text)
         if m:
@@ -249,7 +251,96 @@ class RuleCore:
         if self._kind(path) is None and self._missing(path):
             self.status = 127
             return True, f"bash: {argv[0]}: No such file or directory"
+        if self._kind(path) == "file":
+            return self._script(path, " ".join(argv))
         return False, None
+
+    # ── scripts: run only what every line of can be answered ───────────────
+
+    _depth = 0
+
+    def _script(self, path, shown):
+        """Run a shell script held in the register, or None-answer if any line is beyond us."""
+        data = self.inst.get("content", self._target(path) or path)
+        if data is None or b"\x00" in data or self._depth >= 5:
+            return False, None
+        text = data.decode("utf-8", "replace")
+        first = text.splitlines()[0] if text else ""
+        if first.startswith("#!") and not re.match(r"#!\s*(/usr)?/bin/(env\s+)?(ba)?sh\b", first):
+            return False, None                    # another interpreter
+        return self._run_lines(text.splitlines())
+
+    def _run_lines(self, lines):
+        lines = [l.strip() for l in lines]
+        lines = [l for l in lines if l and not l.startswith("#")]
+        point = (self.reg.checkpoint(), self._jobs, self._next_pid, dict(self._started),
+                 self.changed, list(self.sync_cmds))
+        self._depth += 1
+        outs, status = [], 0
+        try:
+            for line in lines:
+                if line == "exit" or line.startswith("exit "):
+                    break
+                handled, out, status = self._run_line(line)
+                if not handled:
+                    self.reg.rollback(point[0])
+                    self._jobs, self._next_pid, self._started = point[1], point[2], point[3]
+                    self.changed, self.sync_cmds = point[4], point[5]
+                    return False, None
+                if out:
+                    outs.append(out)
+        finally:
+            self._depth -= 1
+        self.status = status
+        return True, "\n".join(outs)
+
+    def _run_line(self, line):
+        """(handled, output, exit status) for one script line, `&&`/`||`/`;` included."""
+        from shell import compound
+        parts = compound.split(line) or [(line, None)]
+        outs, ok, status = [], True, 0
+        for seg, op in parts:
+            if not compound.runs(op, ok):
+                continue
+            verdict = self.test_status(seg)
+            if verdict is not None:
+                ok, status = verdict, 0 if verdict else 1
+                continue
+            self.status = None
+            handled, out = self._answer(seg)
+            if not handled:
+                return False, None, 0
+            status = self.status if self.status is not None else (1 if _printed_an_error(out) else 0)
+            ok = status == 0
+            if out:
+                outs.append(out)
+        return True, "\n".join(outs), status
+
+    def _cmd_bash(self, argv):
+        """`bash file`, `bash -c 'cmds'` (and sh)."""
+        args = argv[1:]
+        if args[:1] == ["-c"] and len(args) >= 2:
+            return self._run_lines([args[1]])
+        if args and not args[0].startswith("-"):
+            path = self._resolve(args[0])
+            if self._kind(path) is None:
+                if self._missing(path):
+                    self.status = 127
+                    return True, f"{argv[0]}: {args[0]}: No such file or directory"
+                return False, None
+            return self._script(path, args[0])
+        return False, None
+
+    _cmd_sh = _cmd_bash
+
+    def _cmd_echo(self, argv):
+        words = argv[1:]
+        newline = not (words and words[0] == "-n")
+        if not newline:
+            words = words[1:]
+        if any(w.startswith("-") and len(w) > 1 and set(w[1:]) <= set("neE") for w in words[:1]):
+            return False, None                    # -e/-E change what is printed
+        return True, " ".join(words)
 
     def _tilde(self, arg: str) -> str:
         if arg == "~" or arg.startswith("~/"):
@@ -1361,7 +1452,9 @@ class RuleCore:
 
     def _redirect(self, text):
         """`echo words > file` and `>>`: the usual way an attacker makes a file."""
-        if ">" not in text or any(c in text for c in "|;&`$<(") or "\n" in text:
+        bare = re.sub(r"""'[^']*'|"(?:[^"\\]|\\.)*\"""", "", text)     # operators in quotes are text
+        if (">" not in bare or any(c in bare for c in "|;&<(") or "$" in text
+                or "`" in text or "\n" in text):
             return None
         try:
             tokens = shlex.split(text)
