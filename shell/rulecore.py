@@ -161,6 +161,8 @@ class RuleCore:
         argv = self._expand(words)
         if argv is None or not argv:
             return False, None
+        if "/" in argv[0]:
+            return self._run_path(argv)
         handler = getattr(self, f"_cmd_{argv[0]}", None)
         if not handler:
             return False, None
@@ -207,7 +209,7 @@ class RuleCore:
         Quoted words are left alone. None when a glob names a directory the
         register does not fully know.
         """
-        out = [words[0][0]]
+        out = [words[0][0] if words[0][1] else self._tilde(words[0][0])]
         for arg, quoted in words[1:]:
             if quoted:
                 out.append(arg)
@@ -233,6 +235,21 @@ class RuleCore:
             # an unmatched pattern stays literal, as in bash
             out += [posixpath.join(head, n) + suffix if head else n + suffix for n in hits] or [arg]
         return out
+
+    _BIN_DIRS = ("/bin", "/sbin", "/usr/bin", "/usr/sbin", "/usr/local/bin")
+
+    def _run_path(self, argv):
+        """`./x`, `/tmp/x`, `/bin/ls`: a command named by path."""
+        path = self._resolve(argv[0])
+        if self._virtual(path):
+            return False, None
+        handler = getattr(self, f"_cmd_{posixpath.basename(path)}", None)
+        if posixpath.dirname(path) in self._BIN_DIRS and handler:
+            return handler([posixpath.basename(path)] + argv[1:])
+        if self._kind(path) is None and self._missing(path):
+            self.status = 127
+            return True, f"bash: {argv[0]}: No such file or directory"
+        return False, None
 
     def _tilde(self, arg: str) -> str:
         if arg == "~" or arg.startswith("~/"):
@@ -278,6 +295,11 @@ class RuleCore:
         """Known not to exist: denied before, or under a directory we fully know."""
         if self._virtual(path):
             return self.inst.get("absent", path) is not None
+        parent = posixpath.dirname(path)
+        while parent and parent != "/":
+            if self._kind(parent) == "symlink":      # /bin/x lives under /usr/bin
+                return False
+            parent = posixpath.dirname(parent)
         return (self.inst.get("absent", path) is not None
                 or (self._kind(path) is None and self._closed(posixpath.dirname(path))))
 
