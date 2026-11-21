@@ -17,9 +17,9 @@ Two ways to get the number, both over the router's own picks:
                     fidelity/ folder with --arms ml_router (a paid pass).
 
     python experiment_data/PartC/score/aggregate_router_judge.py \\
-        --config-dir experiment_data/results/partC_ml_router/vector_learn_gpqa
+        --config-dir 'experiment_data/results/partC_ml_router/bench-learn+net'
     python experiment_data/PartC/score/summarize_honeyrouter_v2.py \\
-        --runs bench-learn+net=vector_learn_gpqa          # no --metrics: judge column on
+        --runs 'bench-learn+net=bench-learn+net'          # no --metrics: judge column on
 """
 import argparse
 import glob
