@@ -130,6 +130,8 @@ def run_dir_name(cfg: dict) -> str:
             bits.append(k if v else f"no{k.replace('run_', '').replace('_', '')}")
         else:
             bits.append(f"{short.get(k, k)}{v}")
+    if cfg.get("extra_dims"):
+        bits.append(f"x{cfg['extra_dims']}")
     return f"{cfg.get('identity', 'irt')}_{'_'.join(bits) if bits else 'paper'}"
 
 
@@ -188,6 +190,8 @@ def train_phases(cfg: dict, out_dir: str) -> str:
     # short-circuits before the optimiser is built.
     if cfg["identity"] != "vector":
         p1 += ["--epochs", str(cfg["p1_epochs"])]
+    if cfg.get("extra_dims"):
+        p1 += ["--extra-dims", str(cfg["extra_dims"])]
     subprocess.run(p1, cwd=_ROOT, env=env, check=True)
 
     print(f"[phase 2/3] policy pretraining · {cfg['p2_steps']} steps, "
@@ -459,6 +463,10 @@ def main():
                          "the identity starts at the benchmark score but is "
                          "trained with them. Labels also work: paper-128, "
                          "bench-fixed, bench-fixed+net, bench-learn+net.")
+    ap.add_argument("--extra-dims", type=int, default=0,
+                    help="--identity vector_learn only: learned numbers added after the "
+                         "benchmark score. Left out of cfg when 0, so existing runs keep "
+                         "their recorded config.")
     ap.add_argument("--axis", default="terminal_bench",
                     help="--identity vector only: which published benchmark "
                          "becomes each arm's ability. terminal_bench "
@@ -505,6 +513,10 @@ def main():
     if (args.identity == "vector" or args.identity in POINT_IDENTITIES) \
             and args.axis != ap.get_default("axis"):
         cfg["axis"] = args.axis
+    if args.extra_dims:
+        if args.identity != "vector_learn":
+            raise SystemExit("--extra-dims only applies to --identity vector_learn")
+        cfg["extra_dims"] = args.extra_dims
     h = config_hash(cfg)
     # Only the hyperparameters have a paper default to compare against;
     # data_rev describes our own preprocessing and is not in DEFAULTS.

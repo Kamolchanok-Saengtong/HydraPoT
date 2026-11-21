@@ -554,7 +554,7 @@ def pairwise_loss(g_logits: torch.Tensor, raw: torch.Tensor) -> torch.Tensor:
 # ── training ──────────────────────────────────────────────────────────────────
 
 def train(dim=128, epochs=10, lr=1e-3, batch=256, lr_decay=0.95,
-          w_pair=1.0, w_kl=None, seed=0, verbose=True, identity="irt"):
+          w_pair=1.0, w_kl=None, seed=0, verbose=True, identity="irt", extra_dims=0):
     """Fit the variational IRT model: minimise L_irt + w_pair*L_pair + beta*L_KL.
 
     w_kl None -> beta = 1/N (faithful ELBO amortisation, see module docstring).
@@ -593,6 +593,11 @@ def train(dim=128, epochs=10, lr=1e-3, batch=256, lr_decay=0.95,
     # (no posterior), and only the backbone + f/g heads train on judge labels.
     if identity in POINT_IDENTITIES:
         init_mu, _p, _prof, bench_src = benchmark_identity()
+        if extra_dims and identity == "vector_learn":
+            # benchmark score first, then extra numbers learned with the heads. One number
+            # per arm puts the three arms on a line, so the middle arm can never be the
+            # top choice of I_k . h; spread-out extras take them off it (std 0.5, seeded).
+            init_mu = torch.cat([init_mu, 0.5 * torch.randn(init_mu.shape[0], extra_dims)], dim=1)
         dim = int(init_mu.shape[1])
         w_kl = 0.0
         model = Predictor(E.shape[1], len(AGENTS), dim=dim,
@@ -733,6 +738,9 @@ def main():
     ap.add_argument("--w-pair", type=float, default=1.0)
     ap.add_argument("--w-kl", type=float, default=None,
                     help="KL weight beta; default 1/N (ELBO amortisation)")
+    ap.add_argument("--extra-dims", type=int, default=0,
+                    help="vector_learn only: learned numbers added after the benchmark "
+                         "score (identity = 1 + this many numbers per agent)")
     ap.add_argument("--identity", type=canonical_identity,
                     choices=("irt", "vector", "vector_irt", "vector_learn"),
                     default="irt",
@@ -753,7 +761,7 @@ def main():
         bl_fetch()
     model, data, _ = train(dim=a.dim, epochs=a.epochs, lr=a.lr, batch=a.batch,
                            lr_decay=a.lr_decay, w_pair=a.w_pair, w_kl=a.w_kl,
-                           identity=a.identity)
+                           identity=a.identity, extra_dims=a.extra_dims)
     E, Y, raw, sids, eta = data
     with torch.no_grad():
         mu = model.mu
