@@ -44,7 +44,7 @@ jobs:
       # test rather than a mock.
       - name: Create a throwaway operator account
         run: |
-          python -c "from console import auth; auth.write_credential('ci', 'ci-only-throwaway-passphrase')"
+          python -c "from hydrasentinel import auth; auth.write_credential('ci', 'ci-only-throwaway-passphrase')"
 
       # The dashboard is HTTPS-only: hp --dashboard starts Caddy in front of it
       # and refuses to run without one. Official install, per caddyserver.com.

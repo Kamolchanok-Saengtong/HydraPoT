@@ -1,5 +1,5 @@
 """
-console/pages/database.py — Database explorer.
+hydrasentinel/pages/database.py — Database explorer.
 
 A full-width explorer: the databases and their tables are chosen from chip rows
 at the top (Database, then Table); the selected table fills the width below with
@@ -28,7 +28,7 @@ from dash.exceptions import PreventUpdate
 
 from core import storage
 
-from console.server import app
+from hydrasentinel.server import app
 
 PAGE_SIZE = 50
 
@@ -48,7 +48,7 @@ _DEFAULT_SQL = ("SELECT agent, COUNT(*) AS n FROM sessions "
 # ─── databases ───────────────────────────────────────────────────────────────
 
 def _databases():
-    from console import auth
+    from hydrasentinel import auth
     return [
         {"key": "capture", "label": "Capture data", "file": storage.DB_PATH},
         {"key": "login", "label": "Dashboard access",

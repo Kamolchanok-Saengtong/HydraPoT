@@ -1,5 +1,5 @@
 """
-console/bench.py — is this console actually lightweight? Measure, don't claim.
+hydrasentinel/bench.py — is this console actually lightweight? Measure, don't claim.
 
 Four things, because those are the four a reader can check against any other
 SIEM's published minimums:
@@ -14,8 +14,8 @@ rows REPLAYED out of the real one (read-only), so command text, response size
 and FI distribution are realistic rather than synthetic filler -- bytes/event
 and pipeline cost both depend on that being true.
 
-    python console/bench.py                          # quick: 10k / 50k
-    python console/bench.py --sizes 10000,50000,200000 --idle 120 --csv bench.csv
+    python hydrasentinel/bench.py                          # quick: 10k / 50k
+    python hydrasentinel/bench.py --sizes 10000,50000,200000 --idle 120 --csv bench.csv
 """
 import argparse
 import inspect
@@ -157,7 +157,7 @@ def scaling(seed: list, sizes: list) -> list:
         build(p, n, seed)
         point_storage_at(p)
 
-        import console.data as data
+        import hydrasentinel.data as data
         from api import services as svc
         data.clear_caches()
 

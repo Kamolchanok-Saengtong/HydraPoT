@@ -1,5 +1,5 @@
 """
-console/auth.py — operator login for the dashboard.
+hydrasentinel/auth.py — operator login for the dashboard.
 
 WHY THIS EXISTS AT ALL. The dashboard shows every credential the honeypot ever
 collected and ships a read-only SQL console over the capture database. Until
@@ -49,7 +49,7 @@ from itsdangerous import BadSignature, URLSafeSerializer
 
 from core.config_loader import load_config
 
-# Repo root, not console/ -- a cwd-relative path would put the credential file
+# Repo root, not hydrasentinel/ -- a cwd-relative path would put the credential file
 # wherever the dashboard happened to be started from, and a fresh empty one
 # reads as "no account configured", i.e. a locked-out operator.
 _HERE = os.path.abspath(os.path.join(

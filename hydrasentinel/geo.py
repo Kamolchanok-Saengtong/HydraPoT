@@ -1,17 +1,17 @@
 """
-console/geo.py — GeoIP lookups + the sidebar's GeoIP status badge.
+hydrasentinel/geo.py — GeoIP lookups + the sidebar's GeoIP status badge.
 """
 import os
 
 from dash import html, Input, Output
 
-from console.server import app
+from hydrasentinel.server import app
 
 # Imported, never re-derived. This used to build its own path next to
 # storage.py, so moving the database to data/ silently broke the map here while
 # the fetcher kept reporting success -- two copies of one path is how that
 # happens. geoip_fetch owns it; everyone else asks.
-from console.geoip_fetch import DEFAULT_MMDB as MMDB_PATH
+from hydrasentinel.geoip_fetch import DEFAULT_MMDB as MMDB_PATH
 
 _geo_reader = None
 _geo_reader_loaded = False

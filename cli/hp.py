@@ -148,7 +148,7 @@ def _serve_dashboard(host, port, debug):
     # out of the box. No-op if it's already present; never blocks startup on
     # failure (map just stays empty if offline).
     try:
-        from console.geoip_fetch import ensure_geoip
+        from hydrasentinel.geoip_fetch import ensure_geoip
         ensure_geoip()
     except Exception:
         pass
@@ -180,9 +180,9 @@ def _dashboard_passwd():
     THE ONLY WAY AN ACCOUNT IS CREATED. A web setup page would belong to
     whoever reached the port first; running this command already requires
     shell access to the sensor, so the CLI authenticates the operator for
-    free. See console/auth.py.
+    free. See hydrasentinel/auth.py.
     """
-    from console import auth
+    from hydrasentinel import auth
 
     accounts = auth.list_users()
     if accounts:
@@ -240,7 +240,7 @@ def _ensure_operator_account():
     alternative is a dashboard that serves nothing and says so in a log file
     nobody is reading yet.
     """
-    from console import auth
+    from hydrasentinel import auth
     if auth.configured():
         return
 

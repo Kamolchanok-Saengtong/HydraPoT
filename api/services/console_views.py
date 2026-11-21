@@ -8,7 +8,7 @@ a STIX bundle, component health, the AI analyst, and the investigation
 workbench.
 
 Every function here reuses the SAME data layer the Dash dashboard uses --
-console.data, console.geo, console.investigation, console.ioc and core.storage
+hydrasentinel.data, hydrasentinel.geo, hydrasentinel.investigation, hydrasentinel.ioc and core.storage
 -- so the v2 UI shows exactly what the Dash app showed. No new aggregation is
 invented here; this module is where the shaping/validation/masking logic lives
 so the routes in bridge.py stay thin (parse -> one call -> return).
@@ -17,7 +17,7 @@ import os
 
 from core import storage
 
-# since (15m/1h/24h/7d/all) -> the preset string console.data expects.
+# since (15m/1h/24h/7d/all) -> the preset string hydrasentinel.data expects.
 _PRESET = {"15m": "15m", "1h": "1h", "24h": "24h", "7d": "7d", "all": "ALL"}
 
 # Secret columns in the access DB -- masked in query results, never sent raw.
@@ -30,7 +30,7 @@ def _preset(since):
 
 
 def _instance(instance):
-    """The instance filter console.data expects: None means every sensor."""
+    """The instance filter hydrasentinel.data expects: None means every sensor."""
     return None if instance in (None, "all") else instance
 
 
@@ -45,12 +45,12 @@ def _fi(v):
 
 def feed(instance=None, limit=50, since=None):
     """Newest commands + recent auth attempts, as feed lines -- the same stream
-    the Dash terminal renders (console.data.load_feed_rows).
+    the Dash terminal renders (hydrasentinel.data.load_feed_rows).
 
     `since` bounds the window: the feed is a slice of the command/auth stream,
     which the aggregation layer does not window for us, so it is applied here
     (window_filter, same newest-row anchor as the rest of v1)."""
-    from console.data import load_feed_rows
+    from hydrasentinel.data import load_feed_rows
     from api.services.common import window_filter
     inst = _instance(instance)
     rows = window_filter(load_feed_rows(inst, limit=limit), since, "timestamp")
@@ -88,9 +88,9 @@ def feed(instance=None, limit=50, since=None):
 # ─── overview-derived views ──────────────────────────────────────────────────
 
 def geo_rollup(instance=None, limit=500, since=None):
-    """Distinct recent source IPs rolled up by country (console.geo). `since`
+    """Distinct recent source IPs rolled up by country (hydrasentinel.geo). `since`
     bounds the window the same way /feed does (window_filter)."""
-    from console.geo import geolocate
+    from hydrasentinel.geo import geolocate
     from api.services.common import window_filter
     rows = window_filter(storage.query_recent(limit, instance=_instance(instance)),
                          since, "timestamp")
@@ -113,7 +113,7 @@ def geo_rollup(instance=None, limit=500, since=None):
 def attention_queue(since=None, instance=None, limit=20):
     """Highest-interaction sessions in the window -- the same list the Summary
     page's attention queue ranks."""
-    from console.data import load_overview
+    from hydrasentinel.data import load_overview
     o = load_overview(_preset(since), _instance(instance))
     sessions = (o or {}).get("sessions") or []
     ranked = sorted(sessions, key=lambda s: -(s.get("technique_count") or 0))
@@ -128,7 +128,7 @@ def attention_queue(since=None, instance=None, limit=20):
 
 def attack_series(since=None, instance=None):
     """The command-timeline buckets from the aggregation overview."""
-    from console.data import load_overview
+    from hydrasentinel.data import load_overview
     o = load_overview(_preset(since), _instance(instance))
     return [{"t": b.get("bucket_start"), "attacks": b.get("commands") or 0}
             for b in ((o or {}).get("timeline") or [])]
@@ -168,7 +168,7 @@ def top_credentials(instance=None, limit=8):
 
 def _explorer_dbs():
     """The two databases the explorer browses: (key, path, label)."""
-    from console import auth
+    from hydrasentinel import auth
     return [("capture", storage.DB_PATH, "Capture data"),
             ("login", auth.session_db_path(), "Dashboard access")]
 
@@ -268,12 +268,12 @@ def run_query(sql, db="capture"):
 
 def stix_bundle():
     """The IOC export the Dash threat-intel 'Export STIX' button produced: the
-    real extraction (console.ioc.build_ioc_snapshot) rendered as a STIX 2.1
+    real extraction (hydrasentinel.ioc.build_ioc_snapshot) rendered as a STIX 2.1
     bundle (threat_intel.ioc_extractor.to_stix). Scope is 'all' -- the
     extraction layer has no per-sensor scope to honor an instance filter."""
     import json
     import tempfile
-    from console.ioc import build_ioc_snapshot
+    from hydrasentinel.ioc import build_ioc_snapshot
     from threat_intel.ioc_extractor import to_stix
     snap = build_ioc_snapshot(scope="all")
     recs = snap.get("recs") or []
@@ -294,9 +294,9 @@ def stix_bundle():
 
 def agent_health_rows():
     """The per-component health the Dash sidebar's status panel shows
-    (console.data.agent_health): the SSH front door and each agent, each a real
+    (hydrasentinel.data.agent_health): the SSH front door and each agent, each a real
     probe -- not the /health summary's database/collector view."""
-    from console.data import agent_health
+    from hydrasentinel.data import agent_health
     return [{"name": n, "ok": bool(ok), "detail": d}
             for (n, ok, d) in agent_health()]
 
@@ -315,10 +315,10 @@ def ask_assistant(payload):
 
 def investigation(since=None, instance=None):
     """The exact investigation data the Dash page builds:
-    console.investigation.build_investigation() over the same detections +
+    hydrasentinel.investigation.build_investigation() over the same detections +
     overview inputs."""
-    from console.data import load_overview, load_detections
-    from console.investigation import build_investigation
+    from hydrasentinel.data import load_overview, load_detections
+    from hydrasentinel.investigation import build_investigation
     inst = _instance(instance)
     preset = _preset(since)
     detect = load_detections(preset, inst)

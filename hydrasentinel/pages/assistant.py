@@ -1,5 +1,5 @@
 """
-console/pages/assistant.py — the AI analyst chat widget.
+hydrasentinel/pages/assistant.py — the AI analyst chat widget.
 
 A floating button, bottom-right, that opens a small chat panel. Mounted in the
 app shell rather than on one page, so it stays put while you navigate and its
@@ -20,8 +20,8 @@ from urllib.parse import quote
 from dash import html, dcc, Input, Output, State, ctx, ALL
 from dash.exceptions import PreventUpdate
 
-from console.server import app
-from console.theme import INK, PAPER
+from hydrasentinel.server import app
+from hydrasentinel.theme import INK, PAPER
 
 # What the panel offers before you have typed anything. Chosen to demonstrate
 # the range -- a roll-up, a consequence question, and a pivot -- rather than to

@@ -69,7 +69,7 @@ static_commands:
 - emacs
 - less
 - more
-# ── Operator console (the dashboard YOU look at) ─────────────────────────────
+# ── HydraSentinel (the dashboard YOU look at) ─────────────────────────────
 # Not the fake machine: that is `honeypot` above. This surface shows captured
 # credentials and runs a read-only SQL console, so it requires a login. Create
 # the account with `hp --dashboard-passwd`; the dashboard refuses to serve

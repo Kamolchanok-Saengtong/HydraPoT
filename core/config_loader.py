@@ -327,7 +327,7 @@ class GuardrailCfg:
 
 @dataclass
 class DashboardAuthCfg:
-    """Operator login for the dashboard. See console/auth.py.
+    """Operator login for the dashboard. See hydrasentinel/auth.py.
 
     There is no `enabled` flag, unlike the REST API's key. The API defaults to
     open because its consumer is a script that can be handed a header; the

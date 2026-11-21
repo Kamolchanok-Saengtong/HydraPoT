@@ -65,7 +65,7 @@ def query(sql: str = Query(..., description="A single read-only SELECT. Parsed "
 @router.get("/threats/stix", summary="STIX 2.1 bundle of IOCs", tags=["console"])
 def stix():
     # No instance filter: the IOC extraction layer has no per-sensor scope
-    # (console.ioc._scope_filter_rows does all / session / last_24h only), so
+    # (hydrasentinel.ioc._scope_filter_rows does all / session / last_24h only), so
     # an `instance` param here would be a silent no-op. Dropped rather than faked.
     return cv.stix_bundle()
 

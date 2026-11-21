@@ -1,5 +1,5 @@
 """
-console/pages/investigate.py — SOC investigation workspace.
+hydrasentinel/pages/investigate.py — SOC investigation workspace.
 
 Not a dashboard and not a report. One screen an analyst works in, laid out in
 the order the questions actually get asked:
@@ -24,7 +24,7 @@ The information architecture, not the styling, is what this file is for:
     panel scrolls on its own so the detection header never leaves the screen.
   * Raw JSON is evidence, not UX. It is one tab, never the default.
 
-RENDERING ONLY. Every value comes from console/investigation.py's view model,
+RENDERING ONLY. Every value comes from hydrasentinel/investigation.py's view model,
 which joins detection/correlation/aggregation output. Nothing is counted or
 decided here; an absent field prints "Not available" rather than a zero.
 
@@ -39,10 +39,10 @@ import json
 from dash import html, dcc, Input, Output, State, ctx, ALL
 from dash.exceptions import PreventUpdate
 
-from console.server import app
-from console.data import load_overview, load_detections, load_session_commands
-from console.investigation import build_investigation, technique_name
-from console.pages.mitre import _tactic_color
+from hydrasentinel.server import app
+from hydrasentinel.data import load_overview, load_detections, load_session_commands
+from hydrasentinel.investigation import build_investigation, technique_name
+from hydrasentinel.pages.mitre import _tactic_color
 
 QUEUE_LIMIT = 25       # rows in the rail; it scrolls independently
 TECH_VISIBLE = 8       # techniques before "+N more techniques"
@@ -103,7 +103,7 @@ def _chevrons(tactics, limit=8):
     directed path, which is what a kill chain IS -- the shape carries the
     meaning so the analyst does not have to assemble it.
 
-    Colours stay the app-wide tactic mapping (console/pages/mitre.py), so a tactic
+    Colours stay the app-wide tactic mapping (hydrasentinel/pages/mitre.py), so a tactic
     is the same colour here, on the MITRE page and on Summary.
     """
     items = []

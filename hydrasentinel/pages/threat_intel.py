@@ -1,5 +1,5 @@
 """
-console/pages/threat_intel.py — Threat Intel page: generate-on-demand IOC
+hydrasentinel/pages/threat_intel.py — Threat Intel page: generate-on-demand IOC
 snapshot, category-filtered table, STIX export.
 """
 import os
@@ -14,9 +14,9 @@ from dash.exceptions import PreventUpdate
 from core import storage
 from threat_intel.ioc_extractor import to_stix
 
-from console.server import app
-from console.theme import theme_layout, GRAPH_CONFIG, TABLE_STYLE, AMBER_SCALE, Y_50
-from console.ioc import build_ioc_snapshot
+from hydrasentinel.server import app
+from hydrasentinel.theme import theme_layout, GRAPH_CONFIG, TABLE_STYLE, AMBER_SCALE, Y_50
+from hydrasentinel.ioc import build_ioc_snapshot
 
 # Human labels for the IOC scope keys used by _scope_filter_rows(). This was
 # referenced by _ioc_status_text() but never defined, so every click on
@@ -184,9 +184,9 @@ def build_threat_intel_page(ioc_data=None):
     """Page SHELL only — title, last-updated caption, Generate button, and an
     ioc-content div pre-filled with whatever's already in ioc-store. Does NOT
     call build_iocs()/build_ioc_snapshot() itself — this must stay fast, since
-    it re-renders every time you navigate to this page (console/layout.py's
+    it re-renders every time you navigate to this page (hydrasentinel/layout.py's
     render_router)."""
-    from console.theme import Y_700
+    from hydrasentinel.theme import Y_700
     scope_picker = dcc.RadioItems(
         id="ioc-scope",
         options=[

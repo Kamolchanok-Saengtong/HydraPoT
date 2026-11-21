@@ -1,5 +1,5 @@
 """
-console/login_page.py — the sign-in, sign-out and no-account pages.
+hydrasentinel/login_page.py — the sign-in, sign-out and no-account pages.
 
 PLAIN HTML, NOT DASH, on purpose. A Dash login page would need the session gate
 to let `/_dash-update-component` through so the form's callbacks could fire --
@@ -7,12 +7,12 @@ and that endpoint is what serves every chart's data. The gate would have a hole
 in exactly the shape of the thing it protects. Hand-written HTML has no
 callbacks, so the gate stays closed around the whole Dash app.
 
-Colors are imported from console/theme.py rather than restated, so the login
+Colors are imported from hydrasentinel/theme.py rather than restated, so the login
 page cannot drift from the dashboard it fronts.
 """
 from html import escape
 
-from console.theme import (CARD, CRITICAL, INK, INK_3, PAPER, SIDEBAR_BG,
+from hydrasentinel.theme import (CARD, CRITICAL, INK, INK_3, PAPER, SIDEBAR_BG,
                            SIDEBAR_FG, Y_50, Y_300, Y_400, Y_500, Y_700)
 
 

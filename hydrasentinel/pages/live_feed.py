@@ -1,5 +1,5 @@
 """
-console/pages/live_feed.py — the terminal-style live session feed.
+hydrasentinel/pages/live_feed.py — the terminal-style live session feed.
 
 Two consumers, one renderer:
   * Summary embeds it as a small panel (30 lines)
@@ -19,8 +19,8 @@ import pandas as pd
 from dash import html, Input, Output, State, ctx
 from dash.exceptions import PreventUpdate
 
-from console.server import app
-from console.data import load_feed_rows, load_auth_log, _feed_cache
+from hydrasentinel.server import app
+from hydrasentinel.data import load_feed_rows, load_auth_log, _feed_cache
 
 # Pages that mount a live feed. The refresh callback bails on anything else,
 # so a tick/push never rebuilds a feed nobody is looking at.

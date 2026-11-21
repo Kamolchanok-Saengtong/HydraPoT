@@ -52,9 +52,9 @@ dependencies = [
     "fastapi>=0.110",
     "uvicorn[standard]>=0.29",
     "a2wsgi>=1.10",
-    # Signs the operator session cookie (console/auth.py). Already present as
+    # Signs the operator session cookie (hydrasentinel/auth.py). Already present as
     # a Flask dependency, so nothing new is installed -- declared because
-    # console/auth.py imports it directly, and deptry fails an undeclared
+    # hydrasentinel/auth.py imports it directly, and deptry fails an undeclared
     # import rather than waiting for the transitive chain to change under us.
     "itsdangerous>=2.1",
     # Parses the login form's multipart body; FastAPI's Form() needs it.
@@ -103,11 +103,11 @@ py-modules = [
     "main",               # honeypot responder
 ]
 # Found rather than listed: these have __init__.py and gain sub-packages
-# regularly (api/v1, api/services, console/pages), and a hand-written list
+# regularly (api/v1, api/services, hydrasentinel/pages), and a hand-written list
 # silently drops a new one. Excludes keep test/experiment trees out of the wheel.
 [tool.setuptools.packages.find]
 include = ["agent_manager*", "prompt*", "plugins*", "threat_intel*",
-           "console*", "api*", "guardrail*", "shell*", "cost*", "cli*", "core*"]
+           "hydrasentinel*", "api*", "guardrail*", "shell*", "cost*", "cli*", "core*"]
 exclude = ["tests*", "threat_intel.tests*", "experiment_data*", "archive_code*",
            "evaluation*", "honeypot_new*", "dataset*", "models*", "var*"]
 # A real package is a directory with __init__.py. Left at the pyproject default
