@@ -214,6 +214,10 @@ def build_threat_intel_page(ioc_data=None):
             ]),
             dcc.Loading(
                 id="ioc-loading", type="circle", color=Y_700,
+                # spinner centered in the viewport during the ~11s generate,
+                # not tucked into the toolbar over the button
+                style={"position": "fixed", "top": "50%", "left": "50%",
+                       "transform": "translate(-50%, -50%)", "zIndex": 1000},
                 children=html.Div(id="ioc-generate-status", children=[
                     html.Button("🔄 Generate Intelligence", id="generate-ioc-btn",
                                 className="btn btn-primary", n_clicks=0),

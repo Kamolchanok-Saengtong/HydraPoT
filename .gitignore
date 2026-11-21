@@ -100,3 +100,6 @@ third_party/
 # history, not published
 experiment_data/archive/
 
+
+# Next.js experimental dashboard (not plugged in)
+console_test/

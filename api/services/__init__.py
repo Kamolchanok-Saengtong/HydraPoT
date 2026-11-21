@@ -8,6 +8,9 @@ api/services — HydraPoT's application layer, one module per domain.
     intel            MITRE and IOCs
     investigations   coherent packages per subject
     export           normalized telemetry -- OCSF / CEF / ECS
+    console_views    the views the Next.js console needs (api/v1/bridge.py);
+                     imported as a module, not re-exported, since it is one
+                     consumer's view layer rather than a shared domain
 
 Re-exported here so routes import from one place and a later reshuffle of these
 modules does not touch a single route file.

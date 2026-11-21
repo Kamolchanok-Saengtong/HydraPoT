@@ -19,7 +19,7 @@ or in the domain module that already owns the question.
 from fastapi import APIRouter, Depends
 
 from api.auth import require_api_key
-from api.v1 import (alerts, correlations, detections, export,
+from api.v1 import (alerts, bridge, correlations, detections, export,
                     overview, sessions, system, threats)
 
 API_VERSION = "v1"
@@ -29,7 +29,7 @@ PREFIX = f"/api/{API_VERSION}"
 # later is protected by existing. See api/auth.py -- off until a key is set.
 router = APIRouter(prefix=PREFIX, dependencies=[Depends(require_api_key)])
 for _module in (system, overview, alerts, detections, correlations, sessions,
-                threats, export):
+                threats, export, bridge):
     router.include_router(_module.router)
 
 __all__ = ["router", "API_VERSION", "PREFIX"]

@@ -22,7 +22,6 @@ or directly for testing:
     uvicorn api.api_server:api --host 127.0.0.1 --port 8050
 """
 import asyncio
-import hmac
 import re
 from urllib.parse import quote
 
@@ -379,14 +378,11 @@ async def login_submit(request: Request,
                              error="This form expired. Please try again."),
             status_code=400)
 
-    cred = dash_auth.load_credential()
-    # Both checks always run. Returning early on an unknown username would
-    # make the response time a username oracle, since only the password path
-    # pays for scrypt.
-    name_ok = hmac.compare_digest(username or "", cred.get("username", ""))
-    pass_ok = dash_auth.verify_password(password or "",
-                                        cred.get("password_hash", ""))
-    if not (name_ok and pass_ok):
+    # authenticate() returns the username on success, else None. It pays one
+    # scrypt verify even for an unknown username, so the response time is not a
+    # username oracle.
+    operator = dash_auth.authenticate(username or "", password or "")
+    if operator is None:
         dash_auth.record_failure(ip)
         left = dash_auth.attempts_remaining(ip)
         if left <= 0:
@@ -405,7 +401,7 @@ async def login_submit(request: Request,
 
     dash_auth.clear_failures(ip)
     dash_auth.prune_sessions()
-    cookie = dash_auth.open_session(cred["username"], ip)
+    cookie = dash_auth.open_session(operator, ip)
     response = RedirectResponse(target, status_code=302)
     _set_session_cookie(response, cookie, request)
     response.delete_cookie(dash_auth.CSRF_COOKIE, path="/")

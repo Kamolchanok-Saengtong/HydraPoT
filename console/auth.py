@@ -39,7 +39,6 @@ import base64
 import contextlib
 import hashlib
 import hmac
-import json
 import os
 import re
 import secrets
@@ -62,10 +61,9 @@ CSRF_FIELD = "csrf_token"
 LOGIN_PATH = "/_hp/login"
 LOGOUT_PATH = "/_hp/logout"
 
-# Env overrides for the two file paths. Containers mount secrets at a path they
-# choose, and the tests need a temp dir; both beat editing config.yaml. Same
-# precedence as every other secret in HydraPoT -- a real env var wins.
-ENV_CREDENTIAL = "HYDRAPOT_DASHBOARD_CREDENTIAL"
+# Env override for the store path. Containers mount it where they choose and
+# the tests need a temp dir; both beat editing config.yaml. Accounts and
+# sessions now share this one file, so there is one path to override, not two.
 ENV_SESSION_DB = "HYDRAPOT_DASHBOARD_SESSION_DB"
 
 
@@ -78,10 +76,6 @@ def cfg():
 
 def _abs(path: str) -> str:
     return path if os.path.isabs(path) else os.path.join(_HERE, path)
-
-
-def credential_path() -> str:
-    return _abs(os.environ.get(ENV_CREDENTIAL) or cfg().credential_file)
 
 
 def session_db_path() -> str:
@@ -139,85 +133,122 @@ def verify_password(password: str, stored: str) -> bool:
     return hmac.compare_digest(digest, expected)
 
 
-# ─── Credential file ─────────────────────────────────────────────────────────
+# ─── Accounts (the `users` table) ────────────────────────────────────────────
+# Every registered dashboard account is a row in users(username, password_hash,
+# created, role). Accounts live in the same SQLite file as the sessions they
+# authorise -- one store to back up, one path to point at -- but in their own
+# table, never mixed with the honeypot's capture DB.
 
-def load_credential() -> dict:
-    """The stored account, or {} when none exists."""
-    try:
-        with open(credential_path(), encoding="utf-8") as fh:
-            data = json.load(fh)
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
+def get_user(username: str) -> dict:
+    """One account row as a dict (incl. password_hash), or {} if no such user."""
+    if not username:
         return {}
-    return data if isinstance(data, dict) and data.get("username") else {}
+    with _store() as conn:
+        row = conn.execute(
+            "SELECT * FROM users WHERE username=?", (username,)).fetchone()
+    return dict(row) if row else {}
+
+
+def list_users() -> list:
+    """Every registered username, oldest first."""
+    with _store() as conn:
+        return [r[0] for r in
+                conn.execute("SELECT username FROM users ORDER BY created")]
+
+
+def user_exists(username: str) -> bool:
+    return bool(get_user(username))
 
 
 def configured() -> bool:
-    """True once an operator account exists. The gate is unconditional; this
-    only distinguishes "sign in" from "no account yet, run the CLI"."""
-    return bool(load_credential())
+    """True once at least one operator account exists. The gate is
+    unconditional; this only distinguishes "sign in" from "no account yet"."""
+    with _store() as conn:
+        return conn.execute("SELECT 1 FROM users LIMIT 1").fetchone() is not None
+
+
+_DUMMY_HASH = None
+
+
+def authenticate(username: str, password: str):
+    """Return the username on a correct user+password, else None.
+
+    An unknown username still pays for one scrypt verify (against a throwaway
+    hash) so response time cannot be used to tell a real username from a
+    fabricated one -- the same no-oracle property the single-account code had.
+    """
+    global _DUMMY_HASH
+    if _DUMMY_HASH is None:
+        _DUMMY_HASH = hash_password(secrets.token_urlsafe(16))
+    user = get_user(username or "")
+    ok = verify_password(password or "", user.get("password_hash") or _DUMMY_HASH)
+    return user["username"] if (user and ok) else None
 
 
 def write_credential(username: str, password: str, *, rotate: bool = False) -> str:
-    """Create the operator account atomically. Returns the path written.
+    """Register an operator account, or rotate an existing one's password.
+    Returns the database path the account was written to (the CLI echoes it).
 
-    Atomic in both senses that matter:
+    rotate=False creates a new account and refuses if the username is already
+    taken (FileExistsError), so a typo never silently overwrites another
+    operator. rotate=True is the deliberate password change for a known name.
 
-    - the file is never observed half-written, because it is written to a
-      temp file in the same directory, fsync'd, and then os.replace()d, which
-      is atomic within a filesystem;
-    - two concurrent creations cannot both believe they won, because the final
-      name is claimed with os.link(), which fails if it already exists. A
-      plain "exists? then write" has a window between the two.
-
-    rotate=True is the deliberate overwrite, i.e. changing a known password.
-
-    Mode 0600 before any content is written -- not chmod'd afterwards, which
-    would leave the hash briefly world-readable.
+    The cookie-signing secret is created once, with the first account, and
+    shared by every account and every uvicorn worker -- a per-account key would
+    mean a cookie minted for one operator was rejected the instant another
+    signed in, and a per-process key would log everyone out on reload.
     """
-    path = credential_path()
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-
-    payload = {
-        "username": username,
-        "password_hash": hash_password(password),
-        # The cookie-signing key. Generated here, with the account, so sessions
-        # survive a restart and are shared by every uvicorn worker -- a
-        # per-process random key would log everyone out on reload and make
-        # workers reject each other's cookies.
-        "session_secret": secrets.token_urlsafe(32),
-        "created": int(time.time()),
-    }
-    blob = json.dumps(payload, indent=2).encode("utf-8")
-
-    tmp = f"{path}.{os.getpid()}.tmp"
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    try:
-        with os.fdopen(fd, "wb") as fh:
-            fh.write(blob)
-            fh.flush()
-            os.fsync(fh.fileno())
-        if rotate:
-            os.replace(tmp, path)
+    _ensure_secret()
+    ph = hash_password(password)
+    now = time.time()
+    with _store() as conn:
+        exists = conn.execute(
+            "SELECT 1 FROM users WHERE username=?", (username,)).fetchone()
+        if exists and not rotate:
+            raise FileExistsError(
+                f"operator '{username}' already exists; "
+                f"pass rotate=True to change the password")
+        if exists:
+            conn.execute("UPDATE users SET password_hash=? WHERE username=?",
+                         (ph, username))
+            # A password change must not leave that user's old sessions usable.
+            conn.execute("DELETE FROM operator_sessions WHERE username=?",
+                         (username,))
         else:
-            try:
-                os.link(tmp, path)
-            except FileExistsError:
-                raise FileExistsError(
-                    f"an operator account already exists at {path}; "
-                    f"pass rotate=True to change the password") from None
-            os.unlink(tmp)
-    finally:
-        if os.path.exists(tmp):
-            os.unlink(tmp)
+            conn.execute(
+                "INSERT INTO users (username, password_hash, created, role) "
+                "VALUES (?,?,?, 'operator')", (username, ph, now))
+    return session_db_path()
 
-    # Every existing session was signed with the OLD secret and authenticated
-    # the OLD password. A password change must not leave them usable.
-    _reset_store()
-    return path
+
+def delete_user(username: str) -> bool:
+    """Remove an account and every session it holds. True if a row went."""
+    with _store() as conn:
+        conn.execute("DELETE FROM operator_sessions WHERE username=?",
+                     (username,))
+        cur = conn.execute("DELETE FROM users WHERE username=?", (username,))
+        return cur.rowcount > 0
+
+
+def _meta_get(key: str):
+    with _store() as conn:
+        row = conn.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
+    return row[0] if row else None
+
+
+def _ensure_secret():
+    """Create the shared cookie-signing secret once, if it is not there yet."""
+    with _store() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM meta WHERE key='session_secret'").fetchone()
+        if row is None:
+            conn.execute(
+                "INSERT INTO meta (key, value) VALUES ('session_secret', ?)",
+                (secrets.token_urlsafe(32),))
 
 
 def _signing_secret() -> bytes:
-    secret = load_credential().get("session_secret")
+    secret = _meta_get("session_secret")
     if not secret:
         raise RuntimeError("no operator account: nothing to sign sessions with")
     return secret.encode("utf-8")
@@ -226,7 +257,17 @@ def _signing_secret() -> bytes:
 # ─── Session + throttle store ────────────────────────────────────────────────
 
 _SCHEMA = """
-CREATE TABLE IF NOT EXISTS sessions (
+CREATE TABLE IF NOT EXISTS users (
+    username      TEXT PRIMARY KEY,
+    password_hash TEXT NOT NULL,
+    created       REAL NOT NULL,
+    role          TEXT NOT NULL DEFAULT 'operator'
+);
+CREATE TABLE IF NOT EXISTS meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS operator_sessions (
     token_hash TEXT PRIMARY KEY,
     username   TEXT NOT NULL,
     created    REAL NOT NULL,
@@ -288,7 +329,7 @@ def _store():
 def _reset_store():
     """Drop every session and every recorded attempt."""
     with _store() as conn:
-        conn.execute("DELETE FROM sessions")
+        conn.execute("DELETE FROM operator_sessions")
         conn.execute("DELETE FROM login_attempts")
 
 
@@ -302,7 +343,8 @@ def open_session(username: str, src_ip: str = "") -> str:
     now = time.time()
     with _store() as conn:
         conn.execute(
-            "INSERT INTO sessions (token_hash, username, created, last_seen, "
+            "INSERT INTO operator_sessions (token_hash, username, created, "
+            "last_seen, "
             "src_ip) VALUES (?,?,?,?,?)",
             (_token_hash(token), username, now, now, src_ip))
     # Signed as well as stored. The signature is what stops a flood of
@@ -334,13 +376,15 @@ def read_session(cookie_value: str) -> dict:
     th = _token_hash(token)
     with _store() as conn:
         row = conn.execute(
-            "SELECT * FROM sessions WHERE token_hash=?", (th,)).fetchone()
+            "SELECT * FROM operator_sessions WHERE token_hash=?",
+            (th,)).fetchone()
         if row is None:
             return {}
         if now - row["created"] > hard or now - row["last_seen"] > idle:
-            conn.execute("DELETE FROM sessions WHERE token_hash=?", (th,))
+            conn.execute("DELETE FROM operator_sessions WHERE token_hash=?", (th,))
             return {}
-        conn.execute("UPDATE sessions SET last_seen=? WHERE token_hash=?",
+        conn.execute(
+            "UPDATE operator_sessions SET last_seen=? WHERE token_hash=?",
                      (now, th))
         return dict(row)
 
@@ -359,7 +403,7 @@ def close_session(cookie_value: str) -> bool:
     except (BadSignature, RuntimeError):
         return False
     with _store() as conn:
-        cur = conn.execute("DELETE FROM sessions WHERE token_hash=?",
+        cur = conn.execute("DELETE FROM operator_sessions WHERE token_hash=?",
                            (_token_hash(token),))
         return cur.rowcount > 0
 
@@ -370,7 +414,8 @@ def prune_sessions() -> int:
     now = time.time()
     with _store() as conn:
         cur = conn.execute(
-            "DELETE FROM sessions WHERE ? - created > ? OR ? - last_seen > ?",
+            "DELETE FROM operator_sessions "
+            "WHERE ? - created > ? OR ? - last_seen > ?",
             (now, float(c.session_lifetime_minutes) * 60,
              now, float(c.session_idle_minutes) * 60))
         return cur.rowcount

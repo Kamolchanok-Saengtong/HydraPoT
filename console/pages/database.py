@@ -1,204 +1,716 @@
 """
-console/pages/database.py — Database browser.
+console/pages/database.py — Database explorer.
 
-Every read here goes through storage.connect_readonly(): mode=ro blocks
-writes at the engine level and an authorizer blocks ATTACH, so nothing
-entered in the SQL box can modify the database or reach another file. That
-matters because `hp --dashboard --host 0.0.0.0` is a documented way to run this.
+A full-width explorer: the databases and their tables are chosen from chip rows
+at the top (Database, then Table); the selected table fills the width below with
+a Data grid and a Schema view, and a read-only SQL terminal sits under it. This
+mirrors the Next.js v2 layout. Styling lives in assets/database.css, scoped
+under `.dbx`.
+
+Safety (all reads go through core.storage, which this page does not weaken):
+  * connect_readonly() opens `file:...?mode=ro` (uri=True) and installs an
+    authorizer that blocks ATTACH -- nothing here can write or reach another
+    file. The SQL terminal runs through storage.run_readonly_query on the same
+    read-only connection, so a write is rejected by SQLite itself.
+  * Table and column names are validated against the live schema before they
+    touch SQL; search values are bound as parameters. Paging and sorting are
+    done in SQL (LIMIT/OFFSET/ORDER BY), never by loading a table into memory.
+  * The access DB's secret columns (password/token hashes, the signing secret)
+    are masked here and are replaced BEFORE any row reaches a client-side Store,
+    so they are never sent to the browser -- not in the grid, the row panel,
+    copy-as-JSON, or a terminal query result.
 """
-import os
+import json
+from datetime import datetime
 
-from dash import html, dcc, dash_table, Input, Output, State, ctx, ALL
+from dash import html, dcc, Input, Output, State, ctx, ALL, no_update
 from dash.exceptions import PreventUpdate
 
 from core import storage
 
 from console.server import app
-from console.theme import TABLE_STYLE, INK
 
-DB_PAGE_SIZE = 50
+PAGE_SIZE = 50
+
+# Secret material -- masked in the access DB, everywhere, before leaving Python.
+_MASK_COLS = {"password_hash", "token_hash", "value", "session_secret"}
+_MASK = "•" * 8
+
+# Columns whose values are epoch seconds and read better as a date.
+_TIME_COLS = {"timestamp", "ts", "created", "last_seen", "first_seen",
+              "updated_at", "created_at", "closed_at", "acknowledged_at",
+              "routed_at", "datetime"}
+
+_DEFAULT_SQL = ("SELECT agent, COUNT(*) AS n FROM sessions "
+                "GROUP BY agent ORDER BY n DESC")
 
 
-def _db_grid(columns, rows, empty_msg="No rows."):
-    """One results grid, styled like the rest of the dashboard's tables."""
+# ─── databases ───────────────────────────────────────────────────────────────
+
+def _databases():
+    from console import auth
+    return [
+        {"key": "capture", "label": "Capture data", "file": storage.DB_PATH},
+        {"key": "login", "label": "Dashboard access",
+         "file": auth.session_db_path()},
+    ]
+
+
+def _db_by_key(key):
+    for db in _databases():
+        if db["key"] == key:
+            return db
+    return _databases()[0]
+
+
+def _basename(path):
+    import os
+    return os.path.basename(path)
+
+
+def _mask_cols_for(db_key):
+    return _MASK_COLS if db_key == "login" else frozenset()
+
+
+# ─── schema reads (read-only PRAGMA) ─────────────────────────────────────────
+
+def _columns(path, table):
+    """Full column info: [{name,type,notnull,dflt,pk}]. Validated name."""
+    try:
+        with storage.connect_readonly(path) as conn:
+            if not _exists(conn, table):
+                return []
+            return [{"name": r["name"], "type": (r["type"] or ""),
+                     "notnull": bool(r["notnull"]),
+                     "dflt": r["dflt_value"], "pk": int(r["pk"])}
+                    for r in conn.execute(f'PRAGMA table_info("{table}")')]
+    except Exception:
+        return []
+
+
+def _indexes(path, table):
+    try:
+        with storage.connect_readonly(path) as conn:
+            if not _exists(conn, table):
+                return []
+            out = []
+            for ix in conn.execute(f'PRAGMA index_list("{table}")'):
+                cols = [c["name"] for c in
+                        conn.execute(f'PRAGMA index_info("{ix["name"]}")')]
+                out.append({"name": ix["name"], "unique": bool(ix["unique"]),
+                            "columns": cols})
+            return out
+    except Exception:
+        return []
+
+
+def _foreign_keys(path, table):
+    try:
+        with storage.connect_readonly(path) as conn:
+            if not _exists(conn, table):
+                return []
+            return [{"from": r["from"], "table": r["table"], "to": r["to"]}
+                    for r in conn.execute(f'PRAGMA foreign_key_list("{table}")')]
+    except Exception:
+        return []
+
+
+def _exists(conn, table):
+    return conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+        (table,)).fetchone() is not None
+
+
+def _tables(db_key):
+    return storage.list_tables(path=_db_by_key(db_key)["file"])
+
+
+def _valid_table(db_key, table):
+    """The table if it exists in this db, else the db's first table (or None)."""
+    names = [t["name"] for t in _tables(db_key)]
+    if table in names:
+        return table
+    return names[0] if names else None
+
+
+# ─── value formatting ────────────────────────────────────────────────────────
+
+def _is_num_type(t):
+    t = (t or "").upper()
+    return any(k in t for k in ("INT", "REAL", "FLOA", "DOUB", "NUM", "DEC"))
+
+
+def _fmt_time(v):
+    try:
+        f = float(v)
+        if f > 1e12:            # milliseconds
+            f /= 1000.0
+        return datetime.fromtimestamp(f).strftime("%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return str(v)
+
+
+def _mask_rows(db_key, rows):
+    """Replace secret columns with the mask string -- done here so the real
+    values never reach a client-side Store."""
+    cols = _mask_cols_for(db_key)
+    if not cols:
+        return rows
+    out = []
+    for r in rows:
+        out.append({k: (_MASK if (k in cols and v not in (None, "")) else v)
+                    for k, v in r.items()})
+    return out
+
+
+# ─── database / table chooser (top chip rows) ────────────────────────────────
+
+def _pick(db_key, table):
+    db_chips = []
+    for db in _databases():
+        sel = db["key"] == db_key
+        db_chips.append(html.Button(
+            className="dbx-pick-db" + (" sel" if sel else ""),
+            id={"type": "dbx-pickdb", "db": db["key"]}, n_clicks=0, children=[
+                html.Span(_basename(db["file"]), className="dbx-pick-file"),
+                html.Span(db["label"], className="dbx-pick-sub"),
+            ]))
+    tbl_chips = []
+    for t in _tables(db_key):
+        sel = t["name"] == table
+        tbl_chips.append(html.Button(
+            className="dbx-pick-table" + (" sel" if sel else ""),
+            id={"type": "dbx-picktbl", "db": db_key, "table": t["name"]},
+            n_clicks=0, children=[
+                t["name"],
+                html.Span(f"{t['rows']:,}", className="dbx-pick-n"),
+            ]))
+    return [
+        html.Div(className="dbx-pick-row",
+                 children=[html.Span("Database", className="dbx-pick-l")] + db_chips),
+        html.Div(className="dbx-pick-row",
+                 children=[html.Span("Table", className="dbx-pick-l")] + tbl_chips),
+    ]
+
+
+# ─── data grid ───────────────────────────────────────────────────────────────
+
+def _skeleton():
+    return html.Div(className="dbx-skel",
+                    children=[html.Div(className="dbx-skel-row") for _ in range(8)])
+
+
+def _cell(c, v, numeric):
+    """One <td>, with null / epoch-time / truncation handling."""
+    is_num = c in numeric
+    if v is None:
+        return html.Td(html.Span("null", className="dbx-null"),
+                       className="num" if is_num else "")
+    if c in _TIME_COLS and v != _MASK:
+        return html.Td(_fmt_time(v), title=str(v),
+                       className="num" if is_num else "")
+    s = str(v)
+    return html.Td(s[:400], title=s if len(s) > 60 else None,
+                   className="num" if is_num else "")
+
+
+def _data_grid(db_key, table, page, search, sort, density, visible):
+    db = _db_by_key(db_key)
+    cols_meta = _columns(db["file"], table)
+    all_cols = [c["name"] for c in cols_meta]
+    numeric = {c["name"] for c in cols_meta if _is_num_type(c["type"])}
+    show = [c for c in all_cols if (not visible or c in visible)] or all_cols
+
+    sort_col = (sort or {}).get("col")
+    desc = bool((sort or {}).get("desc"))
+    res = storage.browse_table(
+        table, limit=PAGE_SIZE, offset=page * PAGE_SIZE,
+        sort_by=sort_col if sort_col in all_cols else None, descending=desc,
+        search=search or None, path=db["file"])
+    if res["error"]:
+        return html.Div(f"{res['error']}", className="dbx-empty"), [], res, show
+
+    rows = _mask_rows(db_key, res["rows"])
+
     if not rows:
-        return html.Div(empty_msg, className="caption", style={"padding": "14px 2px"})
-    # Values are rendered as text: a response blob or a NULL would otherwise
-    # break the table's layout or silently render as blank.
-    safe = [{c: ("" if r.get(c) is None else str(r.get(c))[:400]) for c in columns}
-            for r in rows]
-    return dash_table.DataTable(
-        data=safe,
-        columns=[{"name": c, "id": c} for c in columns],
-        page_action="none",
-        style_cell_conditional=[{"if": {"column_id": c}, "maxWidth": "420px"}
-                                for c in columns],
-        **{**TABLE_STYLE,
-           "style_table": {"overflowX": "auto", "maxHeight": "60vh",
-                           "overflowY": "auto"}},
-    )
+        msg = "No rows match that search." if search else "No rows yet"
+        return html.Div(msg, className="dbx-empty"), [], res, show
 
+    # header: click to sort, arrow shows direction
+    head = []
+    for c in show:
+        arrow = ""
+        if c == sort_col:
+            arrow = html.Span("↓" if desc else "↑", className="dbx-arrow")
+        head.append(html.Th(id={"type": "dbx-h", "col": c}, n_clicks=0,
+                            children=[c, arrow]))
+
+    body = [html.Tr([_cell(c, r.get(c), numeric) for c in show],
+                    id={"type": "dbx-row", "i": i}, n_clicks=0)
+            for i, r in enumerate(rows)]
+
+    grid = html.Div(className="dbx-gridwrap", children=[
+        html.Table(className="dbx-grid" + (" compact" if density == "compact"
+                                           else ""),
+                   children=[html.Thead(html.Tr(head)), html.Tbody(body)])])
+    return grid, rows, res, show
+
+
+def _result_grid(columns, rows, density):
+    """Render a raw SQL result (plain columns, already masked) into the grid."""
+    head = [html.Th(c) for c in columns]
+    body = [html.Tr([_cell(c, r.get(c), ()) for c in columns],
+                    id={"type": "dbx-row", "i": i}, n_clicks=0)
+            for i, r in enumerate(rows)]
+    return html.Div(className="dbx-gridwrap", children=[
+        html.Table(className="dbx-grid" + (" compact" if density == "compact"
+                                           else ""),
+                   children=[html.Thead(html.Tr(head)), html.Tbody(body)])])
+
+
+# ─── schema view ─────────────────────────────────────────────────────────────
+
+def _schema_view(db_key, table):
+    db = _db_by_key(db_key)
+    cols = _columns(db["file"], table)
+    idx = _indexes(db["file"], table)
+    fks = _foreign_keys(db["file"], table)
+    fk_from = {f["from"] for f in fks}
+
+    col_rows = [html.Tr([
+        html.Td(c["name"], className="mono"),
+        html.Td(c["type"] or html.Span("—", className="dbx-dim"), className="mono"),
+        html.Td(html.Span("PK", className="dbx-pk") if c["pk"] else
+                (html.Span("FK", className="dbx-pk") if c["name"] in fk_from else "")),
+        html.Td("NOT NULL" if c["notnull"] else html.Span("null ok",
+                className="dbx-dim")),
+        html.Td(html.Span(str(c["dflt"]), className="mono") if c["dflt"] is not None
+                else html.Span("—", className="dbx-dim")),
+    ]) for c in cols]
+
+    sections = [html.Div(className="dbx-sch-sec", children=[
+        html.Div("Columns", className="dbx-sch-h"),
+        html.Table(className="dbx-sch", children=[
+            html.Thead(html.Tr([html.Th("column"), html.Th("type"),
+                                html.Th("key"), html.Th("null"),
+                                html.Th("default")])),
+            html.Tbody(col_rows)])])]
+
+    sections.append(html.Div(className="dbx-sch-sec", children=[
+        html.Div("Indexes", className="dbx-sch-h"),
+        (html.Table(className="dbx-sch", children=[html.Tbody([
+            html.Tr([html.Td(ix["name"], className="mono"),
+                     html.Td(("unique · " if ix["unique"] else "") +
+                             ", ".join(ix["columns"]), className="mono")])
+            for ix in idx])])
+         if idx else html.Div("No indexes", className="dbx-empty"))]))
+
+    sections.append(html.Div(className="dbx-sch-sec", children=[
+        html.Div("Foreign keys", className="dbx-sch-h"),
+        (html.Table(className="dbx-sch", children=[html.Tbody([
+            html.Tr([html.Td(f["from"], className="mono"),
+                     html.Td(f"→ {f['table']}.{f['to']}", className="mono")])
+            for f in fks])])
+         if fks else html.Div("No foreign keys", className="dbx-empty"))]))
+    return sections
+
+
+# ─── detail panel ────────────────────────────────────────────────────────────
+
+def _detail_panel(row, table):
+    if not row:
+        return None
+    kvs = []
+    for k, v in row.items():
+        disp = "null" if v is None else (_fmt_time(v)
+               if (k in _TIME_COLS and v != _MASK) else str(v))
+        kvs.append(html.Div(className="dbx-kv", children=[
+            html.Div(k, className="dbx-k"),
+            html.Div(disp, className="dbx-v" + (" dbx-null" if v is None else "")),
+        ]))
+    return [
+        html.Div(className="dbx-backdrop", id="dbx-backdrop", n_clicks=0),
+        html.Div(className="dbx-detail", children=[
+            html.Div(className="dbx-detail-h", children=[
+                html.Span(f"{table} · row", className="dbx-detail-title"),
+                html.Button("×", id="dbx-close", className="dbx-close", n_clicks=0),
+            ]),
+            html.Button("copy as JSON", id="dbx-copy", className="dbx-tool",
+                        n_clicks=0, style={"marginBottom": "16px"}),
+            dcc.Store(id="dbx-detail-json", data=json.dumps(row, indent=2,
+                                                            default=str)),
+            html.Div(kvs),
+        ]),
+    ]
+
+
+# ─── SQL terminal ────────────────────────────────────────────────────────────
+
+def _sql_terminal(db_key):
+    title = f"sql · {_basename(_db_by_key(db_key)['file'])} · read-only"
+    return html.Div(id="dbx-sql", className="dbx-sql", children=[
+        html.Button(id="dbx-sql-toggle", className="dbx-sql-chrome", n_clicks=0,
+                    children=[
+            html.Span(className="dbx-dot r"), html.Span(className="dbx-dot y"),
+            html.Span(className="dbx-dot g"),
+            html.Span(title, id="dbx-sql-title", className="dbx-sql-title"),
+            html.Span("run a query ▸", id="dbx-sql-toggletext",
+                      className="dbx-sql-toggle"),
+        ]),
+        html.Div(id="dbx-sql-body", style={"display": "none"}, children=[
+            html.Div(className="dbx-sql-promptrow", children=[
+                html.Span(">", className="dbx-sql-caret"),
+                dcc.Input(id="dbx-sql-input", className="dbx-sql-line",
+                          type="text", value=_DEFAULT_SQL, debounce=False,
+                          spellCheck=False, persistence=True,
+                          persistence_type="local",
+                          placeholder="SELECT …   (Enter to run)"),
+                html.Button("Run", id="dbx-sql-run", className="dbx-run",
+                            n_clicks=0),
+            ]),
+            html.Div("one SELECT, read-only · results fill the grid above",
+                     className="dbx-sql-hint"),
+            html.Div(id="dbx-sql-err"),
+        ]),
+    ])
+
+
+# ─── layout ──────────────────────────────────────────────────────────────────
 
 def build_database_page():
-    tables = storage.list_tables()
-    if not tables:
-        return [html.H3("🗄 Database"),
-                html.Div("No database yet — it is created the first time the "
-                         "honeypot records a session.",
-                         className="caption")]
+    dbs = _databases()
+    default_db = dbs[0]["key"]
+    tabs0 = storage.list_tables(path=dbs[0]["file"])
+    if not tabs0:
+        return [html.Div(className="dbx", children=[html.Div(
+            "No database yet — it is created the first time the honeypot "
+            "records a session.", className="dbx-empty")])]
+    default_table = tabs0[0]["name"]
 
-    default_table = tables[0]["name"]
-    chips = [
-        html.Button(f"{t['name']}  ({t['rows']:,})",
-                    id={"type": "db-table-btn", "table": t["name"]},
-                    className="chip" + (" active" if t["name"] == default_table else ""),
-                    n_clicks=0)
-        for t in tables
-    ]
+    return [html.Div(className="dbx", children=[
+        # persisted selection (localStorage): comes back on the next visit
+        dcc.Store(id="dbx-db", storage_type="local", data=default_db),
+        dcc.Store(id="dbx-table", storage_type="local", data=default_table),
+        dcc.Store(id="dbx-tab", storage_type="local", data="data"),
+        dcc.Store(id="dbx-density", storage_type="local", data="comfortable"),
+        dcc.Store(id="dbx-page", data=0),
+        dcc.Store(id="dbx-sort", data={"col": None, "desc": False}),
+        dcc.Store(id="dbx-rows", data=[]),
+        dcc.Store(id="dbx-detail", data=None),
+        dcc.Store(id="dbx-sqlres", data=None),
 
-    return [
-        html.H3("🗄 Database"),
-        html.Div(f"Read-only view of {os.path.basename(storage.DB_PATH)} — "
-                 f"browse tables or run a SELECT. Writes are rejected by SQLite.",
-                 className="caption"),
+        html.Div(className="dbx-full", children=[
+            html.Div(id="dbx-pick", className="dbx-pick"),
 
-        html.Div(chips, className="chip-row"),
-        dcc.Store(id="db-table-store", data=default_table),
-        dcc.Store(id="db-page-store", data=0),
+            html.Div(className="dbx-main", children=[
+                html.H2(id="dbx-title", className="dbx-title"),
+                html.Div(id="dbx-meta", className="dbx-meta"),
+                html.Div(className="dbx-tabs", children=[
+                    html.Button("Data", id="dbx-tab-data", className="dbx-tab sel",
+                                n_clicks=0),
+                    html.Button("Schema", id="dbx-tab-schema", className="dbx-tab",
+                                n_clicks=0),
+                ]),
 
-        html.Div(style={"display": "flex", "gap": "10px", "alignItems": "center",
-                        "flexWrap": "wrap", "marginBottom": "10px"}, children=[
-            dcc.Input(id="db-search", type="text", debounce=True,
-                      placeholder="search all columns…",
-                      style={"flex": "1", "minWidth": "220px", "padding": "8px 10px",
-                             "fontFamily": "JetBrains Mono, monospace",
-                             "border": f"2px solid {INK}", "borderRadius": "8px"}),
-            html.Button("‹ prev", id="db-prev", className="chip", n_clicks=0),
-            html.Div(id="db-page-label", className="caption",
-                     style={"minWidth": "150px", "textAlign": "center"}),
-            html.Button("next ›", id="db-next", className="chip", n_clicks=0),
+                # toolbar (hidden on the Schema tab)
+                html.Div(id="dbx-toolbar", className="dbx-toolbar", children=[
+                    dcc.Input(id="dbx-search", type="text", debounce=True,
+                              className="dbx-search",
+                              placeholder="search every column…"),
+                    html.Div(className="dbx-colmenu", children=[
+                        html.Button("Columns", id="dbx-colbtn",
+                                    className="dbx-tool", n_clicks=0),
+                        html.Div(id="dbx-colpop", className="dbx-colpop",
+                                 style={"display": "none"}, children=[
+                            dcc.Checklist(id="dbx-cols", options=[], value=[])]),
+                    ]),
+                    html.Button("Compact", id="dbx-density-btn",
+                                className="dbx-tool", n_clicks=0),
+                    html.Div(className="dbx-pager", children=[
+                        html.Span(id="dbx-range"),
+                        html.Button("‹", id="dbx-prev", className="dbx-nav",
+                                    n_clicks=0),
+                        html.Button("›", id="dbx-next", className="dbx-nav",
+                                    n_clicks=0),
+                    ]),
+                ]),
+
+                dcc.Loading(
+                    type="default", color="#F5B21B",
+                    # spinner floats in the middle of the viewport, not wherever
+                    # the wrapped content happens to sit
+                    style={"position": "fixed", "top": "50%", "left": "50%",
+                           "transform": "translate(-50%, -50%)", "zIndex": 1000},
+                    children=html.Div(id="dbx-content", children=_skeleton())),
+
+                _sql_terminal(default_db),
+            ]),
         ]),
 
-        html.Div(id="db-grid"),
+        html.Div(id="dbx-detail-panel"),
+    ])]
 
-        html.Div(className="sidebar-divider", style={"margin": "22px 0 14px"}),
-        html.Div("SQL (read-only)", className="section-header"),
-        dcc.Textarea(id="db-sql", value="SELECT agent, COUNT(*) AS n\nFROM sessions\nGROUP BY agent\nORDER BY n DESC",
-                     style={"width": "100%", "height": "92px", "padding": "10px",
-                            "fontFamily": "JetBrains Mono, monospace", "fontSize": "12.5px",
-                            "border": f"2px solid {INK}", "borderRadius": "8px"}),
-        html.Div(style={"display": "flex", "gap": "10px", "alignItems": "center",
-                        "margin": "10px 0"}, children=[
-            html.Button("▶ Run", id="db-run", className="chip active", n_clicks=0),
-            html.Div(id="db-sql-status", className="caption"),
-        ]),
 
-        # Schema reference for writing queries. Every table, not just the one
-        # being browsed above — the SQL box can hit any of them, and having to
-        # scroll up and click a chip to remember a column name is the whole
-        # reason this is repeated down here.
-        html.Div(className="sql-ref", children=[
-            html.Div("COLUMNS", className="hp-stat-l", style={"marginBottom": "7px"}),
-            *[html.Div(className="sql-ref-row", children=[
-                html.Span(t["name"], className="sql-ref-tbl"),
-                html.Span(" · ".join(
-                    f"{c['name']}" + (" *" if c["pk"] else "")
-                    for c in storage.table_schema(t["name"])), className="sql-ref-cols"),
-            ]) for t in tables],
-            html.Div("* primary key · WHERE filters rows, GROUP BY summarises them",
-                     className="caption",
-                     style={"marginTop": "8px", "fontSize": "0.65rem"}),
-        ]),
+# ─── callbacks ───────────────────────────────────────────────────────────────
 
-        html.Div(id="db-sql-result"),
-    ]
+@app.callback(
+    Output("dbx-pick", "children"),
+    Input("dbx-db", "data"), Input("dbx-table", "data"),
+)
+def _render_pick(db_key, table):
+    return _pick(db_key or "capture", table)
 
 
 @app.callback(
-    Output("db-table-store", "data"),
-    Output("db-page-store", "data"),
-    Output({"type": "db-table-btn", "table": ALL}, "className"),
-    Input({"type": "db-table-btn", "table": ALL}, "n_clicks"),
-    State({"type": "db-table-btn", "table": ALL}, "id"),
+    Output("dbx-db", "data"), Output("dbx-table", "data"),
+    Output("dbx-page", "data"), Output("dbx-sort", "data"),
+    Output("dbx-sqlres", "data"),
+    Input({"type": "dbx-pickdb", "db": ALL}, "n_clicks"),
+    Input({"type": "dbx-picktbl", "db": ALL, "table": ALL}, "n_clicks"),
+    State("dbx-db", "data"), State("dbx-table", "data"),
     prevent_initial_call=True,
 )
-def _db_pick_table(_clicks, ids):
-    # A pattern-matching Input also fires when its components are CREATED,
-    # with n_clicks=0 — so a plain re-render silently re-triggered this and
-    # changed state nobody clicked. Only a real click carries a truthy count.
+def _select(_dbclicks, _tblclicks, cur_db, cur_table):
+    # ignore the n_clicks=0 that fires when a chip row is (re)rendered
     if not (ctx.triggered and ctx.triggered[0].get("value")):
         raise PreventUpdate
-    picked = (ctx.triggered_id or {}).get("table")
-    if not picked:
-        raise PreventUpdate
-    # switching table resets to page 0 — otherwise you land on page 40 of a
-    # table that only has 3 rows and see an empty grid
-    return picked, 0, ["chip active" if i["table"] == picked else "chip"
-                       for i in ids]
+    trig = ctx.triggered_id or {}
+    if trig.get("type") == "dbx-pickdb":
+        db_key = trig.get("db")
+        if db_key == cur_db:
+            raise PreventUpdate
+        tabs = _tables(db_key)
+        table = tabs[0]["name"] if tabs else None
+    else:
+        db_key = trig.get("db")
+        table = trig.get("table")
+        if db_key == cur_db and table == cur_table:
+            raise PreventUpdate
+    # a new selection drops any SQL result so the browsed table shows
+    return db_key, table, 0, {"col": None, "desc": False}, None
 
 
 @app.callback(
-    Output("db-page-store", "data", allow_duplicate=True),
-    Input("db-prev", "n_clicks"),
-    Input("db-next", "n_clicks"),
-    Input("db-search", "value"),
-    State("db-page-store", "data"),
-    State("db-table-store", "data"),
+    Output("dbx-tab", "data"),
+    Output("dbx-tab-data", "className"), Output("dbx-tab-schema", "className"),
+    Output("dbx-toolbar", "style"),
+    Input("dbx-tab-data", "n_clicks"), Input("dbx-tab-schema", "n_clicks"),
+    State("dbx-tab", "data"),
     prevent_initial_call=True,
 )
-def _db_paginate(_p, _n, _search, page, table):
+def _switch_tab(_d, _s, cur):
     trig = ctx.triggered_id
-    if trig == "db-search":
-        return 0                      # a new search starts at the first page
-    page = int(page or 0)
-    if trig == "db-prev":
-        return max(0, page - 1)
-    total = storage.browse_table(table, limit=1)["total"]
-    last = max(0, (total - 1) // DB_PAGE_SIZE)
-    return min(last, page + 1)
+    tab = "schema" if trig == "dbx-tab-schema" else "data"
+    return (tab,
+            "dbx-tab" + (" sel" if tab == "data" else ""),
+            "dbx-tab" + (" sel" if tab == "schema" else ""),
+            {"display": "none"} if tab == "schema" else {})
 
 
 @app.callback(
-    Output("db-grid", "children"),
-    Output("db-page-label", "children"),
-    Input("db-table-store", "data"),
-    Input("db-page-store", "data"),
-    Input("db-search", "value"),
+    Output("dbx-density", "data"), Output("dbx-density-btn", "children"),
+    Input("dbx-density-btn", "n_clicks"), State("dbx-density", "data"),
+    prevent_initial_call=True,
 )
-def _db_render(table, page, search):
+def _toggle_density(_n, cur):
+    nxt = "compact" if cur != "compact" else "comfortable"
+    return nxt, ("Comfortable" if nxt == "compact" else "Compact")
+
+
+@app.callback(
+    Output("dbx-colpop", "style"),
+    Input("dbx-colbtn", "n_clicks"), State("dbx-colpop", "style"),
+    prevent_initial_call=True,
+)
+def _toggle_colmenu(_n, style):
+    hidden = (style or {}).get("display") == "none"
+    return {"display": "block"} if hidden else {"display": "none"}
+
+
+@app.callback(
+    Output("dbx-cols", "options"), Output("dbx-cols", "value"),
+    Input("dbx-db", "data"), Input("dbx-table", "data"),
+)
+def _reset_columns(db_key, table):
+    table = _valid_table(db_key or "capture", table)
+    if not table:
+        return [], []
+    cols = [c["name"] for c in _columns(_db_by_key(db_key)["file"], table)]
+    return [{"label": c, "value": c} for c in cols], cols
+
+
+@app.callback(
+    Output("dbx-page", "data", allow_duplicate=True),
+    Input("dbx-prev", "n_clicks"), Input("dbx-next", "n_clicks"),
+    Input("dbx-search", "value"),
+    State("dbx-page", "data"), State("dbx-table", "data"),
+    State("dbx-db", "data"),
+    prevent_initial_call=True,
+)
+def _paginate(_p, _n, _search, page, table, db_key):
+    trig = ctx.triggered_id
+    if trig == "dbx-search":
+        return 0
+    page = int(page or 0)
+    if trig == "dbx-prev":
+        return max(0, page - 1)
+    table = _valid_table(db_key or "capture", table)
+    total = storage.browse_table(table, limit=1,
+                                 path=_db_by_key(db_key)["file"])["total"]
+    return min(max(0, (total - 1) // PAGE_SIZE), page + 1)
+
+
+@app.callback(
+    Output("dbx-sort", "data", allow_duplicate=True),
+    Output("dbx-page", "data", allow_duplicate=True),
+    Input({"type": "dbx-h", "col": ALL}, "n_clicks"),
+    State("dbx-sort", "data"),
+    prevent_initial_call=True,
+)
+def _sort(_clicks, sort):
+    if not (ctx.triggered and ctx.triggered[0].get("value")):
+        raise PreventUpdate
+    col = (ctx.triggered_id or {}).get("col")
+    sort = sort or {}
+    desc = not sort.get("desc") if sort.get("col") == col else False
+    return {"col": col, "desc": desc}, 0
+
+
+# ─── SQL terminal callbacks ─────────────────────────────────────────────────
+
+@app.callback(
+    Output("dbx-sql-title", "children"),
+    Input("dbx-db", "data"),
+)
+def _sql_title(db_key):
+    return f"sql · {_basename(_db_by_key(db_key or 'capture')['file'])} · read-only"
+
+
+@app.callback(
+    Output("dbx-sql", "className"), Output("dbx-sql-body", "style"),
+    Output("dbx-sql-toggletext", "children"),
+    Input("dbx-sql-toggle", "n_clicks"), State("dbx-sql-body", "style"),
+    prevent_initial_call=True,
+)
+def _toggle_sql(_n, style):
+    opening = (style or {}).get("display") == "none"
+    return ("dbx-sql open" if opening else "dbx-sql",
+            {"display": "block"} if opening else {"display": "none"},
+            "collapse ▾" if opening else "run a query ▸")
+
+
+@app.callback(
+    Output("dbx-sqlres", "data", allow_duplicate=True),
+    Output("dbx-sql-err", "children"),
+    Input("dbx-sql-run", "n_clicks"), Input("dbx-sql-input", "n_submit"),
+    State("dbx-sql-input", "value"), State("dbx-db", "data"),
+    prevent_initial_call=True,
+)
+def _run_sql(_n, _s, sql, db_key):
+    q = (sql or "").strip()
+    if not q:
+        raise PreventUpdate
+    db_key = db_key or "capture"
+    res = storage.run_readonly_query(q, path=_db_by_key(db_key)["file"])
+    if res["error"]:
+        # on error keep the browsed table and show the message inline
+        return None, html.Div(f"⚠ {res['error']}", className="dbx-sql-err")
+    rows = _mask_rows(db_key, res["rows"])
+    return ({"columns": res["columns"], "rows": rows,
+             "truncated": res["truncated"], "db": db_key}, "")
+
+
+# ─── main render ─────────────────────────────────────────────────────────────
+
+@app.callback(
+    Output("dbx-content", "children"),
+    Output("dbx-title", "children"), Output("dbx-meta", "children"),
+    Output("dbx-range", "children"),
+    Output("dbx-prev", "disabled"), Output("dbx-next", "disabled"),
+    Output("dbx-rows", "data"),
+    Input("dbx-db", "data"), Input("dbx-table", "data"), Input("dbx-tab", "data"),
+    Input("dbx-page", "data"), Input("dbx-search", "value"),
+    Input("dbx-sort", "data"), Input("dbx-density", "data"),
+    Input("dbx-cols", "value"), Input("dbx-sqlres", "data"),
+)
+def _render(db_key, table, tab, page, search, sort, density, visible, sqlres):
+    db_key = db_key or "capture"
+
+    # a SQL result takes over the grid until a table chip is clicked
+    if sqlres and tab != "schema":
+        cols = sqlres.get("columns", [])
+        rows = sqlres.get("rows", [])
+        more = " · 1000+ (truncated)" if sqlres.get("truncated") else ""
+        masked = " · secrets masked" if sqlres.get("db") == "login" else ""
+        meta = (f"from SQL · {len(cols)} columns · {len(rows)} rows{more}"
+                f"{masked} · click a table to exit")
+        grid = _result_grid(cols, rows, density)
+        return (grid, "query result", meta, f"{len(rows):,} rows",
+                True, True, rows)
+
+    table = _valid_table(db_key, table)
     if not table:
         raise PreventUpdate
+    db = _db_by_key(db_key)
+    total = storage.browse_table(table, limit=1, path=db["file"])["total"]
+    ncols = len(_columns(db["file"], table))
+    meta = f"{_basename(db['file'])} · {total:,} rows · {ncols} columns"
+
+    if tab == "schema":
+        return (_schema_view(db_key, table), table, meta, "", True, True, [])
+
     page = int(page or 0)
-    res = storage.browse_table(table, limit=DB_PAGE_SIZE,
-                              offset=page * DB_PAGE_SIZE, search=search or None)
-    if res["error"]:
-        return html.Div(f"⚠ {res['error']}", className="caption"), ""
-
+    grid, rows, res, _show = _data_grid(db_key, table, page, search, sort,
+                                        density, visible)
     total = res["total"]
-    pages = max(1, (total + DB_PAGE_SIZE - 1) // DB_PAGE_SIZE)
-    label = f"page {page + 1:,} / {pages:,}  ({total:,} rows)"
-
-    # schema lives under the SQL box now (see .sql-ref) — one copy, next to
-    # where you actually need the column names
-    return (_db_grid(res["columns"], res["rows"],
-                     "No rows match that search." if search else "Table is empty."),
-            label)
+    start = page * PAGE_SIZE + 1 if total else 0
+    end = min((page + 1) * PAGE_SIZE, total)
+    rng = f"{start:,}–{end:,} of {total:,}" if total else "0 of 0"
+    return (grid, table, meta, rng, page <= 0, end >= total, rows)
 
 
 @app.callback(
-    Output("db-sql-result", "children"),
-    Output("db-sql-status", "children"),
-    Input("db-run", "n_clicks"),
-    State("db-sql", "value"),
+    Output("dbx-detail", "data"),
+    Input({"type": "dbx-row", "i": ALL}, "n_clicks"),
+    State("dbx-rows", "data"),
     prevent_initial_call=True,
 )
-def _db_run_sql(_n, sql):
-    res = storage.run_readonly_query(sql)
-    if res["error"]:
-        return html.Div(f"⚠ {res['error']}", className="caption",
-                        style={"color": "#C1443A"}), ""
-    n = len(res["rows"])
-    status = f"{n:,} row{'' if n == 1 else 's'}"
-    if res["truncated"]:
-        status += f" (capped at {storage.MAX_BROWSE_ROWS:,})"
-    return _db_grid(res["columns"], res["rows"], "Query returned no rows."), status
+def _open_detail(_clicks, rows):
+    if not (ctx.triggered and ctx.triggered[0].get("value")):
+        raise PreventUpdate
+    i = (ctx.triggered_id or {}).get("i")
+    if rows is None or i is None or i >= len(rows):
+        raise PreventUpdate
+    return rows[i]
+
+
+@app.callback(
+    Output("dbx-detail", "data", allow_duplicate=True),
+    Input("dbx-close", "n_clicks"), Input("dbx-backdrop", "n_clicks"),
+    prevent_initial_call=True,
+)
+def _close_detail(_c, _b):
+    return None
+
+
+@app.callback(
+    Output("dbx-detail-panel", "children"),
+    Input("dbx-detail", "data"), State("dbx-table", "data"),
+)
+def _render_detail(row, table):
+    return _detail_panel(row, table)
+
+
+# copy-as-JSON: runs in the browser, on the already-masked row JSON
+app.clientside_callback(
+    """
+    function(n, data) {
+        if (n && data) { navigator.clipboard.writeText(data); return "copied"; }
+        return window.dash_clientside.no_update;
+    }
+    """,
+    Output("dbx-copy", "children"),
+    Input("dbx-copy", "n_clicks"),
+    State("dbx-detail-json", "data"),
+    prevent_initial_call=True,
+)
