@@ -440,11 +440,70 @@ def print_status() -> dict:
     return s
 
 
+# ── look: a pixel-art honey jar and a yellow menu ──────────────────────────────
+
+_JAR = [
+    "....LLLLLLLL....",
+    "....LwwwwwwL....",
+    "....GGGGGGGG....",
+    "...GhhdhhhhhG...",
+    "..GhHHdHHHHHhG..",
+    "..GHHHdHHHHHHG..",
+    "..GHHccccccHHG..",
+    "..GHHcxBxBcHHG..",
+    "..GHHcBxBxcHHG..",
+    "..GHHccccccHHG..",
+    "..GHHHHHHHHHHG..",
+    "..GhHHHHHHHHhG..",
+    "...GGGGGGGGGG...",
+]
+_PIXEL = {"L": "#8a5a00", "w": "#c98a00", "G": "#d9a400", "h": "#ffe082",
+          "H": "#ffb300", "d": "#ff9800", "c": "#fff3c4", "B": "#b36b00", "x": "#ffe9a8"}
+_STYLE_ARGS = [("qmark", "fg:#ffc107 bold"), ("question", "bold"),
+               ("pointer", "fg:#ffc107 bold"), ("highlighted", "fg:#ffc107 bold"),
+               ("selected", "fg:#ffd54f"), ("answer", "fg:#ffc107 bold")]
+
+
+def _banner():
+    """The honey jar and title. Plain text when rich is missing or the terminal is narrow."""
+    title = "HONEY ROUTER V2"
+    try:
+        from rich.console import Console
+        from rich.text import Text
+        console = Console()
+    except ImportError:
+        print(f"\n  {title} - Cowrie / On-device / Cloud\n")
+        return
+    if console.width < 62:
+        console.print(f"\n[bold #ffc107]{title}[/]\n")
+        return
+    jar = []
+    for row in _JAR:
+        line = Text()
+        for px in row:
+            line.append("  " if px == "." else "██", style=_PIXEL.get(px, ""))
+        jar.append(line)
+    words = {1: Text(title, style="bold #ffc107"),
+             3: Text("learned routing for the HydraPoT agents", style="#ffe082"),
+             5: Text("Cowrie  ·  On-device  ·  Cloud", style="#ffb300"),
+             8: Text("train once, then pick the cost dial", style="#d9a400"),
+             9: Text("w = 0 ignores price; higher = cheaper", style="#d9a400")}
+    console.print()
+    for i, line in enumerate(jar):
+        console.print(Text("  ") + line + Text("    ") + words.get(i, Text("")))
+    console.print()
+
+
 def _interactive():
     import questionary
+    _banner()
+    style = questionary.Style(_STYLE_ARGS)
+    select = lambda *a, **k: questionary.select(*a, style=style, **k)    # noqa: E731
+    confirm = lambda *a, **k: questionary.confirm(*a, style=style, **k)  # noqa: E731
+    text = lambda *a, **k: questionary.text(*a, style=style, **k)        # noqa: E731
     s = print_status()
 
-    action = questionary.select(
+    action = select(
         "What now?",
         choices=["Train (all phases)", "Review a trained policy",
                  "Show status only", "Quit"]).ask()
@@ -455,19 +514,19 @@ def _interactive():
 
     if action.startswith("Train"):
         if s["state"] in ("trained", "approved", "stale"):
-            if not questionary.confirm(
+            if not confirm(
                     "Already trained — retrain from scratch?", default=False).ask():
                 return
         cfg = dict(DEFAULTS)
-        if questionary.confirm("Change the defaults?", default=False).ask():
-            cfg["p1_epochs"] = int(questionary.text(
+        if confirm("Change the defaults?", default=False).ask():
+            cfg["p1_epochs"] = int(text(
                 "Phase 1 epochs", default=str(cfg["p1_epochs"])).ask())
-            cfg["p2_steps"] = int(questionary.text(
+            cfg["p2_steps"] = int(text(
                 "Phase 2 steps", default=str(cfg["p2_steps"])).ask())
-            cfg["run_rl"] = questionary.confirm(
+            cfg["run_rl"] = confirm(
                 "Run Phase 3 (RL)?", default=True).ask()
             if cfg["run_rl"]:
-                cfg["p3_steps"] = int(questionary.text(
+                cfg["p3_steps"] = int(text(
                     "Phase 3 steps", default=str(cfg["p3_steps"])).ask())
         if not train(cfg):
             print("\n  Training did not finish. Nothing was approved.\n")
@@ -480,7 +539,7 @@ def _interactive():
         return
 
     print("  w weights cost: w=0 ignores price, higher w gets cheaper.\n")
-    choice = questionary.select(
+    choice = select(
         "Approve which omega?",
         choices=[f"w {r['omega']:.2f}  fidelity {r['judge']:.3f}  "
                  f"cost ${r['cost']:.4f}" for r in rows] + ["Approve none"]).ask()
@@ -488,7 +547,7 @@ def _interactive():
         print("\n  Nothing approved.\n")
         return
     omega = float(choice.split()[1])
-    if questionary.confirm(f"Record approval of {which} @ omega={omega}?",
+    if confirm(f"Record approval of {which} @ omega={omega}?",
                            default=True).ask():
         path = approve(which, omega)
         print(f"\n  Approved. Written to {os.path.relpath(path, _ROOT)}")
