@@ -1,0 +1,24 @@
+{
+  "source": "https://benchmarklist.com/model-data/<id>.json",
+  "retrieved": "2026-10-31",
+  "intelligence_index_version": null,
+  "tier": "public JSON (CC BY-NC 4.0, data from benchmarklist.com)",
+  "models": {
+    "cloud": {
+      "slug": "deepseek-deepseek-v4.1-flash",
+      "name": "DeepSeek V4.1 Flash",
+      "is_reasoning_model": true,
+      "vals_terminal_bench_2_1": 90.6,
+      "gpqa_diamond_epoch": 90.9,
+      "price_output_per_million": 1.2
+    },
+    "on_device": {
+      "slug": "qwen-qwen3.5-9b",
+      "name": "Qwen3.5-9B",
+      "is_reasoning_model": false,
+      "vals_terminal_bench_2_1": 29.213483146067396,
+      "gpqa_diamond_epoch": 80.60606060606061,
+      "price_output_per_million": 0.15
+    }
+  }
+}

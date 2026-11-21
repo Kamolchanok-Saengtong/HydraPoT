@@ -126,11 +126,20 @@ EXPLAIN = {
 
 # ── training ────────────────────────────────────────────────────────────────
 
+# What `--train` trains: the benchmark identity with 2 learned numbers (bench+2learn+net).
+# Each agent is described by its GPQA Diamond score plus 2 numbers learned with the
+# networks. The benchmark numbers are pinned in honeyrouter/benchmarklist.seed.json so a
+# first run needs no network and always reads the same dated figures.
+IDENTITY_ARGS = ["--identity", "vector_learn", "--extra-dims", "2"]
+BENCH_AXIS = "gpqa"
+BENCH_SEED = os.path.join(_HERE, "benchmarklist.seed.json")
+
+
 def _phases(cfg: dict) -> list:
     out = [
         ("Phase 1 · IRT predictor", cfg["p1_epochs"], "ep",
          [PY, "-u", os.path.join(_HERE, "predictor.py"),
-          "--epochs", str(cfg["p1_epochs"])]),
+          "--epochs", str(cfg["p1_epochs"])] + IDENTITY_ARGS),
         ("Phase 2 · policy pretraining", cfg["p2_steps"], "step",
          [PY, "-u", os.path.join(_HERE, "routing_policy.py"),
           "--steps", str(cfg["p2_steps"]), "--batch", str(cfg["p2_batch"])]),
@@ -150,6 +159,11 @@ def train(cfg: dict = None, quiet: bool = False) -> bool:
     cfg = {**DEFAULTS, **(cfg or {})}
     phases = _phases(cfg)
     os.makedirs(OUT_DIR, exist_ok=True)
+    # first run: start from the pinned benchmark figures instead of fetching them
+    cache = os.path.join(OUT_DIR, "benchmarklist.json")
+    if not os.path.exists(cache) and os.path.exists(BENCH_SEED):
+        import shutil
+        shutil.copyfile(BENCH_SEED, cache)
 
     try:
         from rich.console import Console
@@ -170,7 +184,8 @@ def train(cfg: dict = None, quiet: bool = False) -> bool:
         pat = re.compile(rf"\b{kind}\s+(\d+)")
         proc = subprocess.Popen(cmd, cwd=_ROOT, stdout=subprocess.PIPE,
                                 stderr=subprocess.STDOUT, text=True, bufsize=1,
-                                env={**os.environ, "PYTHONUNBUFFERED": "1"})
+                                env={**os.environ, "PYTHONUNBUFFERED": "1",
+                                     "HONEYROUTER_BENCH_AXIS": BENCH_AXIS})
         last = 0
         tail = []
         for line in proc.stdout:
