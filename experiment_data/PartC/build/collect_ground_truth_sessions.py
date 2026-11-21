@@ -71,6 +71,20 @@ from build_partB_benchmark import (start_container, reset_container, exec_cmd,
 # unaffected by the shorter ceiling.
 HANG_TIMEOUT = 2
 
+# Programs that prompt and then wait. `docker exec -t` gives the session a
+# terminal, so these find one, print their prompt and sit there -- nothing
+# ever types, and they hold the shell until the kill. `setsid` would deny
+# them the terminal, but it also breaks the tools the PTY exists for
+# (`top: failed tty get`), so the ceiling is simply made short: their output
+# after 1s is the prompt, which is all a real session would have shown
+# before the attacker's next line anyway.
+INTERACTIVE_TIMEOUT = 1
+INTERACTIVE = {"sh", "bash", "dash", "zsh", "csh", "ksh",
+               "su", "sudo", "passwd", "login", "chpasswd",
+               "ssh", "telnet", "ftp", "sftp", "scp",   # scp -t = server mode
+               "python", "python2", "python3", "perl", "ruby", "irb",
+               "mysql", "psql", "ed", "crontab", "visudo"}
+
 # Builtins that end the shell they run in. Every command shares one shell now,
 # so these are run in a subshell instead of taking the session with them.
 SHELL_EXIT = {"exit", "logout"}
@@ -94,12 +108,51 @@ with open(os.path.join(_ROOT, "config.yaml"), encoding="utf-8") as _fh:
     HANGS = set(yaml.safe_load(_fh).get("static_commands") or [])
 
 
+# One command line can hold several programs. `echo pw | passwd | bash` is
+# 1,051 commands of ml4net on its own, and only the LAST of the three is the
+# one that blocks.
+_SEPARATORS = re.compile(r"(?:\|\||&&|[;|&\n])")
+
+
+def _verbs(cmd):
+    """Every program this command line invokes, past any VAR=value prefix.
+
+    Reading only the first token read `LC_ALL=C passwd` as the command
+    "LC_ALL=C" (25,750 ml4net commands carry that prefix), and read
+    `echo pw | passwd` as "echo" -- missing the program that actually waits.
+    Both cost the full default ceiling, or no ceiling at all."""
+    out = []
+    for seg in _SEPARATORS.split(cmd):
+        for tok in seg.split():
+            if "=" in tok.split("/")[0]:
+                continue
+            out.append(os.path.basename(tok))
+            break
+    return out
+
+
+def _verb(cmd):
+    """The first program on the line; "" if there is none."""
+    vs = _verbs(cmd)
+    return vs[0] if vs else ""
+
+
 def _timeout_for(cmd):
-    """Short ceiling for a command whose program will not exit by itself."""
-    toks = cmd.split()
-    if toks and os.path.basename(toks[0]) in HANGS:
-        return HANG_TIMEOUT
-    return None            # None -> exec_cmd's own default
+    """Short ceiling for a command whose program will not exit by itself.
+
+    The TIGHTEST ceiling any program on the line asks for: a pipeline is only
+    as fast as the part that blocks, so `echo pw | passwd` is capped at
+    passwd's 1s, not at echo's default."""
+    best = None
+    for verb in _verbs(cmd):
+        if verb in INTERACTIVE:
+            t = INTERACTIVE_TIMEOUT
+        elif verb in HANGS:
+            t = HANG_TIMEOUT
+        else:
+            continue
+        best = t if best is None else min(best, t)
+    return best            # None -> exec_cmd's own default
 
 
 def _build_oneline(cmds, marker):
@@ -139,8 +192,15 @@ def _build_oneline(cmds, marker):
     builtins = _builtins()
     for i, cmd in enumerate(cmds):
         parts.append(f"__hp {i}")
-        verb = os.path.basename(cmd.split()[0]) if cmd.split() else ""
-        if verb in builtins:
+        verbs = _verbs(cmd)
+        verb = verbs[0] if verbs else ""
+        # EVERY program on the line, not just the first. Testing token 0
+        # alone let `echo pw | passwd | bash` through bare, because `echo`
+        # is a builtin -- and `passwd` then opened /dev/tty and sat there
+        # with no ceiling at all, stalling the run at session 530/1595.
+        # 2,578 ml4net commands start with a builtin and go on to call
+        # something else; 2,381 of those reach an interactive program.
+        if verbs and all(v in builtins for v in verbs):
             # Bare, not through a helper. Dispatching builtins via
             # `__run() { ... eval "$1" ... }` made bash attribute their
             # failures to the function -- "environment: line 0: cd: ..."
