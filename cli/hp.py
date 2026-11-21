@@ -11,6 +11,7 @@ Usage:
     hp --run              # start the honeypot
     hp --dashboard        # open the dashboard
     hp --dashboard-stop   # stop a detached dashboard
+    hp --router           # train and review Honey Router V2 (interactive)
     hp --config           # show the active configuration
     hp --version          # show version
 
@@ -421,6 +422,19 @@ def _dashboard_stop():
     click.echo(f"🛑 Dashboard stopped (pid {pid}).")
 
 
+def _router():
+    """Open the Honey Router V2 interface: train all three phases, review the
+    omega sweep, and record the chosen omega. A first run has no trained model,
+    so it starts by offering to train. Same menu as `python honeyrouter/cli.py`."""
+    try:
+        from honeyrouter import cli as router_cli
+        router_cli._interactive()
+    except ImportError as exc:
+        click.echo(f"Honey Router V2 needs its training packages ({exc.name}). "
+                   f"Install them first.", err=True)
+        raise SystemExit(1)
+
+
 def _version():
     """Show HydraPoT version."""
     click.echo(f"HydraPoT v{VERSION}")
@@ -477,6 +491,8 @@ def _config():
               help="Stop the background dashboard")
 @click.option("--dashboard-passwd", "do_dashboard_passwd", is_flag=True,
               help="Create or rotate the dashboard's operator account")
+@click.option("--router", "do_router", is_flag=True,
+              help="Train and review Honey Router V2 (interactive menu)")
 @click.option("--config", "do_config", is_flag=True,
               help="Show the active configuration")
 @click.option("--version", "do_version", is_flag=True,
@@ -491,7 +507,7 @@ def _config():
               help="--dashboard: run in this terminal (blocking) instead of the background")
 @click.pass_context
 def main(ctx, do_init, do_run, do_dashboard, do_dashboard_stop,
-         do_dashboard_passwd, do_config, do_version, host, port, debug,
+         do_dashboard_passwd, do_router, do_config, do_version, host, port, debug,
          foreground):
     """HydraPoT: Multi Agent Honeypot System
 
@@ -503,6 +519,7 @@ def main(ctx, do_init, do_run, do_dashboard, do_dashboard_stop,
         ("--dashboard", do_dashboard),
         ("--dashboard-stop", do_dashboard_stop),
         ("--dashboard-passwd", do_dashboard_passwd),
+        ("--router", do_router),
         ("--config", do_config),
         ("--version", do_version),
     ]
@@ -534,6 +551,8 @@ def main(ctx, do_init, do_run, do_dashboard, do_dashboard_stop,
         _dashboard_stop()
     elif action == "--dashboard-passwd":
         _dashboard_passwd()
+    elif action == "--router":
+        _router()
     elif action == "--config":
         _config()
     elif action == "--version":

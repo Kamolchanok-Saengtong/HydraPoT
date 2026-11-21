@@ -304,6 +304,7 @@ action flag may be given per invocation.
 | `hp --run` | Start the honeypot |
 | `hp --dashboard` | Start the dashboard in the background |
 | `hp --dashboard-stop` | Stop the background dashboard |
+| `hp --router` | Train and review Honey Router V2 (interactive menu) |
 | `hp --config` | Show the active configuration |
 | `hp --version` | Show the version |
 
@@ -388,6 +389,7 @@ action flag may be given per invocation.
 | `hp --run` | Start the honeypot |
 | `hp --dashboard` | Start the dashboard in the background |
 | `hp --dashboard-stop` | Stop the background dashboard |
+| `hp --router` | Train and review Honey Router V2 (interactive menu) |
 | `hp --config` | Show the active configuration |
 | `hp --version` | Show the version |
 
