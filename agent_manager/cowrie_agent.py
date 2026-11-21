@@ -52,7 +52,9 @@ class CowrieAgent:
         # attacker to notice something is wrong. Callers check this and fall
         # back to the on-device model instead.
         self.available = True
-        
+        # Bumped on every (re)connect so state mirrors can detect a fresh shell
+        self.generation = 0
+
     # ── connection ───────────────────────────────────────────────────────────
     def _connect(self):
         # Pessimistic: assume unavailable until the shell is actually up. If
@@ -80,6 +82,7 @@ class CowrieAgent:
         if cleaned_lines:
             self._original_prompt = cleaned_lines[-1].strip()
         self.available = True
+        self.generation += 1    # fresh shell — mirrors must rebuild
         # clear the one-shot outage warning so a future outage is reported
         self._history_warned = False
         print(f"[cowrie_agent] Connected. Original prompt: {self._original_prompt!r}")

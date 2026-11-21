@@ -324,6 +324,7 @@ def main():
             hostname        = config.honeypot.hostname,
             os_banner       = config.honeypot.os,
             max_sessions    = getattr(config.honeypot, "max_sessions", 0),
+            ssh_version     = getattr(config.honeypot, "ssh_version", None),
         )
     except KeyboardInterrupt:
         print("\n[HydraPot] Shutting down...")

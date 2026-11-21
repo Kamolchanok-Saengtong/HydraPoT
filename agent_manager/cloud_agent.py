@@ -7,6 +7,7 @@ import requests
 from openai import OpenAI
 
 from core.config_loader import CLOUD_API_KEY_ENV
+from core.key_rotation import KeyPool, is_quota_error
 
 # Safety-net for "chatty" models. A real terminal NEVER emits a lone meta-note
 # like "<nothing>" or "(no output)" or "(empty response - command succeeded)"
@@ -50,12 +51,15 @@ class CloudAgent:
         self.max_tokens  = max_tokens
 
         self.api_key_env = CLOUD_API_KEY_ENV
-        api_key = os.environ.get(CLOUD_API_KEY_ENV)
-        if not api_key:
+        # API_KEY_* pool, falling back to the single CLOUD_AGENT_API_KEY.
+        # send_with_usage() rotates off a key when it hits a quota error.
+        self._pool = KeyPool("API_KEY", fallback_env=CLOUD_API_KEY_ENV)
+        if len(self._pool) == 0:
             raise EnvironmentError(
-                f"[CloudAgent] API key env var '{CLOUD_API_KEY_ENV}' is not set. "
-                f"Run: export {CLOUD_API_KEY_ENV}=sk-..."
+                f"[CloudAgent] No API key set. Add API_KEY_1=… to .env, "
+                f"or export {CLOUD_API_KEY_ENV}=sk-..."
             )
+        api_key = self._pool.current()
         self._api_key = api_key
         # None, not a fallback URL: an empty base_url means "use the provider's
         # own endpoint", which is what the SDK does with None. Defaulting to
@@ -172,10 +176,6 @@ class CloudAgent:
             usage (shouldn't happen based on testing, but handled safely).
         """
         url = f"{self._base_url}/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {self._api_key}",
-            "Content-Type": "application/json",
-        }
         payload = {
             "model":       self.model,
             "temperature": self.temperature,
@@ -197,12 +197,48 @@ class CloudAgent:
         resp = None
         delay = 2.0
         last_err = "unknown"
-        for attempt in range(4):
+        # Clean latency: only the successful request. Proxy 502s + their backoff
+        # waits are a measurement artefact, not real inference time, so they are
+        # excluded (callers read last_request_ms instead of wall-clock).
+        self.last_request_ms = None
+        _MAX_ATTEMPTS = 6                 # patient — the PSU proxy 502s under load
+        for attempt in range(_MAX_ATTEMPTS):
+            key = self._pool.current()
+            headers = {
+                "Authorization": f"Bearer {key}",
+                "Content-Type": "application/json",
+            }
             try:
+                t0 = time.time()
                 resp = requests.post(url, headers=headers, json=payload, timeout=120)
                 if resp.status_code == 200:
-                    break
+                    # The proxy sometimes answers 200 with content=None AND no
+                    # usage object at all — a silent failure, not a real empty
+                    # answer (a real empty answer still carries a usage object).
+                    # Retry it like a 502, or it gets recorded as a fake blank
+                    # response that corrupts the fidelity data.
+                    try:
+                        _body = resp.json()
+                        _msg = _body["choices"][0]["message"]
+                        _proxy_failed = _msg.get("content") is None and not _body.get("usage")
+                    except (ValueError, KeyError, IndexError, TypeError):
+                        _proxy_failed = False
+                    if not _proxy_failed:
+                        self.last_request_ms = (time.time() - t0) * 1000
+                        break
+                    last_err = "proxy returned null content with no usage"
+                    if attempt < _MAX_ATTEMPTS - 1:
+                        print(f"[CloudAgent] {last_err} — waiting {delay:.0f}s "
+                              f"(retry {attempt + 1}/{_MAX_ATTEMPTS - 1})")
+                        time.sleep(delay)
+                        delay = min(delay * 2, 30)
+                    resp = None
+                    continue
                 last_err = f"HTTP {resp.status_code}"
+                # Key out of quota → switch to the next donated key, retry now.
+                if is_quota_error(resp.status_code, resp.text) and self._pool.rotate(key):
+                    print("[CloudAgent] key quota hit — rotating to next key")
+                    continue
                 if resp.status_code not in _RETRY_STATUS:
                     print(f"[CloudAgent] Error: HTTP {resp.status_code} - {resp.text[:200]}")
                     return "", None
@@ -212,10 +248,11 @@ class CloudAgent:
             except requests.exceptions.RequestException as e:
                 last_err = str(e)[:120]
                 resp = None
-            if attempt < 3:
-                print(f"[CloudAgent] {last_err} — retry {attempt + 1}/3 in {delay:.0f}s")
+            if attempt < _MAX_ATTEMPTS - 1:
+                print(f"[CloudAgent] {last_err} — waiting {delay:.0f}s "
+                      f"(retry {attempt + 1}/{_MAX_ATTEMPTS - 1}, not counted as latency)")
                 time.sleep(delay)
-                delay = min(delay * 2, 20)
+                delay = min(delay * 2, 30)
 
         if resp is None or resp.status_code != 200:
             # Do NOT return a bare "" — that would be scored as a real (blank)
@@ -242,6 +279,7 @@ class CloudAgent:
 
         usage_data = data.get("usage") or {}
         cost_details = usage_data.get("cost_details") or {}
+        comp_details = usage_data.get("completion_tokens_details") or {}
 
         cost = usage_data.get("cost")
         if cost is None:
@@ -265,6 +303,9 @@ class CloudAgent:
             "cache_miss_tokens":       usage_data.get("prompt_cache_miss_tokens"),
             "cost":                   cost,
             "upstream_inference_cost": cost_details.get("upstream_inference_cost"),
+            "prompt_cost":             cost_details.get("upstream_inference_prompt_cost"),
+            "completion_cost":         cost_details.get("upstream_inference_completions_cost"),
+            "reasoning_tokens":        comp_details.get("reasoning_tokens"),
         } if usage_data else None
 
         return text, usage
