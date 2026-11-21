@@ -1752,6 +1752,47 @@ class RuleCore:
         self._ended = []
         return True, "\n".join(lines)
 
+    def _cmd_crontab(self, argv):
+        """`crontab -l`, `-r`, and installing a file, kept as the account's crontab file."""
+        user = self.username
+        path = f"/var/spool/cron/crontabs/{user}"
+        args = argv[1:]
+        if args == ["-l"] or args == ["-r"]:
+            data = self.inst.get("content", path)
+            if self._kind(path) != "file" or data is None:
+                self.status = 1
+                return True, f"no crontab for {user}"
+            if args == ["-r"]:
+                self.reg.delete_record(path)
+                self.changed = True
+                self._replay(f"rm -f {shlex.quote(path)}")
+                return True, ""
+            return True, data.decode("utf-8", "replace").rstrip("\n")
+        if len(args) == 1 and not args[0].startswith("-"):
+            src = self._resolve(args[0])
+            real = self._target(src) if self._kind(src) else None
+            data = self.inst.get("content", real) if real else None
+            if real is None:
+                if self._missing(src):
+                    self.status = 1
+                    return True, f"{args[0]}: No such file or directory"
+                return False, None
+            if data is None:
+                return False, None
+            folder = posixpath.dirname(path)
+            if self._kind(folder) != "dir":
+                self._cmd_mkdir(["mkdir", "-p", folder])
+            add, remove = self._fresh(path, "file", 0o600, content=data), set()
+            old = self._kind(path)
+            if old is not None:
+                remove |= {f for f in self.inst.facts() if f.key == path and f.rel != "listed"}
+            if not self.reg.commit(add, remove, why="crontab install"):
+                return False, None
+            self.changed = True
+            self._replay(f"cp {shlex.quote(real)} {shlex.quote(path)}")
+            return True, ""
+        return False, None
+
     def _patch_ps(self, output: str) -> str:
         procs = sorted(self.inst.keys("proc"))
         lines = output.splitlines()
