@@ -69,6 +69,7 @@ ARMS = ("cowrie", "on_device", "cloud")
 # function), so the stage modules stay unimported until main() has set
 # HONEYROUTER_OUT and they can resolve their paths to this run's folder.
 from honeyrouter import cli as HRCLI                        # noqa: E402
+from honeyrouter.names import POINT_IDENTITIES, canonical_identity   # noqa: E402
 
 DEFAULTS = HRCLI.DEFAULTS
 STAGES = {
@@ -447,13 +448,17 @@ def main():
                     default=DEFAULTS["run_rl"], help="skip phase 3 (PPO)")
     ap.add_argument("--no-mixup", dest="mixup", action="store_false",
                     default=DEFAULTS["mixup"], help="phase 3 without mixup")
-    ap.add_argument("--identity", choices=("irt", "vector", "vector_irt"),
+    ap.add_argument("--identity", type=canonical_identity,
+                    choices=("irt", "vector", "vector_irt", "vector_learn"),
                     default="irt",
                     help="phase 1 ability source. irt: learned from the "
                          "replay, per command (the paper). vector: one "
                          "published figure per arm, read not learned. "
                          "vector_irt: paper's trained head, identity FROZEN to "
-                         "the benchmark score.")
+                         "the benchmark score. vector_learn: same heads, and "
+                         "the identity starts at the benchmark score but is "
+                         "trained with them. Labels also work: paper-128, "
+                         "bench-fixed, bench-fixed+net, bench-learn+net.")
     ap.add_argument("--axis", default="terminal_bench",
                     help="--identity vector only: which published benchmark "
                          "becomes each arm's ability. terminal_bench "
@@ -497,7 +502,8 @@ def main():
     # benchmark at all, and adding the key unconditionally would make every
     # existing folder's config.json look like a different run.
     os.environ["HONEYROUTER_BENCH_AXIS"] = args.axis
-    if args.identity in ("vector", "vector_irt") and args.axis != ap.get_default("axis"):
+    if (args.identity == "vector" or args.identity in POINT_IDENTITIES) \
+            and args.axis != ap.get_default("axis"):
         cfg["axis"] = args.axis
     h = config_hash(cfg)
     # Only the hyperparameters have a paper default to compare against;

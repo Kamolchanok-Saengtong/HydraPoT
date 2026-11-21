@@ -62,6 +62,7 @@ sys.path.insert(0, os.path.dirname(_HERE))
 
 from honeyrouter.action import AGENTS                    # noqa: E402
 from honeyrouter.embeddings import embed                 # noqa: E402
+from honeyrouter.names import POINT_IDENTITIES, canonical_identity   # noqa: E402
 from honeyrouter.sessions import load_sessions           # noqa: E402
 
 # HONEYROUTER_OUT redirects every artifact this stage reads or writes, so a
@@ -470,8 +471,11 @@ class Predictor(nn.Module):
         # mu, and collapse the posterior to a point (sigma -> 0) so I_k is
         # deterministic -- there is no q(I_k) to regularise, so KL is dropped
         # (train() sets beta=0). Only the backbone and heads train.
-        if identity == "vector_irt":
-            self.mu.requires_grad_(False)
+        # vector_learn: the same, except mu is NOT frozen. It starts at the
+        # benchmark score and is trained together with the heads.
+        if identity in POINT_IDENTITIES:
+            if identity == "vector_irt":
+                self.mu.requires_grad_(False)
             with torch.no_grad():
                 self.rho.fill_(-20.0)                 # softplus(-20) ~ 2e-9 ~ 0
             self.rho.requires_grad_(False)
@@ -492,7 +496,7 @@ class Predictor(nn.Module):
         vector_irt pins the identity: mu is the fixed benchmark vector, so it is
         returned as-is with no reparam noise.
         """
-        if not train or self.identity == "vector_irt":
+        if not train or self.identity in POINT_IDENTITIES:
             return self.mu
         return self.mu + self.sigma() * torch.randn_like(self.mu)
 
@@ -520,7 +524,7 @@ class Predictor(nn.Module):
         """
         # vector_irt has no learned posterior (mu fixed, sigma -> 0), so there
         # is nothing to regularise; also avoids a huge log(sigma) term.
-        if self.identity == "vector_irt":
+        if self.identity in POINT_IDENTITIES:
             return torch.zeros((), device=self.mu.device)
         s, mu = self.sigma(), self.mu
         return (0.5 * (s ** 2 + mu ** 2 - 1.0 - 2.0 * torch.log(s))
@@ -587,14 +591,16 @@ def train(dim=128, epochs=10, lr=1e-3, batch=256, lr_decay=0.95,
     # vector_irt: paper Phase 1, but identity FROZEN to the benchmark vector.
     # mu comes from benchmark_identity (1-d score per arm), the KL is dropped
     # (no posterior), and only the backbone + f/g heads train on judge labels.
-    if identity == "vector_irt":
+    if identity in POINT_IDENTITIES:
         init_mu, _p, _prof, bench_src = benchmark_identity()
         dim = int(init_mu.shape[1])
         w_kl = 0.0
         model = Predictor(E.shape[1], len(AGENTS), dim=dim,
                           identity=identity, init_mu=init_mu)
         if verbose:
-            print(f"[vector_irt] identity frozen to benchmark score (dim={dim}); "
+            how = ("frozen to" if identity == "vector_irt"
+                   else "starts at the benchmark score and is LEARNED:")
+            print(f"[{identity}] identity {how} benchmark score (dim={dim}); "
                   f"training f/g heads on judge labels, KL off")
     else:
         model = Predictor(E.shape[1], len(AGENTS), dim=dim, identity=identity)
@@ -727,13 +733,18 @@ def main():
     ap.add_argument("--w-pair", type=float, default=1.0)
     ap.add_argument("--w-kl", type=float, default=None,
                     help="KL weight beta; default 1/N (ELBO amortisation)")
-    ap.add_argument("--identity", choices=("irt", "vector", "vector_irt"),
+    ap.add_argument("--identity", type=canonical_identity,
+                    choices=("irt", "vector", "vector_irt", "vector_learn"),
                     default="irt",
                     help="irt: learn each arm's ability from the replay (the "
                          "paper). vector: one published figure per arm, read "
                          "not learned -- same for every command. vector_irt: "
                          "the paper's trained f/g heads, but the identity is "
-                         "FROZEN to that benchmark score instead of learned.")
+                         "FROZEN to that benchmark score instead of learned. "
+                         "vector_learn: the same heads, and the identity starts "
+                         "at that benchmark score but is trained with them. "
+                         "Labels also work: paper-128, bench-fixed, "
+                         "bench-fixed+net, bench-learn+net.")
     ap.add_argument("--refresh-benchmarks", action="store_true",
                     help="re-pull the scores from benchmarklist.com before "
                          "training, instead of reusing the cached copy")
