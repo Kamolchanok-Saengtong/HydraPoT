@@ -159,11 +159,10 @@ def train(cfg: dict = None, quiet: bool = False) -> bool:
     cfg = {**DEFAULTS, **(cfg or {})}
     phases = _phases(cfg)
     os.makedirs(OUT_DIR, exist_ok=True)
-    # first run: start from the pinned benchmark figures instead of fetching them
-    cache = os.path.join(OUT_DIR, "benchmarklist.json")
-    if not os.path.exists(cache) and os.path.exists(BENCH_SEED):
+    # always start from the pinned benchmark figures: reproducible, no network fetch
+    if os.path.exists(BENCH_SEED):
         import shutil
-        shutil.copyfile(BENCH_SEED, cache)
+        shutil.copyfile(BENCH_SEED, os.path.join(OUT_DIR, "benchmarklist.json"))
 
     try:
         from rich.console import Console
