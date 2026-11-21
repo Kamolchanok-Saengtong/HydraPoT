@@ -180,6 +180,23 @@ CREATE TABLE IF NOT EXISTS runtime_counters (
     n        INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (instance, name, hour)
 );
+
+-- The System State Register's change log (shell/register.py): one row per
+-- fact added (+) or removed (-), plus refused changes (!) and the seed. seq
+-- matches sessions.seq; -1 is the profile before the first command.
+-- Replaying the rows in id order rebuilds the state at any command.
+CREATE TABLE IF NOT EXISTS state_log (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    instance   TEXT NOT NULL DEFAULT 'default',
+    session_id TEXT NOT NULL,
+    seq        INTEGER NOT NULL,
+    op         TEXT NOT NULL,
+    rel        TEXT,
+    key        TEXT,
+    value      TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_state_log_session
+    ON state_log (instance, session_id, seq);
 """
 
 
@@ -224,6 +241,29 @@ def insert_command(entry: dict, path: str = DB_PATH):
             f"VALUES ({','.join('?' * len(COLUMNS))})",
             tuple(row.get(c) for c in COLUMNS),
         )
+
+
+def insert_state_rows(rows: list, path: str = DB_PATH):
+    """Append a command's state-change rows (see the state_log table)."""
+    with connect(path) as conn:
+        conn.executemany(
+            "INSERT INTO state_log (instance, session_id, seq, op, rel, key, value) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [(r.get("instance") or "default", str(r["session_id"]), r["seq"],
+              r["op"], r.get("rel"), json.dumps(r.get("key")),
+              json.dumps(r.get("value"))) for r in rows])
+
+
+def state_rows(session_id: str, instance: str = "default",
+               path: str = DB_PATH) -> list:
+    """One session's state-change rows in write order, ready for replay."""
+    with connect(path) as conn:
+        return [{"seq": r["seq"], "op": r["op"], "rel": r["rel"],
+                 "key": json.loads(r["key"]), "value": json.loads(r["value"])}
+                for r in conn.execute(
+                    "SELECT seq, op, rel, key, value FROM state_log "
+                    "WHERE instance=? AND session_id=? ORDER BY id",
+                    (instance, str(session_id)))]
 
 
 def query_all(path: str = DB_PATH, columns: tuple = None) -> list:

@@ -464,6 +464,9 @@ class Config:
         "ft_surcharge_thb_per_unit": 0.1623,
         "vat_rate": 0.07,
     })
+    # The fake filesystem plugins/cowrie_fs.py builds (base/out pickle paths,
+    # relative to plugins/). The world-state reads the same file Cowrie serves.
+    filesystem: dict = field(default_factory=lambda: {"out": "cowrie/fs.pickle"})
     system_state: dict = field(default_factory=lambda: {
         "pre_installed": [
             "coreutils", "bash", "ssh", "apt", "apt-get", "dpkg",
@@ -702,6 +705,7 @@ def load_config(path: str = CONFIG_PATH) -> Config:
         logging=logging_,
         static_commands=static_cmds,
         system_state=system_state,
+        filesystem=raw.get("filesystem") or Config().filesystem,
         power_tariff=power_tariff,
         cost_model=cost_model,
         aggregation=aggregation,

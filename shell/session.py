@@ -34,11 +34,12 @@ config and the two model agents arrive as ARGUMENTS. They were module globals in
 main.py, read across a 1,500-line closure; passing them makes the dependency
 visible and lets a test build a session without importing main.
 """
+import json
 import os
 import re
 import time
 import random
-from datetime import datetime
+from datetime import datetime, timezone
 
 from agent_manager.cowrie_agent import CowrieAgent
 from agent_manager.static_handler import is_static, dispatch_static
@@ -56,6 +57,39 @@ from shell.cowrie_link import CowrieLink
 from shell.telemetry import Telemetry
 from shell.routing import Routing
 from shell.execution import Executor
+from shell.register import Register, SystemState
+from shell.gate import CONTRACT, Gate
+from shell.procfs import Generator
+from shell.rulecore import RuleCore
+from shell import compound
+from shell.profile import Materializer, Profile
+
+# Candidates sampled per LLM turn before the gate falls back (Alg. 1, k)
+GATE_CANDIDATES = 2
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _load_profile(config) -> Profile:
+    """The filesystem design Cowrie serves (config.yaml filesystem.out)."""
+    out = (getattr(config, "filesystem", None) or {}).get("out")
+    if not out:
+        return Profile()
+    pickle_path = os.path.join(_PROJECT_ROOT, "plugins", out)
+    return Profile(pickle_path, os.path.join(os.path.dirname(pickle_path), "honeyfs"))
+
+
+def _load_processes(config) -> list:
+    """The base process table named by config.yaml system_state.process_list."""
+    path = (config.system_state or {}).get("process_list")
+    if not path:
+        return []
+    if not os.path.isabs(path):
+        path = os.path.join(_PROJECT_ROOT, path)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return json.load(fh)["processes"]
+    except (OSError, ValueError, KeyError):
+        return []
 
 
 def _state_snapshot(state: dict, content_chars: int = 2000) -> dict:
@@ -109,7 +143,9 @@ def parse_command(cmd: str):
     command was invoked.
     """
     text = cmd.strip()
-    actual_cmd = text[5:].strip() if text.startswith("sudo ") else text
+    # `sudo -l` / `sudo -u x cmd` keep their prefix: stripping it left "-l" as the command
+    actual_cmd = (text[5:].strip() if text.startswith("sudo ")
+                  and not text[5:].lstrip().startswith("-") else text)
     actual_base = actual_cmd.split()[0] if actual_cmd else ""
     lookup_base = os.path.basename(actual_base)     # full path -> bare name
 
@@ -162,19 +198,27 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
     if plugins:
         plugins.apply_fi_rules(fi_manager.scorer)
 
-    # Per-session state; dict(...) copies avoid leaking into the shared config.
-    SYSTEM_STATE = {
-        "cwd":       "/root",
-        "files":     dict(config.system_state.get("starting_files", {})),
-        "versions":  {},
-        "installed": {},
-        "services":  {},
-        "users":     {u: dict(v) for u, v in config.system_state.get("users", {}).items()},
-        "shadow":    dict(config.system_state.get("shadow", {})),
+    # Per-session state. Files and cwd live in the register (shell/register.py),
+    # which checks every change and logs it; dict(...) copies avoid leaking
+    # into the shared config.
+    register = Register(seed=os.urandom(16))
+    SYSTEM_STATE = SystemState(
+        register,
+        versions={},
+        installed={},
+        services={},
+        users={u: dict(v) for u, v in config.system_state.get("users", {}).items()},
+        shadow=dict(config.system_state.get("shadow", {})),
         # Shell variables the attacker set. Written by StateTracker._assign,
         # read by the agent prompt -- see that method for why.
-        "vars":      {},
-    }
+        vars={},
+    )
+    register.load_profile(config.system_state.get("starting_files", {}),
+                          config.system_state.get("known_dirs", []))
+    processes = _load_processes(config)
+    register.start_session(src_ip, username,
+                           pid_floor=max([p["PID"] for p in processes] or [1000]))
+    SYSTEM_STATE["cwd"] = "/root"
 
     # Unknown login → conventional /home/<user> so `cd ~` and `pwd` look real.
     if username not in SYSTEM_STATE["users"]:
@@ -268,6 +312,47 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
 
     routing = Routing(SYSTEM_STATE, fs, sw)
     executor = Executor(SYSTEM_STATE, fs, config.honeypot.arch)
+    gate = Gate(resolve=fs.resolve)
+    generator = Generator(register.seed, hostname=config.honeypot.hostname,
+                          epoch=datetime.now(timezone.utc))
+    profile = _load_profile(config)
+    materializer = Materializer(register, profile, generator,
+                                virtual=lambda p: fs.virtual_file(p) if fs.is_virtual(p) else None,
+                                users={**profile.users(),
+                                       **{int(v.get("uid", 0)): u for u, v in
+                                          SYSTEM_STATE["users"].items()}})
+    rulecore = RuleCore(register, fs, hostname=config.honeypot.hostname,
+                        users=lambda: SYSTEM_STATE["users"],
+                        variables=SYSTEM_STATE["vars"], username=username,
+                        processes=processes, kernel=config.honeypot.kernel,
+                        materializer=materializer)
+    materializer.live = rulecore.live_lines
+
+    def _gated_llm(agent_obj, system_prompt, user_prompt, cmd, source):
+        """Ask for (output, effects, claims); commit the first consistent one."""
+        contract = system_prompt + "\n\n" + CONTRACT
+
+        def candidates():
+            for _ in range(GATE_CANDIDATES):
+                yield _llm_send(agent_obj, contract, user_prompt, cmd=cmd)
+
+        output, successor = gate.turn(register.inst, cmd, candidates(), source)
+        register.adopt(successor)
+        register.note("gate", gate.log[-1])
+        return output
+
+    _READERS = ("cat", "head", "tail", "grep", "stat", "wc", "du", "ls", "less", "more")
+
+    def _materialize(cmd_text: str) -> None:
+        """Alg. 1 line 10: complete never-seen paths a read touches."""
+        parts = cmd_text.split()
+        if not parts or parts[0] not in _READERS or set(cmd_text) & set("|;<>`$"):
+            return
+        args = [a for a in parts[1:] if not a.startswith("-")]
+        if parts[0] == "grep":
+            args = args[1:]                  # the first operand is the pattern
+        for arg in args:
+            materializer.ensure(fs.resolve(arg))
 
     def _needs_llm(cmd: str, cmd_base: str, state: dict) -> bool:
         return routing.needs_llm(cmd, cmd_base)
@@ -476,8 +561,20 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
         session_dir=getattr(getattr(config, "logging", None), "session_dir", ""),
         tag=mitre_tag,
         export=(plugins.export_event if plugins else None))
+    register.writer = telemetry.record_state
 
-    def _finish(cmd, agent, output, fi_score, t_start, streamed=False):
+    def _finish(cmd, agent, output, fi_score, t_start, streamed=False, trusted=False):
+        # Gate every non-deterministic answer before the attacker sees it.
+        # `trusted` answers are computed from the register itself (rule core,
+        # Layer 0): the paper's Algorithm 1 sends only the LLM through the gate.
+        # Streamed output has already been sent; forced arms measure the raw agent.
+        if not streamed and not handle.forced and not trusted:
+            output = rulecore.patch(parse_command(cmd)[0], output or "")
+            output, successor = gate.check_text(
+                register.inst, parse_command(cmd)[0], output or "", agent,
+                before=register.before)
+            register.adopt(successor)
+            register.note("gate", gate.log[-1])
         handle.last_agent  = agent
         handle.state_size  = len(SYSTEM_STATE["files"]) + len(SYSTEM_STATE["installed"])
         handle.state_snapshot = _state_snapshot(SYSTEM_STATE)
@@ -489,6 +586,7 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
                            method=getattr(handle, "fi_method", None))
         session.append({"cmd": cmd, "agent": agent, "response": output})
         telemetry.record(cmd, agent, output, fi_score, latency_ms)
+        register.flush()
         return ("", "") if streamed else (output, "")
 
     # ── main dispatch ─────────────────────────────────────────────────────
@@ -562,7 +660,7 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
             return _finish(cmd, "on_device", output, fi_score, t_start)
         return None
 
-    def handle(cmd: str, write_fn, read_fn, force_agent: str | None = None):
+    def _handle_one(cmd: str, write_fn, read_fn, force_agent: str | None = None):
         if cmd.strip() == "fi status":
             fi_manager.status()
             return "", ""
@@ -571,6 +669,11 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
         output   = ""
         streamed = False
         handle.last_usage = None
+        # Tag every state change this command makes with its sequence number
+        register.begin(len(session), cmd)
+        handle.forced = force_agent is not None
+        if force_agent is None and cmd.strip().startswith("sudo "):
+            rulecore.note_sudo(cmd.strip()[5:])
 
         actual_cmd, actual_base, lookup_base, from_busybox = parse_command(cmd)
         fi_score, fi_method = fi_manager.scorer.score(actual_cmd)
@@ -798,26 +901,6 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
             else:
                 return _finish(cmd, "on_device", "", fi_score, t_start)
 
-        # ── find — return plausible results for common attacker queries ───
-        if actual_base == "find" and not re.search(r'--version\b', cmd):
-            if re.search(r'-perm\s+-?4000', actual_cmd):
-                output = "\n".join([
-                    "/usr/bin/sudo", "/usr/bin/passwd", "/usr/bin/su",
-                    "/usr/bin/newgrp", "/usr/bin/gpasswd", "/usr/bin/chsh",
-                    "/usr/bin/chfn", "/bin/mount", "/bin/umount", "/bin/ping",
-                ])
-                return _finish(cmd, "cowrie", output, fi_score, t_start)
-            if re.search(r'-name\s+["\']?\*\.conf', actual_cmd):
-                output = "\n".join([
-                    "/etc/ssh/sshd_config", "/etc/mysql/mysql.conf.d/mysqld.cnf",
-                    "/etc/nginx/nginx.conf", "/etc/php/8.1/cli/php.ini",
-                    "/etc/fail2ban/fail2ban.conf", "/etc/logrotate.conf",
-                ])
-                return _finish(cmd, "cowrie", output, fi_score, t_start)
-            if re.search(r'-name\s+["\']?\*\.env', actual_cmd):
-                output = "/var/www/html/.env\n/opt/app/.env"
-                return _finish(cmd, "cowrie", output, fi_score, t_start)
-
         # ── static commands — guaranteed dispatch, independent of FI/agent ──
         # nmap/ping/traceroute/tracepath/top/htop/watch/tail-f/vim-nano-emacs/
         # less-more must ALWAYS produce their dedicated safe fake output
@@ -870,12 +953,31 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
         if agent == "cowrie" and not getattr(cowrie, "available", True):
             agent     = "on_device"
             needs_llm = True
+        # Cowrie's own `find` walks its whole 29k-entry tree on the reactor thread;
+        # one `find / -name X` froze the container. The rule core answers the
+        # common shapes; the rest go to a model (and the gate), never to Cowrie.
+        if actual_base == "find" and agent == "cowrie":
+            agent, needs_llm = "on_device", True
 
         # Running a file we hold: the kernel's answer is exact, a model guesses it
         handled, exec_out = executor.check(cmd)
         if handled:
             link.sync_history(cmd)
-            return _finish(cmd, agent, exec_out, fi_score, t_start)
+            return _finish(cmd, agent, exec_out, fi_score, t_start, trusted=True)
+
+        # Rule core (OSCAR Sec. IV-A): facts answered from the register
+        _materialize(actual_cmd)
+        handled, rc_out = rulecore.answer(actual_cmd)
+        if handled:
+            if rulecore.changed:
+                # keep Cowrie's copy in step with Cowrie-safe commands (absolute paths,
+                # no -p or ~); the raw line only for handlers that report none
+                for sync_cmd in (rulecore.sync_cmds or [actual_cmd]):
+                    link.sync(sync_cmd)
+            link.sync_history(cmd)
+            # Logged as the agent it displaced, like the other computed answers
+            displaced = "on_device" if needs_llm and agent == "cowrie" else agent
+            return _finish(cmd, displaced, rc_out, fi_score, t_start, trusted=True)
 
         # ── SECURITY BOUNDARY ───────────────────────────────────────────────
         # False here means no prompt is ever built, so there is nothing to
@@ -926,13 +1028,15 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
                 print(f"[guardrail] detect failed: {type(e).__name__}: {e}")
 
         if agent == "cloud":
+            _materialize(actual_cmd)
             sys_p, usr_p = prompt_manager.build_cloud_prompt(actual_cmd)
             usr_p += _cat_file_content_extra(actual_cmd, actual_base)
-            output = _llm_send(cloud, sys_p, usr_p, cmd=actual_cmd)
+            output = _gated_llm(cloud, sys_p, usr_p, actual_cmd, "cloud")
             link.sync_history(cmd)
             tracker.record(actual_cmd, output)
 
         elif agent == "on_device" or needs_llm:
+            _materialize(actual_cmd)
             if re.search(r'--version\b|-V\b', cmd):
                 agent  = "on_device"
                 output = sw.version(lookup_base)
@@ -1020,8 +1124,36 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
                 tracker.record(actual_cmd, output)
         return _finish(cmd, agent, output, fi_score, t_start, streamed)
 
+    def handle(cmd: str, write_fn, read_fn, force_agent: str | None = None):
+        """One line can hold several commands (`a && b ; c`): run them in order.
+
+        Forced experiment arms keep measuring one raw command."""
+        parts = compound.split(cmd) if force_agent is None else None
+        if parts is None:
+            return _handle_one(cmd, write_fn, read_fn, force_agent)
+        outputs, ok = [], True
+        for text, op in parts:
+            if not compound.runs(op, ok):
+                continue
+            verdict = rulecore.test_status(text)
+            if verdict is not None:       # `test` / `[ ]` print nothing, only a status
+                ok = verdict
+                continue
+            streamed = []
+            rulecore.handled_last = False
+            out, _ = _handle_one(text, streamed.append, read_fn, None)
+            out = out or "".join(streamed)
+            if out:
+                outputs.append(out.rstrip("\n"))
+            # the rule core knows its own exit status; anything else is judged from its text
+            ok = (rulecore.status == 0) if rulecore.handled_last else not compound.failed(out)
+        return "\n".join(outputs), ""
+
     handle.fi_manager = fi_manager
     handle.prompt_manager = prompt_manager
+    handle.register = register
+    handle.gate = gate
+    handle.forced = False
     # Production's own prompt assembly, so Part A's standalone arm can send the
     # real prompt rather than rebuild one that matches. See _build_agent_prompt.
     handle.build_agent_prompt = _build_agent_prompt

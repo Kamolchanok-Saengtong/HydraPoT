@@ -54,6 +54,19 @@ class PRF:
         return items[self.int(0, len(items) - 1)]
 
 
+# Typed files a stock Ubuntu server always has, listed even when the design
+# leaves them out (rsyslog default targets on Ubuntu 20.04)
+EXPECTED = {
+    "/var/log": ("auth.log", "syslog", "kern.log"),
+}
+
+
+# rsyslog's default text files; wtmp/btmp/lastlog are binary, dpkg.log has
+# its own format, so neither is ours to invent
+_SYSLOG_FILES = frozenset({"syslog", "kern.log", "messages", "daemon.log",
+                           "user.log", "mail.log", "cron.log"})
+
+
 def path_type(path: str):
     """Path oracle: the content type of a path, or None if not ours to invent."""
     if path in _RESERVED or path.startswith(_RESERVED_PREFIXES):
@@ -67,7 +80,7 @@ def path_type(path: str):
         return "ssh_config"
     if path in ("/var/log/auth.log", "/var/log/secure"):
         return "auth_log"
-    if path.startswith("/var/log/") and (name.endswith(".log") or "." not in name):
+    if posixpath.dirname(path) == "/var/log" and name in _SYSLOG_FILES:
         return "log"
     return "generic"
 
@@ -102,8 +115,11 @@ class Generator:
         rng = PRF(self.seed, path, kind)
         return _REALIZERS[kind](self, rng, path).encode()
 
-    def materialize(self, inst: Instance, path: str):
+    def materialize(self, inst: Instance, path: str, extra: bytes = b""):
         """Facts that complete `path` from the generator, or [] if it must not.
+
+        `extra` is appended after the generated part: live events of this
+        session, such as the attacker's own login in auth.log.
 
         Respects the closed-world region: nothing is invented for an absent
         path, a path already known, or inside a sealed directory.
@@ -122,6 +138,7 @@ class Generator:
         data = self.content(path)
         if data is None:
             return []
+        data += extra
         owner, group, mode = _META[path_type(path)]
         rng = PRF(self.seed, path, "meta")
         mtime = self.epoch - timedelta(seconds=rng.int(3600, 90 * 86400))
@@ -134,7 +151,9 @@ class Generator:
             Fact("kind", path, "file"), Fact("content", path, data),
             Fact("size", path, len(data)), Fact("owner", path, owner),
             Fact("group", path, group), Fact("mode", path, mode),
-            Fact("mtime", path, int(mtime.timestamp())),
+            # Register times are nanoseconds, like st_mtim
+            *(Fact(rel, path, int(mtime.timestamp()) * 1_000_000_000)
+              for rel in ("mtime", "atime", "ctime")),
             Fact("inode", path, inode),
         ]
 

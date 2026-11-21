@@ -45,7 +45,8 @@ class Telemetry:
 
     def __init__(self, session_id, src_ip="?", public_ip="?", instance="default",
                  store="sqlite", store_dir="", session_dir="",
-                 tag=None, export=None, writer=None, log=print):
+                 tag=None, export=None, writer=None, state_writer=None,
+                 log=print):
         self.session_id = session_id
         self.src_ip = src_ip
         self.public_ip = public_ip
@@ -58,6 +59,7 @@ class Telemetry:
         # storage.insert_command by default; injectable so a test never writes
         # to the real hydrapot.db.
         self._writer = writer
+        self._state_writer = state_writer
         self.log = log
 
     def _insert(self, row):
@@ -100,6 +102,22 @@ class Telemetry:
         self._export(event)
         return row
 
+    def record_state(self, rows):
+        """Write one command's state-change rows from the register."""
+        rows = [{"session_id": self.session_id, "instance": self.instance, **r}
+                for r in rows]
+        if self.store == "json":
+            self._append_jsonl(f"{self.src_ip}.state.jsonl", rows)
+            return
+        try:
+            if self._state_writer is not None:
+                self._state_writer(rows)
+            else:
+                from core import storage
+                storage.insert_state_rows(rows)
+        except Exception as e:
+            self._lost(e)
+
     # ── writing ─────────────────────────────────────────────────────────────
 
     def _write(self, row):
@@ -126,12 +144,15 @@ class Telemetry:
         SQLite migration removed. Appending also means a crashed run keeps
         everything written up to that point.
         """
+        self._append_jsonl(f"{self.src_ip}.jsonl", [row])
+
+    def _append_jsonl(self, name, rows):
         try:
             target = self.store_dir or self.session_dir
             os.makedirs(target, exist_ok=True)
-            with open(os.path.join(target, f"{self.src_ip}.jsonl"), "a",
-                      encoding="utf-8") as fh:
-                fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+            with open(os.path.join(target, name), "a", encoding="utf-8") as fh:
+                for row in rows:
+                    fh.write(json.dumps(row, ensure_ascii=False) + "\n")
         except Exception as e:
             self._lost(e)
 

@@ -240,6 +240,9 @@ system_state:
     htop: htop 2.2.0 - (C) 2004-2019 Hisham Muhammad
     screen: Screen version 4.08.00 (GNU) 05-Feb-20
     nano: GNU nano, version 4.8
+  # Processes already running on the box; ps lists these plus the attacker's
+  # own jobs. Copied from Cowrie's data so both agree on the base table.
+  process_list: plugins/cowrie/processes.json
   known_dirs:
   - /
   - /root
