@@ -99,6 +99,8 @@ class RuleCore:
         self.device = device
         self.changed = False          # the last answer changed the state
         self._jobs = 0
+        self._job_table = {}          # job number -> (pid, command), for `jobs` and `kill %N`
+        self._ended = []              # jobs killed since `jobs` last ran, reported once
         self._next_pid = None
         self._started = {}            # pid -> spawn time (ns), for ps START
         # Base process table (Cowrie's data: VSZ/RSS bytes, TIME minutes)
@@ -274,7 +276,7 @@ class RuleCore:
         lines = [l.strip() for l in lines]
         lines = [l for l in lines if l and not l.startswith("#")]
         point = (self.reg.checkpoint(), self._jobs, self._next_pid, dict(self._started),
-                 self.changed, list(self.sync_cmds))
+                 self.changed, list(self.sync_cmds), dict(self._job_table), list(self._ended))
         self._depth += 1
         outs, status = [], 0
         try:
@@ -286,6 +288,7 @@ class RuleCore:
                     self.reg.rollback(point[0])
                     self._jobs, self._next_pid, self._started = point[1], point[2], point[3]
                     self.changed, self.sync_cmds = point[4], point[5]
+                    self._job_table, self._ended = point[6], point[7]
                     return False, None
                 if out:
                     outs.append(out)
@@ -1623,6 +1626,7 @@ class RuleCore:
             return False, None
         self._jobs += 1
         pid = self._new_pid()
+        self._job_table[self._jobs] = (pid, command)
         self._started[pid] = self.reg.now_ns()
         self.reg.commit({Fact("proc", pid, command)}, why=f"spawn {command}")
         self.changed = True
@@ -1702,18 +1706,51 @@ class RuleCore:
             f"{r['vsz']:>6} {r['rss']:>5} {r['tty']:<8} {r['stat']:<4} {r['start']:>5} "
             f"{r['time'] // 60:>3}:{r['time'] % 60:02d} {r['cmd']}" for r in rows])
 
+    def _live_jobs(self):
+        return [(n, pid, cmd) for n, (pid, cmd) in sorted(self._job_table.items())
+                if self.inst.get("proc", pid) is not None]
+
+    def _mark(self, n, live):
+        """bash marks the newest job `+`, the one before it `-`."""
+        numbers = [j for j, _, _ in live]
+        return "+" if n == max(numbers) else "-" if len(numbers) > 1 and n == sorted(numbers)[-2] else " "
+
     def _cmd_kill(self, argv):
-        pids = [a for a in argv[1:] if a.isdigit()]
-        if not pids or len(pids) != len(argv) - 1:
+        args = argv[1:]
+        # a signal name or number is allowed; `-1` (every process) is not ours to answer
+        args = [a for a in args if not re.fullmatch(r"-(?:[2-9]|\d\d+|[A-Z]+)", a)]
+        if not args or any(not (a.isdigit() or re.fullmatch(r"%\d+", a)) for a in args):
             return False, None
         out = []
-        for pid in map(int, pids):
-            cmd = self.inst.get("proc", pid)
-            if cmd is None:
-                return False, None
-            self.reg.commit(remove={Fact("proc", pid, cmd)}, why=f"kill {pid}")
-        self.changed = True
+        for a in args:
+            if a.startswith("%"):
+                n = int(a[1:])
+                live = self._live_jobs()
+                job = next(((j, p, c) for j, p, c in live if j == n), None)
+                if job is None:
+                    out.append(f"bash: kill: {a}: no such job")
+                    continue
+                pid, cmd = job[1], job[2]
+                self._ended.append(f"[{n}]{self._mark(n, live)}  Terminated              {cmd}")
+            else:
+                pid = int(a)
+                cmd = self.inst.get("proc", pid)
+                if cmd is None:
+                    return False, None
+            self.reg.commit(remove={Fact("proc", pid, self.inst.get("proc", pid))},
+                            why=f"kill {pid}")
+            self.changed = True
+        self.status = 1 if out else 0
         return True, "\n".join(out)
+
+    def _cmd_jobs(self, argv):
+        if len(argv) > 1:
+            return False, None
+        live = self._live_jobs()
+        lines = self._ended + [f"[{n}]{self._mark(n, live)}  Running                 {cmd} &"
+                               for n, _, cmd in live]
+        self._ended = []
+        return True, "\n".join(lines)
 
     def _patch_ps(self, output: str) -> str:
         procs = sorted(self.inst.keys("proc"))
