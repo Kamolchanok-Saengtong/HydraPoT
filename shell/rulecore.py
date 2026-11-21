@@ -16,11 +16,15 @@ A command is only answered when the register fully knows the answer; anything
 touching paths it does not own falls through to Cowrie or a model. `patch`
 then repairs those answers for listings and the process table.
 """
+import base64
 import fnmatch
+import gzip
+import io
 import math
 import posixpath
 import re
 import shlex
+import tarfile
 from datetime import datetime, timezone
 
 from shell.compound import failed as _printed_an_error
@@ -1751,6 +1755,177 @@ class RuleCore:
                                for n, _, cmd in live]
         self._ended = []
         return True, "\n".join(lines)
+
+    # ── tar ────────────────────────────────────────────────────────────────
+
+    _TAR_MAX = 300
+
+    def _put_file(self, path, data, mode=0o644, mtime_ns=None, owner=None, group=None):
+        """Create or overwrite a file with these bytes. False when its folder is unknown."""
+        state, parent = self._parent(path)
+        if state != "dir":
+            return False
+        add, remove = set(), set()
+        old = self._kind(path)
+        stamp = self.reg.now_ns()
+        if old == "file":
+            self.reg.ensure_meta(path)
+            remove = {Fact(r, path, self.inst.get(r, path))
+                      for r in ("content", "size", "mtime", "ctime", "mode")
+                      if self.inst.get(r, path) is not None}
+            add = {Fact("content", path, data), Fact("size", path, len(data)),
+                   Fact("mode", path, mode), Fact("mtime", path, mtime_ns or stamp),
+                   Fact("ctime", path, stamp)}
+        elif old is None:
+            add = self._fresh(path, "file", mode, content=data, stamp=mtime_ns or stamp)
+            add = {f for f in add if f.rel != "ctime"} | {Fact("ctime", path, stamp)}
+            if owner:
+                add = {f for f in add if f.rel not in ("owner", "group")} | {
+                    Fact("owner", path, owner), Fact("group", path, group or owner)}
+            self._bump(parent, add, remove)
+        else:
+            return False
+        return self.reg.commit(add, remove, why=f"write {path}")
+
+    def _sync_bytes(self, path, data):
+        b64 = base64.b64encode(data).decode()
+        if len(b64) < 4000:
+            self._replay(f"echo '{b64}' | base64 -d > {shlex.quote(path)}")
+        else:
+            self._replay(f"touch {shlex.quote(path)}")
+
+    def _cmd_tar(self, argv):
+        args = argv[1:]
+        letters = args[0].lstrip("-") if args and not args[0].startswith("--") else ""
+        if not re.fullmatch(r"[cxtzvf]+", letters) or "f" not in letters:
+            return False, None
+        modes = [m for m in "cxt" if m in letters]
+        if len(modes) != 1 or ("t" in letters and "v" in letters):
+            return False, None
+        mode, gz, verbose = modes[0], "z" in letters, "v" in letters
+        rest, dest, opts, i = args[1:], None, [], 0
+        while i < len(rest):
+            if rest[i] == "-C" and i + 1 < len(rest):
+                dest, i = rest[i + 1], i + 2
+            elif rest[i].startswith("-"):
+                return False, None
+            else:
+                opts.append(rest[i])
+                i += 1
+        if not opts:
+            return False, None
+        archive_arg, operands = opts[0], opts[1:]
+        archive = self._resolve(archive_arg)
+        if self._virtual(archive):
+            return False, None
+        if mode == "c":
+            return self._tar_create(archive_arg, archive, operands, gz, verbose)
+        return self._tar_read(mode, archive_arg, archive, dest, verbose)
+
+    def _tar_create(self, archive_arg, archive, operands, gz, verbose):
+        if not operands:
+            self.status = 2
+            return True, ("tar: Cowardly refusing to create an empty archive\n"
+                          "Try 'tar --help' or 'tar --usage' for more information.")
+        members, errors, warned, names = [], [], False, []
+        for op in operands:
+            root = self._resolve(op)
+            if self._kind(root) is None:
+                if not self._missing(root):
+                    return False, None
+                errors.append(f"tar: {op}: Cannot stat: No such file or directory")
+                continue
+            warned = warned or op.startswith("/")
+            base = op.lstrip("/").rstrip("/") or "."
+            for q in self._tree(root):
+                if q == archive:
+                    errors.append(f"tar: {archive_arg}: file is the archive; not dumped")
+                    continue
+                self.reg.ensure_meta(q)
+                kind = self._kind(q)
+                data = self.inst.get("content", q) if kind == "file" else b""
+                if data is None or len(members) >= self._TAR_MAX:
+                    return False, None             # bytes we do not hold: not ours to archive
+                members.append((base + q[len(root):], q, kind, data))
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w", format=tarfile.GNU_FORMAT) as tf:
+            for name, q, kind, data in members:
+                info = tarfile.TarInfo(name + ("/" if kind == "dir" else ""))
+                info.mode = (self.inst.get("mode", q) or 0o644) & 0o7777
+                info.mtime = int((self.inst.get("mtime", q) or 0) / 1e9)
+                owner, group = self.inst.get("owner", q) or "root", self.inst.get("group", q) or "root"
+                info.uname, info.gname = owner, group
+                info.uid, info.gid = self._uid(owner), self._gid(group)
+                if kind == "dir":
+                    info.type = tarfile.DIRTYPE
+                elif kind == "symlink":
+                    info.type, info.linkname = tarfile.SYMTYPE, self.inst.get("target", q) or ""
+                else:
+                    info.size = len(data)
+                tf.addfile(info, io.BytesIO(data) if kind == "file" else None)
+                names.append(info.name)
+        data = buf.getvalue()
+        if gz:
+            data = bytearray(gzip.compress(data, compresslevel=6, mtime=self.reg.now_ns() // 10**9))
+            data[9] = 3                                      # gzip's OS byte: Unix
+            data = bytes(data)
+        if not self._put_file(archive, data):
+            state, _ = self._parent(archive)
+            if state == "unknown" or self._kind(archive) not in (None, "file"):
+                return False, None
+            self.status = 2
+            return True, (f"tar: {archive_arg}: Cannot open: "
+                          + ("Not a directory" if state == "notdir" else "No such file or directory")
+                          + "\ntar: Error is not recoverable: exiting now")
+        self._sync_bytes(archive, data)
+        self.changed = True
+        lines = (["tar: Removing leading `/' from member names"] if warned else [])
+        lines += names if verbose else []
+        lines += errors + (["tar: Exiting with failure status due to previous errors"] if errors else [])
+        self.status = 2 if errors else 0
+        return True, "\n".join(lines)
+
+    def _tar_read(self, mode, archive_arg, archive, dest, verbose):
+        if self._kind(archive) is None:
+            if not self._missing(archive):
+                return False, None
+            self.status = 2
+            return True, (f"tar: {archive_arg}: Cannot open: No such file or directory\n"
+                          "tar: Error is not recoverable: exiting now")
+        data = self.inst.get("content", self._target(archive) or archive)
+        if data is None:
+            return False, None
+        try:
+            tf = tarfile.open(fileobj=io.BytesIO(data), mode="r:*")
+            members = tf.getmembers()
+        except (tarfile.TarError, OSError, EOFError):
+            return False, None
+        if len(members) > self._TAR_MAX:
+            return False, None
+        listing = [m.name + ("/" if m.isdir() and not m.name.endswith("/") else "") for m in members]
+        if mode == "t":
+            return True, "\n".join(listing)
+        root = self._resolve(dest) if dest else self.reg.cwd()
+        if self._virtual(root) or self._kind(root) != "dir":
+            return False, None
+        for m in members:
+            path = posixpath.normpath(posixpath.join(root, m.name.lstrip("/")))
+            if m.isdir():
+                if self._kind(path) is None:
+                    handled, _ = self._cmd_mkdir(["mkdir", "-p", path])
+                    if not handled:
+                        return False, None
+            elif m.isfile():
+                folder = posixpath.dirname(path)
+                if self._kind(folder) is None:
+                    self._cmd_mkdir(["mkdir", "-p", folder])
+                body = tf.extractfile(m).read()
+                if not self._put_file(path, body, m.mode & 0o7777, int(m.mtime) * 10**9,
+                                      m.uname or "root", m.gname or m.uname or "root"):
+                    return False, None
+                self._sync_bytes(path, body)
+        self.changed = True
+        return True, "\n".join(listing) if verbose else ""
 
     def _cmd_crontab(self, argv):
         """`crontab -l`, `-r`, and installing a file, kept as the account's crontab file."""
