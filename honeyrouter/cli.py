@@ -459,9 +459,20 @@ _JAR = [
 ]
 _PIXEL = {"L": "#8a5a00", "w": "#c98a00", "G": "#d9a400", "h": "#ffe082",
           "H": "#ffb300", "d": "#ff9800", "c": "#fff3c4", "B": "#b36b00", "x": "#ffe9a8"}
-_STYLE_ARGS = [("qmark", "fg:#ffc107 bold"), ("question", "bold"),
-               ("pointer", "fg:#ffc107 bold"), ("highlighted", "fg:#ffc107 bold"),
-               ("selected", "fg:#ffd54f"), ("answer", "fg:#ffc107 bold")]
+_STYLE_ARGS = [("qmark", "fg:#ffc107 bold"), ("question", "fg:#fff3c4 bold"),
+               ("pointer", "fg:#ffc107 bold"),
+               ("highlighted", "fg:#1a1200 bg:#ffc107 bold"),     # the chosen row: dark on honey
+               ("text", "fg:#ffe082"), ("selected", "fg:#ffd54f"),
+               ("answer", "fg:#ffc107 bold"), ("instruction", "fg:#a67c00 italic"),
+               ("separator", "fg:#8a5a00")]
+_MOVE = "(↑ ↓ to move · Enter to choose)"
+
+
+def _bar(x, lo, hi, width=8):
+    """▰▰▰▱▱▱▱▱ : where x sits between lo and hi."""
+    frac = 0.0 if hi <= lo else min(1.0, max(0.0, (x - lo) / (hi - lo)))
+    full = round(width * frac)
+    return "▰" * full + "▱" * (width - full)
 
 
 def _banner():
@@ -503,10 +514,18 @@ def _interactive():
     text = lambda *a, **k: questionary.text(*a, style=style, **k)        # noqa: E731
     s = print_status()
 
+    Choice = questionary.Choice
     action = select(
-        "What now?",
-        choices=["Train (all phases)", "Review a trained policy",
-                 "Show status only", "Quit"]).ask()
+        "What now?", qmark="◆", pointer="➤", instruction=_MOVE,
+        choices=[
+            Choice("🍯  Train all phases          learn the router from scratch (~2 min)",
+                   value="Train (all phases)"),
+            Choice("📊  Review a trained policy   sweep the cost dial, compare with baselines",
+                   value="Review a trained policy"),
+            Choice("🐝  Show status only          what is trained, and when",
+                   value="Show status only"),
+            Choice("👋  Quit", value="Quit"),
+        ]).ask()
     if action is None or action.startswith("Quit"):
         return
     if action.startswith("Show"):
@@ -539,10 +558,15 @@ def _interactive():
         return
 
     print("  w weights cost: w=0 ignores price, higher w gets cheaper.\n")
+    lo_f, hi_f = min(r["judge"] for r in rows), max(r["judge"] for r in rows)
+    hi_c = max(r["cost"] for r in rows)
     choice = select(
-        "Approve which omega?",
-        choices=[f"w {r['omega']:.2f}  fidelity {r['judge']:.3f}  "
-                 f"cost ${r['cost']:.4f}" for r in rows] + ["Approve none"]).ask()
+        "Approve which omega?", qmark="◆", pointer="➤", instruction=_MOVE,
+        choices=[Choice(
+            f"w {r['omega']:.2f}   fidelity {r['judge']:.3f} {_bar(r['judge'], lo_f, hi_f)}"
+            f"   cost ${r['cost']:.4f} {_bar(r['cost'], 0.0, hi_c)}",
+            value=f"w {r['omega']:.2f}") for r in rows]
+            + [Choice("✋  Approve none", value="Approve none")]).ask()
     if choice is None or choice == "Approve none":
         print("\n  Nothing approved.\n")
         return
