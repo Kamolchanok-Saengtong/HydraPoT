@@ -328,6 +328,90 @@ whether or not the honeypot is currently running.
 
 ### Dashboard options
 
+The dashboard is **HTTPS-only**. `hp --dashboard` starts Caddy for you and
+prints `https://localhost:8443`. The app itself listens on loopback behind it,
+and neither the scheme nor the bind address can be changed.
+
+| Flag | Default | Purpose |
+|---|---|---|
+| `--foreground` | off | Run in the terminal instead of the background |
+| `--debug` | off | Enable the Flask reloader |
+
+Set these in `config.yaml` under `dashboard:`:
+
+| Key | Default | Purpose |
+|---|---|---|
+| `https_port` | `8443` | Port Caddy serves HTTPS on |
+| `tls_cert` / `tls_key` | empty | Your organisation's certificate (absolute paths, both or neither). Empty uses Caddy's own local CA |
+
+Caddy must be installed ([install guide](https://caddyserver.com/docs/install))
+or placed at `data/bin/caddy`. With the local CA, trust its root once per
+browser: `data/caddy/data/caddy/pki/authorities/local/root.crt`.
+
+The dashboard includes a read-only SQL console over the capture database, which
+contains every credential and address the honeypot collected, so it listens on
+this machine only. To view it from another machine, use an SSH tunnel:
+
+```bash
+ssh -N -L 8443:127.0.0.1:8443 user@sensor-host
+```
+
+Then open `https://localhost:8443` locally.
+
+## API key
+
+Secrets are never stored in `config.yaml`. They are read from `.env` at the
+project root, or from the real environment, under fixed names:
+
+| Variable | Used by |
+|---|---|
+| `CLOUD_AGENT_API_KEY` | the cloud responder |
+| `AI_API_KEY` | the AI Security Analyst |
+| `HYDRAPOT_API_KEY` | the REST API, when you want it authenticated |
+
+```bash
+cp .env.example .env
+$EDITOR .env
+```
+
+A real environment variable overrides a line in `.env`, so a systemd unit or
+container secret always wins.
+
+## Usage
+
+The `hp` command takes flags only. There are no subcommands, and exactly one
+action flag may be given per invocation.
+
+| Flag | Action |
+|---|---|
+| `hp --init` | Run the setup wizard |
+| `hp --run` | Start the honeypot |
+| `hp --dashboard` | Start the dashboard in the background |
+| `hp --dashboard-stop` | Stop the background dashboard |
+| `hp --config` | Show the active configuration |
+| `hp --version` | Show the version |
+
+### Basic workflow
+
+```bash
+hp --init            # 1. configure
+docker-compose up -d # 2. start Cowrie, if enabled
+hp --run             # 3. start the honeypot
+hp --dashboard       # 4. inspect results
+```
+
+Connect to the honeypot as an attacker would, using the address and port set
+in `config.yaml`:
+
+```bash
+ssh root@127.0.0.1 -p 2223
+```
+
+The dashboard reads the database directly. It shows previously collected data
+whether or not the honeypot is currently running.
+
+### Dashboard options
+
 | Flag | Default | Purpose |
 |---|---|---|
 | `--port` | `8050` | Port to serve on |
@@ -375,7 +459,7 @@ wherever the dashboard is bound.
 A WebSocket at `/ws/events` pushes new events as they are recorded.
 
 ```bash
-curl http://127.0.0.1:8050/api/v1/health
+curl -k https://localhost:8443/api/v1/health
 ```
 
 ## Project Structure
@@ -427,11 +511,11 @@ check for an existing instance:
 hp --dashboard-stop
 ```
 
-### The dashboard refuses to bind an address
+### The dashboard says Caddy is not installed
 
-Binding anything other than a loopback address requires
-`--i-accept-public-exposure`, because the dashboard is unauthenticated. Use an
-SSH tunnel instead where possible.
+The dashboard is HTTPS-only and Caddy provides the TLS. Install it from
+<https://caddyserver.com/docs/install>, or put the official binary at
+`data/bin/caddy`, then run `hp --dashboard` again.
 
 ### The world map is empty
 

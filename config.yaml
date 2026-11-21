@@ -75,16 +75,17 @@ static_commands:
 # the account with `hp --dashboard-passwd`; the dashboard refuses to serve
 # until one exists.
 dashboard:
-  host: 127.0.0.1
-  port: 8050
-  # Leave false and keep it on loopback, reached over an SSH tunnel:
-  #   ssh -N -L 8050:127.0.0.1:8050 <user>@<sensor> -p <admin-ssh-port>
-  # Setting it true still requires an account AND --i-accept-public-exposure,
-  # and you still want TLS in front of it.
-  allow_public_bind: false
+  # HTTPS only: `hp --dashboard` starts Caddy and serves the dashboard on
+  # https://localhost:<https_port>. The app itself listens on loopback behind
+  # it. The scheme and bind address are not settings.
+  https_port: 8443
+  # Your organisation's certificate (absolute paths, both or neither). Empty =
+  # Caddy's own local CA; trust its root once per browser (see proxy/README.md).
+  tls_cert: ''
+  tls_key: ''
   auth:
-    credential_file: data/operator.json
-    session_db: data/dashboard_auth.db
+    # operator accounts AND their sessions live in this one SQLite file
+    session_db: data/users.db
     session_lifetime_minutes: 480
     session_idle_minutes: 60
     max_attempts: 5

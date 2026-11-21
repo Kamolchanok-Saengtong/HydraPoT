@@ -334,11 +334,10 @@ class DashboardAuthCfg:
     dashboard's consumer is a browser pointed at a SQL console over captured
     credentials, so "open" is not a state it should be able to reach.
     """
-    credential_file: str = "data/operator.json"
-    # NOT the capture database. The Database page runs a read-only SQL console
-    # over that one, so sessions living there would be selectable from the very
-    # UI they gate.
-    session_db: str = "data/dashboard_auth.db"
+    # Accounts AND sessions live here -- NOT the capture database. The Database
+    # page runs a read-only SQL console over that one, so operator accounts or
+    # sessions living there would be selectable from the very UI they gate.
+    session_db: str = "data/users.db"
     session_lifetime_minutes: int = 480   # hard cap, even on an active session
     session_idle_minutes: int = 60        # cap since the last request
     max_attempts: int = 5                 # failures per IP before a lockout
@@ -380,12 +379,13 @@ class DashboardCfg:
     """The analytics console. Separate from `honeypot` -- that section
     describes the fake machine an attacker sees; this one describes the real
     operator-facing surface."""
-    host: str = "127.0.0.1"
-    port: int = 8050
-    # Exposure is a deliberate configuration act, never a default. hp.py
-    # refuses a non-loopback bind unless this is true AND an operator account
-    # exists.
-    allow_public_bind: bool = False
+    # HTTPS only. The app itself listens on loopback behind the Caddy that
+    # `hp --dashboard` manages (cli/dashboard_tls.py); scheme and bind address
+    # are not settings.
+    https_port: int = 8443
+    # Your organisation's certificate. Both empty = Caddy's own local CA.
+    tls_cert: str = ""
+    tls_key: str = ""
     auth: DashboardAuthCfg = field(default_factory=DashboardAuthCfg)
 
 

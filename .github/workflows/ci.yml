@@ -38,10 +38,33 @@ jobs:
           pip install $(python .github/workflows/ci_deps.py)
           pip install -e . --no-deps
 
+      # The dashboard now requires an operator account and refuses to boot
+      # without one. Create a throwaway via the real code path -- no TTY, same
+      # function hp --dashboard-passwd calls -- so this stays a genuine boot
+      # test rather than a mock.
+      - name: Create a throwaway operator account
+        run: |
+          python -c "from console import auth; auth.write_credential('ci', 'ci-only-throwaway-passphrase')"
+
+      # The dashboard is HTTPS-only: hp --dashboard starts Caddy in front of it
+      # and refuses to run without one. Official install, per caddyserver.com.
+      - name: Install Caddy
+        run: |
+          sudo apt-get install -y debian-keyring debian-archive-keyring apt-transport-https curl
+          curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+          curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+          sudo apt-get update
+          sudo apt-get install -y caddy
+
       # hp --dashboard already blocks until the port serves, or exits 1
       - name: Start the dashboard and check it serves
         run: |
           hp --dashboard
-          curl --fail --silent --show-error http://127.0.0.1:8050/ > /dev/null
-          curl --fail --silent --show-error http://127.0.0.1:8050/api/v1/health
+          # -k: Caddy's own local CA is not trusted on the runner. HTTPS is the point.
+          # "/" now redirects an unauthenticated browser to the login page;
+          # serving that page is what proves the UI is up. 200 required.
+          curl -k --fail --silent --show-error https://localhost:8443/_hp/login > /dev/null
+          # The machine API stays open (own key gate, no cookie) -- a SIEM must
+          # not need a browser session.
+          curl -k --fail --silent --show-error https://localhost:8443/api/v1/health
           hp --dashboard-stop

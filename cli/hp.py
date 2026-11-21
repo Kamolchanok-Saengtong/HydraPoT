@@ -14,13 +14,10 @@ Usage:
     hp --config           # show the active configuration
     hp --version          # show version
 
-    hp --dashboard --port 8050 --host 127.0.0.1
     hp --run --host 0.0.0.0 --port 2222
 
---host and --port are SHARED by --run and --dashboard, so neither can carry
-its own default at the parser level. They default to None and each action
-fills in its own: --run falls back to config.yaml, --dashboard to
-127.0.0.1:8050.
+--host and --port belong to --run only. The dashboard is HTTPS-only: --dashboard
+starts Caddy itself and serves https://localhost:<dashboard.https_port>.
 """
 
 import os
@@ -65,22 +62,6 @@ _HP_DIR       = os.path.abspath(os.path.join(
     os.path.dirname(os.path.abspath(__file__)), ".."))
 DASHBOARD_PID = os.path.join(_HP_DIR, "data", "dashboard.pid")
 DASHBOARD_LOG = os.path.join(_HP_DIR, "data", "dashboard.log")
-
-# Defaults live here rather than in the click options: --host/--port are shared
-# by two actions that want different ones. Read from config.yaml's dashboard
-# section -- loopback and 8050 below are the fallback for an unreadable config,
-# not the setting.
-def _dash_defaults():
-    try:
-        from core.config_loader import load_config
-        d = load_config(os.path.join(_HP_DIR, "config.yaml")).dashboard
-        return d.host, int(d.port)
-    except Exception:
-        return "127.0.0.1", 8050
-
-
-DASH_HOST, DASH_PORT = _dash_defaults()
-
 
 class LicenseCommand(click.Command):
     """Prints the epilog as-is, skipping click's default rewrap — click's
@@ -192,23 +173,6 @@ def _serve_dashboard(host, port, debug):
     uvicorn.run("api.api_server:api", host=host, port=port, reload=debug)
 
 
-def _is_loopback(host: str) -> bool:
-    """True for addresses only reachable from this machine.
-
-    Anything else is world-reachable as far as this check is concerned: it is
-    better to make an operator type --i-accept-public-exposure for a LAN bind
-    than to guess which private ranges are actually private in their network.
-    """
-    import ipaddress
-    h = (host or "").strip()
-    if h in ("localhost", ""):
-        return True
-    try:
-        return ipaddress.ip_address(h).is_loopback
-    except ValueError:
-        return False
-
-
 def _dashboard_passwd():
     """Create or rotate the dashboard's operator account.
 
@@ -219,15 +183,20 @@ def _dashboard_passwd():
     """
     from console import auth
 
-    existing = auth.load_credential()
-    if existing:
-        click.echo(f"\n  Rotating the password for '{existing['username']}'.")
-        click.echo("  Every signed-in session will be revoked.\n")
+    accounts = auth.list_users()
+    if accounts:
+        click.echo("\n  Registered operator account(s): " + ", ".join(accounts))
+        click.echo("  Type a new name to add an account, or an existing one to "
+                   "change its password.\n")
     else:
-        click.echo("\n  Creating the dashboard operator account.\n")
+        click.echo("\n  Creating the first dashboard operator account.\n")
 
     username = click.prompt("  Operator username",
-                            default=existing.get("username") or "admin")
+                            default=(accounts[0] if accounts else "admin"))
+    existing = auth.user_exists(username)
+    if existing:
+        click.echo(f"\n  '{username}' already exists — changing its password. "
+                   f"Its signed-in sessions will be revoked.")
 
     # Stated BEFORE the prompt, not after a rejection: finding out the rule by
     # breaking it means typing a password twice for nothing.
@@ -252,12 +221,12 @@ def _dashboard_passwd():
             f"  Too short — {len(password)} of {minimum} characters. "
             f"Try again.\n", fg="red"))
 
-    path = auth.write_credential(username, password, rotate=bool(existing))
+    path = auth.write_credential(username, password, rotate=existing)
     click.echo(click.style(f"\n  ✓ {'Rotated' if existing else 'Created'} "
                            f"'{username}'", fg="green", bold=True))
-    click.echo(f"    stored (mode 0600, hashed with scrypt): {path}")
+    click.echo(f"    stored (hashed with scrypt) in: {path}")
     if existing:
-        click.echo("    all previous sessions revoked")
+        click.echo("    this operator's previous sessions revoked")
     click.echo(f"\n  Start the dashboard with: hp --dashboard\n")
 
 
@@ -291,52 +260,55 @@ def _ensure_operator_account():
     _dashboard_passwd()
 
 
-def _dashboard(port, host, debug, foreground, i_accept_public_exposure):
-    """Start the analytics dashboard in the background.
+def _dashboard(debug, foreground):
+    """Start the analytics dashboard, HTTPS only.
 
-    Binds loopback only by default. View it from another machine with an SSH
-    tunnel rather than by exposing the port:
-
-        ssh -N -L 8050:127.0.0.1:8050 user@sensor -p <admin-port>
+    The app listens on loopback; the Caddy this starts is the only way in, so
+    the login never crosses a network in clear. Neither the scheme nor the bind
+    address can be changed (cli/dashboard_tls.py).
     """
-    # There is a login now (console/auth.py), so this is no longer the only
-    # thing standing between the SQL console and the internet -- but it stays,
-    # because a login is not TLS. On plain HTTP the password crosses the wire
-    # in clear, so loopback remains the default and exposure stays deliberate.
+    from cli import dashboard_tls as tls
+
+    # A login is not TLS, but it must exist before anything serves.
     _ensure_operator_account()
 
+    if tls.in_container():
+        # Compose's proxy service terminates TLS in front of this container
+        click.echo(f"🍯 Dashboard on the compose network :{tls.INTERNAL_PORT} "
+                   f"(TLS is the proxy service in front)")
+        _serve_dashboard("0.0.0.0", tls.INTERNAL_PORT, debug)
+        return
+
     from core.config_loader import load_config
-    allowed = load_config(os.path.join(_HP_DIR, "config.yaml")
-                          ).dashboard.allow_public_bind
-    if not _is_loopback(host) and not (allowed or i_accept_public_exposure):
-        click.echo(click.style(
-            f"\n  Refusing to bind {host}: a public bind is a deliberate "
-            f"choice, not a default.\n", fg="red", bold=True))
-        click.echo("  Use an SSH tunnel instead (nothing listens publicly):\n")
-        click.echo(click.style(
-            f"      ssh -N -L {port}:127.0.0.1:{port} <user>@<sensor-host> -p <admin-ssh-port>\n",
-            fg="green"))
-        click.echo(f"  then open http://localhost:{port} on your own machine.\n")
-        click.echo("  If you genuinely need a public bind, put it behind a reverse")
-        click.echo("  proxy with TLS and either set dashboard.allow_public_bind")
-        click.echo("  in config.yaml or re-run with:")
-        click.echo(f"      hp --dashboard --host {host} --i-accept-public-exposure\n")
+    cfg = load_config(os.path.join(_HP_DIR, "config.yaml")).dashboard
+    caddy = tls.find_caddy(_HP_DIR)
+    if not caddy:
+        click.echo(click.style("\n  Caddy is not installed, and the dashboard "
+                               "is HTTPS-only without it.\n", fg="red", bold=True))
+        click.echo("  Install it (https://caddyserver.com/docs/install), or put the "
+                   "official binary at:\n")
+        click.echo(click.style(f"      {os.path.join(_HP_DIR, 'data', 'bin', 'caddy')}\n", fg="green"))
         raise SystemExit(2)
 
-    if not _is_loopback(host):
-        click.echo(click.style(
-            f"  WARNING: binding {host} — the login protects the UI, but "
-            f"nothing encrypts it.\n  Put TLS in front of it, or the password "
-            f"crosses the network in clear.", fg="yellow", bold=True))
+    url = f"https://localhost:{cfg.https_port}"
+    try:
+        # Validates cert/key and starts Caddy now, so a bad setting fails here
+        tls.start(_HP_DIR, caddy, cfg.https_port, cfg.tls_cert, cfg.tls_key)
+    except (ValueError, RuntimeError) as exc:
+        click.echo(f"❌ {exc}", err=True)
+        sys.exit(1)
 
     if foreground:
-        click.echo(f"🍯 Dashboard on http://{host}:{port}  (Ctrl+C to stop)")
-        _serve_dashboard(host, port, debug)
+        click.echo(f"🍯 Dashboard on {url}  (Ctrl+C to stop)")
+        try:
+            _serve_dashboard(tls.INTERNAL_HOST, tls.INTERNAL_PORT, debug)
+        finally:
+            tls.stop(_HP_DIR)
         return
 
     running = _dash_pid()
     if running:
-        click.echo(f"🍯 Dashboard already running (pid {running}) → http://{host}:{port}")
+        click.echo(f"🍯 Dashboard already running (pid {running}) → {url}")
         click.echo("   Stop it with: hp --dashboard-stop")
         return
 
@@ -357,17 +329,13 @@ def _dashboard(port, host, debug, foreground, i_accept_public_exposure):
 
     log = open(DASHBOARD_LOG, "ab", buffering=0)
     proc = subprocess.Popen(
-        [sys.argv[0], "--dashboard", "--foreground",
-         "--host", str(host), "--port", str(port)]
-        + (["--debug"] if debug else [])
-        + (["--i-accept-public-exposure"] if i_accept_public_exposure else []),
+        [sys.argv[0], "--dashboard", "--foreground"] + (["--debug"] if debug else []),
         stdout=log, stderr=log, stdin=subprocess.DEVNULL,
         cwd=_HP_DIR, **detach,
     )
-    # Wait until it's actually serving before reporting success. Without this
-    # a child that dies immediately (port already in use, import error) still
-    # got a pidfile and a cheerful "started" message, and you'd only discover
-    # it when the browser showed nothing.
+    # Wait until the app is actually serving before reporting success. Without
+    # this a child that dies immediately (port already in use, import error)
+    # still got a pidfile and a cheerful "started" message.
     import socket
     import time as _time
     deadline = _time.time() + 25
@@ -377,7 +345,7 @@ def _dashboard(port, host, debug, foreground, i_accept_public_exposure):
             break                                  # child exited — failed
         with socket.socket() as s:
             s.settimeout(0.3)
-            if s.connect_ex((host, port)) == 0:
+            if s.connect_ex((tls.INTERNAL_HOST, tls.INTERNAL_PORT)) == 0:
                 up = True
                 break
         _time.sleep(0.3)
@@ -395,12 +363,17 @@ def _dashboard(port, host, debug, foreground, i_accept_public_exposure):
             proc.kill()
         except OSError:
             pass
+        tls.stop(_HP_DIR)
         sys.exit(1)
 
     with open(DASHBOARD_PID, "w") as f:
         f.write(str(proc.pid))
 
-    click.echo(f"🍯 Dashboard started (pid {proc.pid}) → http://{host}:{port}")
+    click.echo(f"🍯 Dashboard started (pid {proc.pid}) → {url}")
+    if not cfg.tls_cert:
+        root = os.path.join(_HP_DIR, "data", "caddy", "data", "caddy", "pki",
+                            "authorities", "local", "root.crt")
+        click.echo(f"   browser warning? trust this root once: {root}")
     click.echo(f"   logs: {DASHBOARD_LOG}")
     click.echo("   stop: hp --dashboard-stop")
 
@@ -409,14 +382,21 @@ def _dashboard_stop():
     """Stop the background dashboard."""
     import psutil
 
+    from cli import dashboard_tls as tls
+
     pid = _dash_pid()
     if not pid:
-        click.echo("No dashboard is running.")
+        # An orphaned Caddy would keep the HTTPS port bound
+        if tls.stop(_HP_DIR):
+            click.echo("🛑 Stopped the leftover HTTPS front (Caddy).")
+        else:
+            click.echo("No dashboard is running.")
         return
 
     try:
         proc = psutil.Process(pid)
     except psutil.NoSuchProcess:
+        tls.stop(_HP_DIR)
         click.echo("No dashboard is running.")
         return
 
@@ -437,6 +417,7 @@ def _dashboard_stop():
         os.remove(DASHBOARD_PID)
     except OSError:
         pass
+    tls.stop(_HP_DIR)
     click.echo(f"🛑 Dashboard stopped (pid {pid}).")
 
 
@@ -501,22 +482,17 @@ def _config():
 @click.option("--version", "do_version", is_flag=True,
               help="Show HydraPoT version")
 @click.option("--host", default=None,
-              help="Bind address. --run: overrides config.yaml. --dashboard: "
-                   "defaults to 127.0.0.1; keep it and reach the dashboard over "
-                   "an SSH tunnel, since --host 0.0.0.0 needs "
-                   "--i-accept-public-exposure")
+              help="--run: bind address (overrides config.yaml). Not for --dashboard")
 @click.option("--port", default=None, type=int,
-              help="Port. --run: overrides config.yaml. --dashboard: defaults to 8050")
+              help="--run: port (overrides config.yaml). Not for --dashboard")
 @click.option("--debug/--no-debug", default=False,
               help="--dashboard: enable Flask debug/reloader")
 @click.option("--foreground", is_flag=True,
               help="--dashboard: run in this terminal (blocking) instead of the background")
-@click.option("--i-accept-public-exposure", is_flag=True,
-              help="--dashboard: required to bind a non-loopback address. Read the warning.")
 @click.pass_context
 def main(ctx, do_init, do_run, do_dashboard, do_dashboard_stop,
          do_dashboard_passwd, do_config, do_version, host, port, debug,
-         foreground, i_accept_public_exposure):
+         foreground):
     """HydraPoT: Multi Agent Honeypot System
 
     One command, flags only. Pick exactly one action flag.
@@ -549,9 +525,11 @@ def main(ctx, do_init, do_run, do_dashboard, do_dashboard_stop,
     elif action == "--run":
         _run(host, port)
     elif action == "--dashboard":
-        _dashboard(port if port is not None else DASH_PORT,
-                   host if host is not None else DASH_HOST,
-                   debug, foreground, i_accept_public_exposure)
+        if host is not None or port is not None:
+            raise click.UsageError(
+                "--host/--port do not apply to --dashboard: it is HTTPS-only "
+                "(port: dashboard.https_port in config.yaml)")
+        _dashboard(debug, foreground)
     elif action == "--dashboard-stop":
         _dashboard_stop()
     elif action == "--dashboard-passwd":
