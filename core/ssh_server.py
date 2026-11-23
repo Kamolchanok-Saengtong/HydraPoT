@@ -282,7 +282,8 @@ async def _shell_session(process, handler_factory, hostname, os_banner):
 
     try:
         if process.command is None:
-            process.stdout.write(f"Welcome to {os_banner}\r\n\r\n")
+            banner = getattr(command_handler, "motd", None)
+            process.stdout.write((banner() if banner else f"Welcome to {os_banner}\n\n").replace("\n", "\r\n"))
             process.stdout.write(prompt)
     except (BrokenPipeError, asyncssh.ConnectionLost):
         print(f"[ssh_server] {peer_str} disconnected before shell opened")

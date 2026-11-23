@@ -1,5 +1,0 @@
-# Nightly sync of enrolment records into the portal
-SHELL=/bin/bash
-PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
-
-0 3 * * * www-data cd /var/www/coc-student-portal && /usr/bin/npm run sync >> /var/log/psu_sync.log 2>&1
