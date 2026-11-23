@@ -951,7 +951,19 @@ EXPERIMENT_SRC_EXACT = {"localhost", "-", "", "8.8.8.8", "8.8.4.4",
 # attacker data there is.
 
 
+@functools.lru_cache(maxsize=1)
+def _show_private() -> bool:
+    # Lazy and failure-proof: storage must stay importable with no config.
+    try:
+        from core.config_loader import load_config
+        return bool(load_config().dashboard.show_private_sources)
+    except Exception:
+        return False
+
+
 def _is_non_routable(value) -> bool:
+    if _show_private():
+        return False
     try:
         addr = ipaddress.ip_address(str(value))
     except ValueError:
