@@ -97,6 +97,9 @@ def _run(host, port):
     if port:
         config.honeypot.port = port
 
+    from cli import preflight
+    preflight.require(config)
+
     if console:
         from rich.panel import Panel
         from rich.text import Text

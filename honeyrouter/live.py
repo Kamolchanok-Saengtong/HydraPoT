@@ -35,7 +35,8 @@ class LiveRouter:
             raise NotReady(f"no '{st['policy']}' policy in {HR.OUT_DIR}")
         # encoded directly: embeddings.embed() rewrites its cache file per new command
         self._torch, self._pol = torch, pol
-        self._enc = SentenceTransformer(MODEL)
+        # CPU, always: the responder model owns the GPU, and this net is tiny
+        self._enc = SentenceTransformer(MODEL, device="cpu")
         self.omega = float(st["omega"])
         self.model, _ = P.load()
         self.I = self.model.mu.detach()

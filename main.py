@@ -242,6 +242,14 @@ def main():
     print(f"[HydraPot] on_device: {'loaded' if ondevice else 'DISABLED'}")
     print(f"[HydraPot] cloud: {'loaded' if cloud else 'DISABLED'}")
 
+    # The Honey Router loads its encoder on first use (~10 s). Do it now, not inside
+    # the first attacker's first command.
+    if config.routing.mode == "smart_router":
+        from honeyrouter import live as _router_live
+        _router_live.pick("warmup")
+        print("[HydraPot] router: Honey Router loaded" if not _router_live.last_error()
+              else f"[HydraPot] router: UNAVAILABLE, using fi_routing ({_router_live.last_error()})")
+
     # Keep docker-compose publishing the port config.yaml connects to, and make
     # sure something is actually listening there. Done on every run so hand-
     # editing config.yaml is enough -- the two cannot drift, and a stopped

@@ -135,6 +135,7 @@ def build_default_config(existing: dict) -> dict:
         existing_fallback         = existing.get("routing", {}).get("fallback"),
         existing_static_commands  = existing.get("static_commands"),
         existing_fi_routing       = existing.get("routing", {}).get("fi_routing"),
+        existing_mode             = existing.get("routing", {}).get("mode"),
     )
 
 
@@ -683,9 +684,50 @@ def _keep_remote(existing: dict, block: dict) -> dict:
     external GPU box is set by hand. Rebuilding the block from the questions
     alone silently deleted them, and on_device fell back to local.
     """
+    if (existing.get("mode") or "local").lower() == "ollama":
+        return block       # the wizard now picked a local model: do not carry `ollama` over
     for key in ("mode", "base_url"):
         if existing.get(key) is not None:
             block[key] = existing[key]
+    return block
+
+
+def _ask_ollama(od: dict) -> dict:
+    """On-device model served by Ollama: name it, and pull it now if it is missing."""
+    from agent_manager import ollama_support as ol
+    was = (od.get("mode") or "local").lower() == "ollama"
+    server = ol.host(od.get("base_url") if was else None)
+    have = ol.models(server)
+    if have is None:
+        _print(f"  Ollama is not answering at {server}.", style="yellow")
+        _print("  Install it from https://ollama.com and start it (`ollama serve`).", style="dim")
+        if not _confirm("  Set it up anyway and pull the model later?", default=True):
+            raise GoBack()
+    elif have:
+        _print("  Already pulled: " + ", ".join(have), style="dim")
+    model = _prompt("  Ollama model tag (e.g. qwen2.5:7b)", od.get("model", "") if was else "qwen2.5:7b")
+    if have is not None and not ol.has_model(server, model):
+        _print(f"  '{model}' is not pulled yet.", style="yellow")
+        if _confirm(f"  Pull {model} now?", default=True):
+            last = {"pct": -1}
+
+            def show(status, done, total):
+                pct = int(done * 100 / total) if total else -1
+                if pct != last["pct"] and (pct % 10 == 0 or pct < 0):
+                    last["pct"] = pct
+                    _print(f"    {status}" + (f" {pct}%" if pct >= 0 else ""), style="dim")
+            if ol.pull(server, model, show):
+                _print("  ✓ Pulled.", style="green")
+            else:
+                _print(f"  Pull failed. Run `ollama pull {model}` yourself before `hp --run`.",
+                       style="yellow")
+    temperature = float(_prompt("[11] Temperature", str(od.get("temperature", 0.7))))
+    max_tokens = int(_prompt("[12] Max tokens", str(od.get("max_tokens", 256))))
+    block = {"enabled": True, "mode": "ollama", "model": model, "quantization": "none",
+             "gguf_file": "", "temperature": temperature, "max_tokens": max_tokens,
+             "do_sample": True}
+    if was and od.get("base_url"):
+        block["base_url"] = od["base_url"]
     return block
 
 
@@ -698,11 +740,13 @@ def ask_on_device(existing: dict) -> dict:
 
     cached = _scan_cached_models()
     model_choices = [(m, "(cached ✓)") for m in cached]
+    model_choices.append(("Ollama", "(use a model from Ollama; can pull it for you)"))
     model_choices.append(("Custom model", "(enter HuggingFace model name)"))
     model_choices.append(("None — disable", "(cowrie + cloud only)"))
 
-    custom_idx  = len(cached) + 1
-    disable_idx = len(cached) + 2
+    ollama_idx  = len(cached) + 1
+    custom_idx  = len(cached) + 2
+    disable_idx = len(cached) + 3
 
     current_model = od.get("model", "")
     model_default = 1
@@ -710,10 +754,15 @@ def ask_on_device(existing: dict) -> dict:
         if m == current_model:
             model_default = i
             break
+    if (od.get("mode") or "local").lower() == "ollama":
+        model_default = ollama_idx
     if not od.get("enabled", True):
         model_default = disable_idx
 
     model_idx = _choice("[9] On-device LLM", model_choices, default=model_default)
+
+    if model_idx == ollama_idx:
+        return _ask_ollama(od)
 
     if model_idx == disable_idx:
         return _keep_remote(od, {
@@ -899,7 +948,8 @@ def build_config(honeypot: dict, deployment: dict, cowrie: dict,
                  existing_logging: dict | None = None,
                  existing_fallback: str | None = None,
                  existing_static_commands: list | None = None,
-                 existing_fi_routing: dict | None = None) -> dict:
+                 existing_fi_routing: dict | None = None,
+                 existing_mode: str | None = None) -> dict:
     """
     Assemble all answers into a single config dict for YAML output.
 
@@ -948,6 +998,8 @@ def build_config(honeypot: dict, deployment: dict, cowrie: dict,
             "cloud":     cloud,
         },
         "routing": {
+            # a new install routes with the trained Honey Router; an existing choice is kept
+            "mode": existing_mode or "smart_router",
             "fallback": existing_fallback or "cowrie",
             "fi_routing": fi_routing,
         },
@@ -961,8 +1013,33 @@ def build_config(honeypot: dict, deployment: dict, cowrie: dict,
 
 # ─── Save config ──────────────────────────────────────────────────────────────
 
+def _merge_into_existing(existing: dict, new: dict) -> dict:
+    """The wizard's answers on top of what config.yaml already holds.
+
+    The wizard asks about six sections. config.yaml has more (dashboard, filesystem and
+    its decoy files, aggregation, power_tariff, ssh_version, routing.mode ...), and
+    writing only the six used to drop the rest on every re-run. The two agent blocks are
+    replaced whole, so a setting the wizard no longer sets (such as mode: ollama after
+    switching to a local model) does not linger.
+    """
+    out = dict(existing)
+    for key, value in new.items():
+        if isinstance(value, dict) and isinstance(existing.get(key), dict) and key != "agents":
+            out[key] = {**existing[key], **value}
+        elif key == "agents" and isinstance(existing.get(key), dict):
+            out[key] = {**existing[key], **value}
+        else:
+            out[key] = value
+    return out
+
+
 def save_config(config_dict: dict):
     """Write config dict to config.yaml with comments."""
+    try:
+        with open(CONFIG_PATH) as fh:
+            config_dict = _merge_into_existing(yaml.safe_load(fh) or {}, config_dict)
+    except (OSError, yaml.YAMLError):
+        pass                      # first run, or an unreadable file: write what we have
     with open(CONFIG_PATH, "w") as f:
         f.write("# ═══════════════════════════════════════════════════════════════════════════════\n")
         f.write("# HydraPoT Configuration\n")
@@ -988,6 +1065,19 @@ def show_summary(config_dict: dict):
 
     print()
     _print("✓ Configuration saved to ./config.yaml\n", style="bold green")
+
+    # What is still missing before `hp --run` will start, said once, here.
+    try:
+        from cli import preflight
+        from core.config_loader import load_config
+        todo = preflight.problems(load_config())
+    except Exception:
+        todo = []
+    if todo:
+        _print("Before you can run it:", style="bold yellow")
+        for item in todo:
+            _print("  ✗ " + item.replace("\n", "\n    "), style="yellow")
+        print()
 
     if console:
         table = Table(box=box.SIMPLE, show_header=False, padding=(0, 2))
@@ -1042,6 +1132,15 @@ def what_now_menu():
         choice = input("  > ").strip().lower()
 
         if choice == "1":
+            from cli import preflight
+            from core.config_loader import load_config
+            blockers = preflight.problems(load_config())
+            if blockers:
+                _print("\nNot ready to run yet:\n", style="bold yellow")
+                for b in blockers:
+                    _print("  ✗ " + b.replace("\n", "\n    "), style="yellow")
+                _print("", style="")
+                continue
             _print("\nStarting honeypot...\n", style="bold green")
             try:
                 import main

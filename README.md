@@ -70,17 +70,19 @@ sections say which is which.
 | Event WebSocket | `/ws/events` pushes new events to connected clients | Available |
 | Threat intelligence | IOC extraction, MITRE ATT&CK mapping, detection rules, alerts | Available |
 | Setup wizard | Interactive configuration generator | Available |
-| Prompt-injection guardrail | Sanitises prompts, fences attacker text, checks replies | Off by default in v1.0.0 |
-| Reinforcement-learning router | Replaces the score-based policy with a learned one | Experimental, not connected |
+| Prompt-injection guardrail | Sanitises prompts, fences attacker text, NVIDIA NeMo detector | Always on, fixed |
+| Honey Router | A trained neural router picks the responder for each command | Default; train once with `hp --router` |
 | Model fine-tuning | LoRA training scripts for the local responder | Development only |
 
-The guardrail is wired in but shipped **off**: the published results were
-produced before it existed, so `config.yaml` sets `guardrail.enabled: false`
-and the honeypot behaves as measured. Turn it on to use it.
+The guardrail is fixed: prompts are sanitised, attacker text is fenced as untrusted
+data, and NVIDIA NeMo Guardrails records injection attempts as threat intelligence.
+It has no settings, so every install runs the same one. The other detectors it was
+compared against, and the comparison code, are in `experiment_data/guardrail/`.
 
-The reinforcement-learning router is not connected at all -- nothing outside
-`honeyrouter/` imports it. Routing uses `routing.fi_routing` from
-`config.yaml`.
+**Honey Router.** `hp --router` trains the router once (three phases, a few minutes),
+shows what each omega costs, and you approve one. `hp --run` refuses to start until
+that is done and says so. Set `routing.mode: user_control` to use the score table
+below instead, which needs no training.
 
 ## Architecture
 
@@ -201,9 +203,23 @@ generated file is required, so this works immediately after cloning.
 
 ### Using your own filesystem in Cowrie
 
-By default Cowrie shows its stock filesystem, which does not match the
-hostname, operating system and files declared in `config.yaml`. To make the
-container match:
+The machine the honeypot claims to be is read from a real container of the
+docker image you name in `system_state.stock_image`: its OS release, kernel,
+accounts, dotfiles, crontab, CPU and memory. Nothing is typed into config for
+those, so no two commands can describe different machines. Take the snapshot
+once, and again whenever you change the image:
+
+```bash
+python plugins/image_snapshot.py      # reads plugins/snapshot from the image
+python plugins/ubuntu_commands.py     # its commands and packages
+```
+
+`config.yaml` only adds what a container cannot know: the hostname, the
+accounts and server packages you declare (`extra_packages`, `users`), the NIC
+and the disks.
+
+By default Cowrie shows its stock filesystem, which does not match that
+machine. To make the container match:
 
 ```bash
 python plugins/cowrie_fs.py
@@ -245,19 +261,22 @@ case the values derived from it are regenerated.
 | `agents.on_device.enabled` | Use the local model | `true` |
 | `agents.on_device.model` | Hugging Face repository of the local model | `unsloth/Qwen3.5-4B-GGUF` |
 | `agents.on_device.gguf_file` | Weight file inside that repository | `Qwen3.5-4B-Q4_K_M.gguf` |
+| `agents.on_device.mode` | `local` (load the model here), `ollama` (a model pulled into Ollama) or `remote` (your own server) | `local` |
 | `agents.cloud.enabled` | Use the cloud model | `true` |
 | `agents.cloud.provider` | Cloud provider | `openai` |
 | `agents.cloud.model` | Model name at that provider | `your-model-name` |
 | `agents.cloud.base_url` | API endpoint, for OpenAI-compatible providers | `https://api.example.com/v1` |
-| `routing.fi_routing` | Responder for each score from 0 to 4 | see below |
+| `routing.mode` | `smart_router` (trained Honey Router) or `user_control` (the table below) | `smart_router` |
+| `routing.fi_routing` | `user_control` only: responder for each score from 0 to 4 | see below |
 | `routing.fallback` | Responder used when the chosen one fails | `cowrie` |
 | `logging.fi_threshold` | Minimum score for a session to be kept as notable | `2` |
 | `logging.retention_days` | Delete records older than this; `0` disables | `0` |
 
 ### Routing
 
-Each command receives a score from 0 to 4. `routing.fi_routing` maps each
-score to a responder:
+With `routing.mode: smart_router` (the default) the Honey Router chooses; nothing here
+needs editing. With `user_control`, each command receives a score from 0 to 4 and
+`routing.fi_routing` maps each score to a responder:
 
 ```yaml
 routing:
@@ -273,6 +292,23 @@ routing:
 Commands that imply little interaction go to the static responder; commands
 that imply the most go to the cloud model. Changing this mapping changes the
 cost and the realism of the honeypot together.
+
+### Using Ollama for the on-device model
+
+Install [Ollama](https://ollama.com), then run `hp --init` and pick **Ollama** at the
+on-device step. It lists what you have, offers to pull the model you name, and records
+`mode: ollama`. By hand: `ollama pull qwen2.5:7b`, then in `config.yaml`
+
+```yaml
+agents:
+  on_device:
+    enabled: true
+    mode: ollama
+    model: qwen2.5:7b          # the tag Ollama knows
+```
+
+`hp --run` checks that Ollama is answering and has the model, and tells you the command
+to fix it if not. `OLLAMA_HOST` or `agents.on_device.base_url` points it at another machine.
 
 ### API key
 
@@ -487,8 +523,8 @@ HydraPoT/
 ├── threat_intel/        IOC extraction, MITRE mapping, detection, alerts
 ├── hydrasentinel/             dashboard pages and geolocation
 ├── api/                 REST API and the FastAPI host
-├── guardrail/           prompt-injection defences (off by default)
-├── honeyrouter/         reinforcement-learning router (not connected)
+├── guardrail/           prompt-injection defences (NeMo, fixed)
+├── honeyrouter/         the Honey Router: train with `hp --router`
 ├── finetuning/          LoRA training scripts
 ├── deploy/              systemd unit templates
 ├── tools/               maintenance scripts
@@ -608,12 +644,8 @@ The script prints the installation commands rather than running them.
 
 ## Limitations
 
-- **The guardrail is off by default.** It is wired into `prompt/prompt_manager.py`
-  and `shell/session.py`, but `config.yaml` ships it disabled so the honeypot
-  matches the published results.
-- **The reinforcement-learning router is not connected.** `honeyrouter/`
-  replays recorded sessions offline. The running system uses the score-based
-  policy in `core/router.py`.
+- **The Honey Router is trained on the Part C replay.** `honeyrouter/sessions.py` reads that
+  recorded data from `experiment_data/results/partC/`, so keep that folder in a checkout.
 - **The dashboard has no authentication.** It exposes a read-only SQL console
   over collected credentials, and binds loopback only for that reason.
 - **The REST API has no authentication.** It is reachable wherever the
