@@ -11,6 +11,10 @@ Usage:
 import os
 import sys
 import yaml
+
+from core import snapshot as _snapshot
+
+_WARNED_STALE = set()
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -201,6 +205,8 @@ class OnDeviceCfg:
     do_sample: bool = True
     # Where the on-device model runs:
     #   local  -> load the model in this process, use this machine's GPU (default)
+    #   ollama -> don't load anything; use a model pulled into Ollama (`model` is its
+    #             tag, e.g. qwen2.5:7b; base_url is optional, default localhost:11434)
     #   remote -> don't load anything; POST to an OpenAI-compatible server
     #             (e.g. llama_cpp.server) running the model on a GPU box.
     # This lets the honeypot run on a machine with no GPU while the model runs
@@ -286,49 +292,35 @@ class LoggingCfg:
 
 @dataclass
 class GuardrailDetectorCfg:
-    """The injection CLASSIFIER. Off by default, deliberately.
+    """The injection detector: NVIDIA NeMo Guardrails, fixed (guardrail/detector.py).
 
-    Benchmarked by guardrail/run_benchmark.py against Scope (147 adversarial
-    prompts for honeypot LLM deployments) plus 147 commands this honeypot
-    captured: recall 0.082, precision 0.343, F1 0.132, ~13ms per command on
-    GPU. It is not off because it is bad at what it was trained for -- it is
-    off because of WHAT it misses. Scope's prompts are questions ("are you
-    GPT?", "describe your architecture."), not injections, and it scores 0.000
-    on almost all of them at every threshold from 0.1 to 0.9. The output
-    validator is what catches those.
-
-    So this is THREAT INTELLIGENCE -- "this attacker is probing the LLM" -- not
-    protection. Turn it on when you want that signal recorded and can pay 66ms.
+    Records "this attacker is probing the LLM" as threat intelligence. It does not gate
+    the defences, which always run. Not a user setting: the experiment folder varies it
+    in code (experiment_data/guardrail/), the product never does.
     """
-    enabled: bool = False
-    provider: str = "protectai"
-    model: str = "protectai/deberta-v3-base-prompt-injection-v2"
+    enabled: bool = True
+    provider: str = "nemo"
+    model: str = ""                    # NeMo's regex rail has no model
     device: str = "cpu"                # never the GPU: the responder needs it
-    threshold: float = 0.5             # 0.3-0.6 scored identically; not a knob
+    threshold: float = 0.5
     log_path: str = "data/logs/injections.jsonl"
 
 
 @dataclass
 class GuardrailCfg:
-    """Prompt-injection defences. See guardrail/.
+    """Prompt-injection defences, as shipped. See guardrail/.
 
-    The three free layers are ON. They cost nothing when wrong: stripping a
-    chat-template token from a prompt is always correct, wrapping attacker text
-    in a fence is two lines, and the output check is a regex.
-
-    THE DETECTOR DOES NOT GATE THEM. Defending only what a classifier flags
-    would leave the confirmed breaks undefended, since it scores 0.000 on them.
-    Defend always; detect for the record.
+    FIXED: config.yaml has no `guardrail:` section and none is read. Sanitising and
+    fencing attacker text run always; the detector records for the log, it does not gate
+    them; the output validator is off in the shipped build. Experiments change these in
+    code on a copy of the object (experiment_data/PartA/run/guardrail_overhead.py).
     """
     enabled: bool = True
     sanitize: bool = True      # strip forged chat-template tokens from prompts
     isolate: bool = True       # fence attacker text as untrusted data
-    validate: bool = True      # check the model's OUTPUT for persona breaks
-    retry_on_break: bool = True    # re-roll once before falling back to Cowrie
-    # Fencing costs prompt space, so it can wait for the detector's verdict.
-    # Sanitising cannot: a forged chat-template token is a forgery whatever the
-    # detector scored, so it has no on_detect twin.
-    fence_on_detect: bool = False
+    validate: bool = False     # check the model's OUTPUT for persona breaks
+    retry_on_break: bool = False
+    fence_on_detect: bool = True
     detector: GuardrailDetectorCfg = field(default_factory=GuardrailDetectorCfg)
 
 
@@ -659,10 +651,7 @@ def load_config(path: str = CONFIG_PATH) -> Config:
     agents   = AgentsCfg(cowrie=cowrie, on_device=ondev, cloud=cloud)
     routing  = _merge_dict_into_dataclass(RoutingCfg,   raw.get("routing"))
     logging_ = _merge_dict_into_dataclass(LoggingCfg,   raw.get("logging"))
-    _g = raw.get("guardrail") or {}
-    guardrail = _merge_dict_into_dataclass(GuardrailCfg, _g)
-    guardrail.detector = _merge_dict_into_dataclass(
-        GuardrailDetectorCfg, _g.get("detector"))
+    guardrail = GuardrailCfg()      # fixed: not read from config.yaml
     _d = raw.get("dashboard") or {}
     dashboard = _merge_dict_into_dataclass(DashboardCfg, _d)
     dashboard.auth = _merge_dict_into_dataclass(DashboardAuthCfg, _d.get("auth"))
@@ -730,6 +719,21 @@ def load_config(path: str = CONFIG_PATH) -> Config:
         agents.cloud.base_url = os.environ["CLOUD_AGENT_BASE_URL"]
     if os.environ.get("CLOUD_AGENT_MODEL"):
         agents.cloud.model = os.environ["CLOUD_AGENT_MODEL"]
+
+    # The configured stock image is the source of truth for what this host is.
+    system_state = dict(system_state)
+    snap = _snapshot.load()
+    if snap is not None:
+        wanted = system_state.get("stock_image")
+        if wanted and wanted != snap.image:
+            if wanted not in _WARNED_STALE:
+                _WARNED_STALE.add(wanted)
+                print(f"[config] plugins/snapshot was taken from {snap.image}, but "
+                      f"system_state.stock_image is {wanted}: run "
+                      f"`python plugins/image_snapshot.py` to read the new image.",
+                      file=sys.stderr)
+        else:
+            _snapshot.apply(snap, honeypot, system_state)
 
     return Config(
         honeypot=honeypot,

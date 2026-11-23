@@ -36,6 +36,7 @@ visible and lets a test build a session without importing main.
 """
 import json
 import os
+import shlex
 import re
 import time
 import random
@@ -46,6 +47,7 @@ from agent_manager.static_handler import is_static, dispatch_static
 from prompt.fi_manager import FILogManager
 from prompt.prompt_manager import PromptManager, _decode_echo_payload, _looks_binary
 from threat_intel.mitre_mapper import tag as mitre_tag
+from core import snapshot as image_snapshot
 from core.router import classify
 
 from shell.fakefs import FakeFS
@@ -82,7 +84,13 @@ def _load_profile(config) -> Profile:
 
 
 def _load_processes(config) -> list:
-    """The base process table named by config.yaml system_state.process_list."""
+    """The base process table named by config.yaml system_state.process_list.
+
+    A daemon is listed only when the package that provides it is installed on this
+    host (the stock image's packages plus system_state.extra_packages), so the
+    process list cannot describe software `dpkg` says is absent. Kernel threads
+    carry no package and are always there.
+    """
     path = (config.system_state or {}).get("process_list")
     if not path:
         return []
@@ -90,9 +98,13 @@ def _load_processes(config) -> list:
         path = os.path.join(_PROJECT_ROOT, path)
     try:
         with open(path, encoding="utf-8") as fh:
-            return json.load(fh)["processes"]
+            rows = json.load(fh)["processes"]
     except (OSError, ValueError, KeyError):
         return []
+    st = config.system_state or {}
+    have = {n.split(":")[0] for n in stock_packages(st.get("stock_packages"))}
+    have |= set(st.get("extra_packages") or [])
+    return [r for r in rows if not r.get("PACKAGE") or r["PACKAGE"] in have]
 
 
 def _state_snapshot(state: dict, content_chars: int = 2000) -> dict:
@@ -332,6 +344,10 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
                                 users={**profile.users(),
                                        **{int(v.get("uid", 0)): u for u, v in
                                           SYSTEM_STATE["users"].items()}})
+    _image = image_snapshot.load()
+    _stock = _image.image if _image else config.system_state.get("stock_image", "")
+    _ids = (image_snapshot.machine_id(_stock, config.honeypot.hostname),
+            image_snapshot.boot_id(_stock, config.honeypot.hostname))
     rulecore = RuleCore(register, fs, hostname=config.honeypot.hostname,
                         users=lambda: SYSTEM_STATE["users"],
                         groups=lambda: SYSTEM_STATE["groups"],
@@ -339,7 +355,8 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
                         processes=processes, kernel=config.honeypot.kernel,
                         hardware_spec=config.system_state.get("hardware"),
                         network_spec=config.system_state.get("network"),
-                        os_name=config.honeypot.os,
+                        os_name=config.honeypot.os, image=_image,
+                        machine_id=_ids[0], boot_id=_ids[1],
                         materializer=materializer, tools=sw)
     materializer.live = rulecore.live_lines
 
@@ -946,6 +963,13 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
         # be in the notebook (stock, extra_tools, or apt-installed); editors answer
         # with their own "not found".
         if is_static(actual_cmd) and (sw.available(lookup_base) or actual_base in EDITORS):
+            # top is drawn from this host's own processes and memory, not a canned
+            # frame with another machine's numbers; the canned one stays as fallback
+            if actual_base == "top":
+                handled, top_out = rulecore.answer(actual_cmd)
+                if handled:
+                    link.sync_history(cmd)
+                    return _finish(cmd, "cowrie", top_out, fi_score, t_start, trusted=True)
             output = dispatch_static(actual_cmd, write_fn)
             tracker.record(actual_cmd, output)
             return _finish(cmd, "cowrie", output, fi_score, t_start, streamed=True)
@@ -1164,6 +1188,8 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
         """One line can hold several commands (`a && b ; c`): run them in order.
 
         Forced experiment arms keep measuring one raw command."""
+        if force_agent is None:
+            rulecore.note(cmd)            # bash numbers the whole line, whatever it holds
         parts = compound.split(compound.strip_comment(cmd)) if force_agent is None else None
         if parts is None:
             return _handle_one(cmd, write_fn, read_fn, force_agent)
@@ -1193,4 +1219,21 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
     # Production's own prompt assembly, so Part A's standalone arm can send the
     # real prompt rather than rebuild one that matches. See _build_agent_prompt.
     handle.build_agent_prompt = _build_agent_prompt
+    def screen(cmd: str):
+        """A full-screen command the SSH layer should run live, else None."""
+        try:
+            argv = shlex.split(compound.strip_comment(cmd.strip()))
+        except ValueError:
+            return None
+        if argv[:1] == ["sudo"]:
+            argv = argv[1:]
+        if argv[:1] != ["top"] or not sw.available("top"):
+            return None
+        opts = rulecore.top_options(argv)
+        if not opts or opts["batch"]:
+            return None
+        return {"kind": "top", "delay": opts["delay"], "count": opts["count"],
+                "begin": rulecore.begin_screen, "end": rulecore.end_screen,
+                "frame": rulecore.top_frame, "hostname": config.honeypot.hostname}
+    handle.screen = screen
     return handle

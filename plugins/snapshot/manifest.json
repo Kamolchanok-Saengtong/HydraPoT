@@ -1,0 +1,303 @@
+{
+ "files": {
+  "/etc/cron.d": {
+   "gid": 0,
+   "mode": 493,
+   "mtime": 1795079784,
+   "size": 0,
+   "target": null,
+   "type": "dir",
+   "uid": 0
+  },
+  "/etc/cron.d/.placeholder": {
+   "gid": 0,
+   "mode": 420,
+   "mtime": 1581626682,
+   "size": 102,
+   "target": null,
+   "type": "file",
+   "uid": 0
+  },
+  "/etc/cron.d/e2scrub_all": {
+   "gid": 0,
+   "mode": 420,
+   "mtime": 1581660498,
+   "size": 201,
+   "target": null,
+   "type": "file",
+   "uid": 0
+  },
+  "/etc/cron.daily": {
+   "gid": 0,
+   "mode": 493,
+   "mtime": 1795079786,
+   "size": 0,
+   "target": null,
+   "type": "dir",
+   "uid": 0
+  },
+  "/etc/cron.daily/.placeholder": {
+   "gid": 0,
+   "mode": 420,
+   "mtime": 1581626682,
+   "size": 102,
+   "target": null,
+   "type": "file",
+   "uid": 0
+  },
+  "/etc/cron.daily/apt-compat": {
+   "gid": 0,
+   "mode": 493,
+   "mtime": 1586427667,
+   "size": 1478,
+   "target": null,
+   "type": "file",
+   "uid": 0
+  },
+  "/etc/cron.daily/bsdmainutils": {
+   "gid": 0,
+   "mode": 493,
+   "mtime": 1514538128,
+   "size": 355,
+   "target": null,
+   "type": "file",
+   "uid": 0
+  },
+  "/etc/cron.daily/dpkg": {
+   "gid": 0,
+   "mode": 493,
+   "mtime": 1567717514,
+   "size": 1187,
+   "target": null,
+   "type": "file",
+   "uid": 0
+  },
+  "/etc/cron.hourly": {
+   "gid": 0,
+   "mode": 493,
+   "mtime": 1795079784,
+   "size": 0,
+   "target": null,
+   "type": "dir",
+   "uid": 0
+  },
+  "/etc/cron.hourly/.placeholder": {
+   "gid": 0,
+   "mode": 420,
+   "mtime": 1581626682,
+   "size": 102,
+   "target": null,
+   "type": "file",
+   "uid": 0
+  },
+  "/etc/cron.monthly": {
+   "gid": 0,
+   "mode": 493,
+   "mtime": 1795079784,
+   "size": 0,
+   "target": null,
+   "type": "dir",
+   "uid": 0
+  },
+  "/etc/cron.monthly/.placeholder": {
+   "gid": 0,
+   "mode": 420,
+   "mtime": 1581626682,
+   "size": 102,
+   "target": null,
+   "type": "file",
+   "uid": 0
+  },
+  "/etc/cron.weekly": {
+   "gid": 0,
+   "mode": 493,
+   "mtime": 1795079784,
+   "size": 0,
+   "target": null,
+   "type": "dir",
+   "uid": 0
+  },
+  "/etc/cron.weekly/.placeholder": {
+   "gid": 0,
+   "mode": 420,
+   "mtime": 1581626682,
+   "size": 102,
+   "target": null,
+   "type": "file",
+   "uid": 0
+  },
+  "/etc/crontab": {
+   "gid": 0,
+   "mode": 420,
+   "mtime": 1581626682,
+   "size": 1042,
+   "target": null,
+   "type": "file",
+   "uid": 0
+  },
+  "/etc/debian_version": {
+   "gid": 0,
+   "mode": 420,
+   "mtime": 1575556761,
+   "size": 13,
+   "target": null,
+   "type": "file",
+   "uid": 0
+  },
+  "/etc/environment": {
+   "gid": 0,
+   "mode": 420,
+   "mtime": 1669774018,
+   "size": 106,
+   "target": null,
+   "type": "file",
+   "uid": 0
+  },
+  "/etc/group": {
+   "gid": 0,
+   "mode": 420,
+   "mtime": 1795079787,
+   "size": 472,
+   "target": null,
+   "type": "file",
+   "uid": 0
+  },
+  "/etc/issue": {
+   "gid": 0,
+   "mode": 420,
+   "mtime": 1661165656,
+   "size": 26,
+   "target": null,
+   "type": "file",
+   "uid": 0
+  },
+  "/etc/issue.net": {
+   "gid": 0,
+   "mode": 420,
+   "mtime": 1661165656,
+   "size": 19,
+   "target": null,
+   "type": "file",
+   "uid": 0
+  },
+  "/etc/lsb-release": {
+   "gid": 0,
+   "mode": 420,
+   "mtime": 1661165631,
+   "size": 104,
+   "target": null,
+   "type": "file",
+   "uid": 0
+  },
+  "/etc/os-release": {
+   "gid": 0,
+   "mode": 511,
+   "mtime": 1661165656,
+   "size": 0,
+   "target": "../usr/lib/os-release",
+   "type": "link",
+   "uid": 0
+  },
+  "/etc/passwd": {
+   "gid": 0,
+   "mode": 420,
+   "mtime": 1669773851,
+   "size": 926,
+   "target": null,
+   "type": "file",
+   "uid": 0
+  },
+  "/etc/shadow": {
+   "gid": 42,
+   "mode": 416,
+   "mtime": 1669773851,
+   "size": 501,
+   "target": null,
+   "type": "file",
+   "uid": 0
+  },
+  "/etc/shells": {
+   "gid": 0,
+   "mode": 420,
+   "mtime": 1669773849,
+   "size": 116,
+   "target": null,
+   "type": "file",
+   "uid": 0
+  },
+  "/etc/skel": {
+   "gid": 0,
+   "mode": 493,
+   "mtime": 1669774014,
+   "size": 0,
+   "target": null,
+   "type": "dir",
+   "uid": 0
+  },
+  "/etc/skel/.bash_logout": {
+   "gid": 0,
+   "mode": 420,
+   "mtime": 1582632202,
+   "size": 220,
+   "target": null,
+   "type": "file",
+   "uid": 0
+  },
+  "/etc/skel/.bashrc": {
+   "gid": 0,
+   "mode": 420,
+   "mtime": 1582632202,
+   "size": 3771,
+   "target": null,
+   "type": "file",
+   "uid": 0
+  },
+  "/etc/skel/.profile": {
+   "gid": 0,
+   "mode": 420,
+   "mtime": 1582632202,
+   "size": 807,
+   "target": null,
+   "type": "file",
+   "uid": 0
+  },
+  "/root/.bashrc": {
+   "gid": 0,
+   "mode": 420,
+   "mtime": 1575556761,
+   "size": 3106,
+   "target": null,
+   "type": "file",
+   "uid": 0
+  },
+  "/root/.profile": {
+   "gid": 0,
+   "mode": 420,
+   "mtime": 1575556761,
+   "size": 161,
+   "target": null,
+   "type": "file",
+   "uid": 0
+  },
+  "/usr/lib/os-release": {
+   "gid": 0,
+   "mode": 420,
+   "mtime": 1661165656,
+   "size": 382,
+   "target": null,
+   "type": "file",
+   "uid": 0
+  },
+  "/var/spool/cron/crontabs": {
+   "gid": 101,
+   "mode": 984,
+   "mtime": 1581626682,
+   "size": 0,
+   "target": null,
+   "type": "dir",
+   "uid": 0
+  }
+ },
+ "image": "hp-real:20.04",
+ "taken": "2026-11-23"
+}

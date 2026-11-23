@@ -6,9 +6,13 @@
 honeypot:
   hostname: psu
   instance_name: default
-  os: Ubuntu 20.04.6 LTS
-  kernel: 5.15.0-139-generic
-  kernel_build: '#149~20.04.1-Ubuntu SMP Wed Apr 16 08:29:56 UTC 2025'
+  # The OS name comes from the stock image (plugins/snapshot). Kernel and arch are
+  # declared here: a container shares the host's kernel, so reading them from docker
+  # would show the machine running the honeypot.
+  # Ubuntu 20.04's own kernel (focal 5.4.0-136), a real uname pair from a public log:
+  # openbenchmarking.org/system/2301070-NE-INTELCORE38/Intel%20Core%20i3-3220/dmesg
+  kernel: 5.4.0-136-generic
+  kernel_build: '#153-Ubuntu SMP Thu Nov 24 15:56:58 UTC 2022'
   arch: x86_64
   ssh_version: OpenSSH_8.2p1 Ubuntu-4ubuntu0.13
   host: 0.0.0.0
@@ -55,9 +59,9 @@ git_clone:
       raw: https://raw.githubusercontent.com/{owner}/{repo}/HEAD/{path}
 
 routing:
+  # smart_router: the Honey Router trained with `hp --router` picks the agent (default).
   # user_control: you pick the agent per FI score (fi_routing below).
-  # smart_router: the network trained with `hp --router` decides; fi_routing is ignored.
-  mode: user_control
+  mode: smart_router
   fallback: cowrie
   fi_routing:
     0: cowrie
@@ -107,273 +111,36 @@ logging:
 system_state:
   # Packages this host has BEYOND the stock image (the stock ones are read from
   # plugins/ubuntu_packages.txt, so wget, curl, sudo... are already there).
-  extra_packages: []
+  # What makes this host a server rather than the bare image: its daemons. Processes,
+  # /tmp private dirs and the accounts above belong to these packages.
+  extra_packages: [openssh-server, systemd, systemd-sysv, udev, dbus, rsyslog]
   # What this host ships is read from the real image (plugins/ubuntu_commands.py);
   # only the difference from a stock install is written here.
   stock_image: hp-real:20.04
   stock_commands: plugins/ubuntu_commands.txt
   stock_packages: plugins/ubuntu_packages.txt
   extra_tools:
-  - busybox, g++, gcc, gdb, htop, journalctl, less, ltrace, make, nmap, ping, strace, systemctl, tracepath, traceroute
+  - busybox, g++, gcc, gdb, hostnamectl, htop, journalctl, less, ltrace, make, nmap, ping, strace, systemctl, tracepath, traceroute
   missing_tools: []             # stock commands this host does NOT have
+  # The image supplies its own accounts and groups (plugins/snapshot). These are the
+  # ones the operator adds on top: the server daemons' accounts, and the people.
   users:
-    root:
-      uid: 0
-      gid: 0
-      home: /root
-      shell: /bin/bash
-      gecos: 'root'
-    daemon:
-      uid: 1
-      gid: 1
-      home: /usr/sbin
-      shell: /usr/sbin/nologin
-      gecos: 'daemon'
-    bin:
-      uid: 2
-      gid: 2
-      home: /bin
-      shell: /usr/sbin/nologin
-      gecos: 'bin'
-    sys:
-      uid: 3
-      gid: 3
-      home: /dev
-      shell: /usr/sbin/nologin
-      gecos: 'sys'
-    sync:
-      uid: 4
-      gid: 65534
-      home: /bin
-      shell: /bin/sync
-      gecos: 'sync'
-    games:
-      uid: 5
-      gid: 60
-      home: /usr/games
-      shell: /usr/sbin/nologin
-      gecos: 'games'
-    man:
-      uid: 6
-      gid: 12
-      home: /var/cache/man
-      shell: /usr/sbin/nologin
-      gecos: 'man'
-    lp:
-      uid: 7
-      gid: 7
-      home: /var/spool/lpd
-      shell: /usr/sbin/nologin
-      gecos: 'lp'
-    mail:
-      uid: 8
-      gid: 8
-      home: /var/mail
-      shell: /usr/sbin/nologin
-      gecos: 'mail'
-    news:
-      uid: 9
-      gid: 9
-      home: /var/spool/news
-      shell: /usr/sbin/nologin
-      gecos: 'news'
-    uucp:
-      uid: 10
-      gid: 10
-      home: /var/spool/uucp
-      shell: /usr/sbin/nologin
-      gecos: 'uucp'
-    proxy:
-      uid: 13
-      gid: 13
-      home: /bin
-      shell: /usr/sbin/nologin
-      gecos: 'proxy'
-    www-data:
-      uid: 33
-      gid: 33
-      home: /var/www
-      shell: /usr/sbin/nologin
-      gecos: 'www-data'
-    backup:
-      uid: 34
-      gid: 34
-      home: /var/backups
-      shell: /usr/sbin/nologin
-      gecos: 'backup'
-    list:
-      uid: 38
-      gid: 38
-      home: /var/list
-      shell: /usr/sbin/nologin
-      gecos: 'Mailing List Manager'
-    irc:
-      uid: 39
-      gid: 39
-      home: /var/run/ircd
-      shell: /usr/sbin/nologin
-      gecos: 'ircd'
-    gnats:
-      uid: 41
-      gid: 41
-      home: /var/lib/gnats
-      shell: /usr/sbin/nologin
-      gecos: 'Gnats Bug-Reporting System (admin)'
-    nobody:
-      uid: 65534
-      gid: 65534
-      home: /nonexistent
-      shell: /usr/sbin/nologin
-      gecos: 'nobody'
-    systemd-network:
-      uid: 100
-      gid: 102
-      home: /run/systemd
-      shell: /usr/sbin/nologin
-      gecos: 'systemd Network Management,,,'
-    systemd-resolve:
-      uid: 101
-      gid: 103
-      home: /run/systemd
-      shell: /usr/sbin/nologin
-      gecos: 'systemd Resolver,,,'
-    systemd-timesync:
-      uid: 102
-      gid: 104
-      home: /run/systemd
-      shell: /usr/sbin/nologin
-      gecos: 'systemd Time Synchronization,,,'
-    messagebus:
-      uid: 103
-      gid: 106
-      home: /nonexistent
-      shell: /usr/sbin/nologin
-      gecos: ''
-    syslog:
-      uid: 104
-      gid: 110
-      home: /home/syslog
-      shell: /usr/sbin/nologin
-      gecos: ''
-    _apt:
-      uid: 105
-      gid: 65534
-      home: /nonexistent
-      shell: /usr/sbin/nologin
-      gecos: ''
-    tss:
-      uid: 106
-      gid: 111
-      home: /var/lib/tpm
-      shell: /bin/false
-      gecos: 'TPM software stack,,,'
-    uuidd:
-      uid: 107
-      gid: 112
-      home: /run/uuidd
-      shell: /usr/sbin/nologin
-      gecos: ''
-    tcpdump:
-      uid: 108
-      gid: 113
-      home: /nonexistent
-      shell: /usr/sbin/nologin
-      gecos: ''
-    landscape:
-      uid: 109
-      gid: 115
-      home: /var/lib/landscape
-      shell: /usr/sbin/nologin
-      gecos: ''
-    pollinate:
-      uid: 110
-      gid: 1
-      home: /var/cache/pollinate
-      shell: /bin/false
-      gecos: ''
-    sshd:
-      uid: 111
-      gid: 65534
-      home: /run/sshd
-      shell: /usr/sbin/nologin
-      gecos: ''
-    systemd-coredump:
-      uid: 999
-      gid: 999
-      home: /
-      shell: /usr/sbin/nologin
-      gecos: 'systemd Core Dumper'
-    lxd:
-      uid: 998
-      gid: 100
-      home: /var/snap/lxd/common/lxd
-      shell: /bin/false
-      gecos: ''
-    cocadmin:
-      uid: 1001
-      gid: 1001
-      home: /home/cocadmin
-      shell: /bin/bash
-      gecos: 'COC Admin'
-  # When the accounts were set up (shadow's last-changed day). After the OS release.
+    systemd-network: {uid: 100, gid: 102, home: /run/systemd, shell: /usr/sbin/nologin, gecos: 'systemd Network Management,,,'}
+    systemd-resolve: {uid: 101, gid: 103, home: /run/systemd, shell: /usr/sbin/nologin, gecos: 'systemd Resolver,,,'}
+    systemd-timesync: {uid: 102, gid: 104, home: /run/systemd, shell: /usr/sbin/nologin, gecos: 'systemd Time Synchronization,,,'}
+    messagebus: {uid: 103, gid: 106, home: /nonexistent, shell: /usr/sbin/nologin, gecos: ''}
+    syslog: {uid: 104, gid: 110, home: /home/syslog, shell: /usr/sbin/nologin, gecos: '', groups: [adm, tty]}
+    sshd: {uid: 111, gid: 65534, home: /run/sshd, shell: /usr/sbin/nologin, gecos: ''}
+    cocadmin: {uid: 1001, gid: 1001, home: /home/cocadmin, shell: /bin/bash, gecos: COC Admin, groups: [adm, cdrom, sudo, dip, plugdev]}
   groups:
-    root: {gid: 0, members: []}
-    daemon: {gid: 1, members: []}
-    bin: {gid: 2, members: []}
-    sys: {gid: 3, members: []}
-    adm: {gid: 4, members: [syslog,cocadmin]}
-    tty: {gid: 5, members: [syslog]}
-    disk: {gid: 6, members: []}
-    lp: {gid: 7, members: []}
-    mail: {gid: 8, members: []}
-    news: {gid: 9, members: []}
-    uucp: {gid: 10, members: []}
-    man: {gid: 12, members: []}
-    proxy: {gid: 13, members: []}
-    kmem: {gid: 15, members: []}
-    dialout: {gid: 20, members: []}
-    fax: {gid: 21, members: []}
-    voice: {gid: 22, members: []}
-    cdrom: {gid: 24, members: [cocadmin]}
-    floppy: {gid: 25, members: []}
-    tape: {gid: 26, members: []}
-    sudo: {gid: 27, members: [cocadmin]}
-    audio: {gid: 29, members: []}
-    dip: {gid: 30, members: [cocadmin]}
-    www-data: {gid: 33, members: []}
-    backup: {gid: 34, members: []}
-    operator: {gid: 37, members: []}
-    list: {gid: 38, members: []}
-    irc: {gid: 39, members: []}
-    src: {gid: 40, members: []}
-    gnats: {gid: 41, members: []}
-    shadow: {gid: 42, members: []}
-    utmp: {gid: 43, members: []}
-    video: {gid: 44, members: []}
-    sasl: {gid: 45, members: []}
-    plugdev: {gid: 46, members: [cocadmin]}
-    staff: {gid: 50, members: []}
-    games: {gid: 60, members: []}
-    users: {gid: 100, members: []}
-    nogroup: {gid: 65534, members: []}
-    systemd-journal: {gid: 101, members: []}
-    systemd-network: {gid: 102, members: []}
-    systemd-resolve: {gid: 103, members: []}
-    systemd-timesync: {gid: 104, members: []}
-    crontab: {gid: 105, members: []}
-    messagebus: {gid: 106, members: []}
-    input: {gid: 107, members: []}
-    kvm: {gid: 108, members: []}
-    render: {gid: 109, members: []}
-    syslog: {gid: 110, members: []}
-    tss: {gid: 111, members: []}
-    uuidd: {gid: 112, members: []}
-    tcpdump: {gid: 113, members: []}
-    ssh: {gid: 114, members: []}
-    landscape: {gid: 115, members: []}
-    lxd: {gid: 116, members: [cocadmin]}
-    systemd-coredump: {gid: 999, members: []}
-    cocadmin: {gid: 1001, members: []}
+    systemd-journal: {gid: 101}
+    systemd-network: {gid: 102}
+    systemd-resolve: {gid: 103}
+    systemd-timesync: {gid: 104}
+    messagebus: {gid: 106}
+    syslog: {gid: 110}
+    cocadmin: {gid: 1001}
+  # When the accounts were set up (shadow's last-changed day). After the OS release.
   shadow_changed: '2024-06-12'
   shadow:
     root: $6$4aOmWdpJ$/kyPOik9rR0kSLyABIYNXgg/UqlWX3c1eIaovOLWphShTGXmuUAMq6iu9DrcQqlVUw3Pirizns4u27w3Ugvb6.
@@ -404,15 +171,14 @@ system_state:
     interface: ens3
     mac: '52:54:00:3c:9a:71'      # 52:54:00 is QEMU/KVM's prefix
     prefix: 24
-    machine_id: 3f2c9a6d1e4b47a8b0c15d7e92a4f6c3
     listeners:
     - {proto: udp,  addr: 127.0.0.53, port: 53, process: systemd-resolved, comm: systemd-resolve, bound: lo}
     - {proto: udp,  addr: '{ip}',     port: 68, process: systemd-networkd, comm: systemd-network, bound: ens3}
     - {proto: tcp,  addr: 127.0.0.53, port: 53, process: systemd-resolved, comm: systemd-resolve, bound: lo}
     - {proto: tcp,  addr: 0.0.0.0,    port: 22, process: 'sshd -D',        comm: sshd}
     - {proto: tcp6, addr: '::',       port: 22, process: 'sshd -D',        comm: sshd}
-  # One machine, answered the same by free, df, nproc, /proc/meminfo, /proc/uptime,
-  # /proc/loadavg and ps (shell/hardware.py). Sizes in kB.
+  # The machine this honeypot claims to be, declared here: a container would report
+  # the real host, so none of it is read from docker. kB. (shell/hardware.py)
   hardware:
     cpus: 2
     memory_kb:
@@ -426,12 +192,12 @@ system_state:
       swap_total: 2097148
       swap_free: 2097148
     disks:
-    - {device: udev,       mount: /dev,             size_kb: 1966004,  used_kb: 0,       avail_kb: 1966004}
-    - {device: tmpfs,      mount: /run,             size_kb: 405476,   used_kb: 1088,    avail_kb: 404388}
+    - {device: udev,       mount: /dev,             ram_fraction: 0.49}
+    - {device: tmpfs,      mount: /run,             ram_fraction: 0.1, used_kb: 1088}
     - {device: /dev/sda2,  mount: /,                size_kb: 51474044, used_kb: 7344968, avail_kb: 41448684}
-    - {device: tmpfs,      mount: /dev/shm,         size_kb: 2027372,  used_kb: 0,       avail_kb: 2027372}
+    - {device: tmpfs,      mount: /dev/shm,         ram_fraction: 0.5}
     - {device: tmpfs,      mount: /run/lock,        size_kb: 5120,     used_kb: 0,       avail_kb: 5120}
-    - {device: tmpfs,      mount: /sys/fs/cgroup,   size_kb: 2027372,  used_kb: 0,       avail_kb: 2027372}
+    - {device: tmpfs,      mount: /sys/fs/cgroup,   ram_fraction: 0.5}
     - {device: /dev/loop0, mount: /snap/core20/2318, size_kb: 65664,   used_kb: 65664,   avail_kb: 0}
     - {device: /dev/loop1, mount: /snap/lxd/24061,  size_kb: 92288,    used_kb: 92288,   avail_kb: 0}
     - {device: /dev/loop2, mount: /snap/snapd/21759, size_kb: 40448,   used_kb: 40448,   avail_kb: 0}
@@ -535,76 +301,6 @@ filesystem:
   - /home/phil
   - /.dockerenv
   dirs:
-    /etc/cron.hourly:
-      uid: 0
-      gid: 0
-      perms: '0755'
-      mtime: 2024-06-12 09:30
-    /etc/cron.weekly:
-      uid: 0
-      gid: 0
-      perms: '0755'
-      mtime: 2024-06-12 09:30
-    /etc/cron.monthly:
-      uid: 0
-      gid: 0
-      perms: '0755'
-      mtime: 2024-06-12 09:30
-    /tmp:
-      uid: 0
-      gid: 0
-      perms: '1777'
-      mtime: 2026-11-21 03:17
-    /var/spool/cron/crontabs:
-      uid: 0
-      gid: 105
-      perms: '1730'
-      mtime: 2026-07-22 12:21
-    /tmp/.ICE-unix:
-      uid: 0
-      gid: 0
-      perms: '1777'
-      mtime: 2026-07-22 12:21
-    /tmp/.Test-unix:
-      uid: 0
-      gid: 0
-      perms: '1777'
-      mtime: 2026-07-22 12:21
-    /tmp/.X11-unix:
-      uid: 0
-      gid: 0
-      perms: '1777'
-      mtime: 2026-07-22 12:21
-    /tmp/.XIM-unix:
-      uid: 0
-      gid: 0
-      perms: '1777'
-      mtime: 2026-07-22 12:21
-    /tmp/.font-unix:
-      uid: 0
-      gid: 0
-      perms: '1777'
-      mtime: 2026-07-22 12:21
-    /tmp/systemd-private-9f3b6e1c2a7d4058b1e94c6d20a8f573-systemd-logind.service-Kq3VnB:
-      uid: 0
-      gid: 0
-      perms: '0700'
-      mtime: 2026-07-22 12:21
-    /tmp/systemd-private-9f3b6e1c2a7d4058b1e94c6d20a8f573-systemd-resolved.service-Zx8PlD:
-      uid: 0
-      gid: 0
-      perms: '0700'
-      mtime: 2026-07-22 12:21
-    /tmp/systemd-private-9f3b6e1c2a7d4058b1e94c6d20a8f573-systemd-timesyncd.service-m1Rt5E:
-      uid: 0
-      gid: 0
-      perms: '0700'
-      mtime: 2026-07-22 12:21
-    /tmp/systemd-private-9f3b6e1c2a7d4058b1e94c6d20a8f573-ModemManager.service-7HcYwa:
-      uid: 0
-      gid: 0
-      perms: '0700'
-      mtime: 2026-07-22 12:21
     /home/cocadmin:
       uid: 1001
       gid: 1001
@@ -641,66 +337,18 @@ filesystem:
       perms: '0755'
       mtime: 2026-06-19 13:50
   files:
-    /etc/cron.hourly/.placeholder:
-      uid: 0
-      gid: 0
-      perms: '0644'
-      mtime: 2024-06-12 09:30
-      source: skel/placeholder
-    /etc/cron.weekly/.placeholder:
-      uid: 0
-      gid: 0
-      perms: '0644'
-      mtime: 2024-06-12 09:30
-      source: skel/placeholder
-    /etc/cron.monthly/.placeholder:
-      uid: 0
-      gid: 0
-      perms: '0644'
-      mtime: 2024-06-12 09:30
-      source: skel/placeholder
-    /root/.bashrc:
-      uid: 0
-      gid: 0
-      perms: '0644'
-      mtime: 2023-12-05 11:11
-      source: skel/bashrc
-    /root/.profile:
-      uid: 0
-      gid: 0
-      perms: '0644'
-      mtime: 2023-12-05 11:11
-      source: skel/profile
-    /home/cocadmin/.bashrc:
-      uid: 1001
-      gid: 1001
-      perms: '0644'
-      mtime: 2024-06-12 09:41
-      source: skel/bashrc
-    /home/cocadmin/.profile:
-      uid: 1001
-      gid: 1001
-      perms: '0644'
-      mtime: 2024-06-12 09:41
-      source: skel/profile_user
-    /home/cocadmin/.bash_logout:
-      uid: 1001
-      gid: 1001
-      perms: '0644'
-      mtime: 2024-06-12 09:41
-      source: skel/bash_logout
     /home/cocadmin/.sudo_as_admin_successful:
       uid: 1001
       gid: 1001
       perms: '0644'
       mtime: 2024-06-12 09:52
-      source: skel/empty
+      source: decoys/empty
     /home/cocadmin/.cache/motd.legal-displayed:
       uid: 1001
       gid: 1001
       perms: '0644'
       mtime: 2024-06-12 09:41
-      source: skel/empty
+      source: decoys/empty
     /home/cocadmin/.bash_history:
       uid: 1001
       gid: 1001
@@ -770,17 +418,3 @@ power_tariff:
     rate_thb_per_unit: 4.4217
   ft_surcharge_thb_per_unit: 0.1623
   vat_rate: 0.07
-guardrail:
-  enabled: true
-  sanitize: true
-  isolate: true
-  validate: false
-  retry_on_break: false
-  fence_on_detect: true
-  detector:
-    enabled: true
-    provider: nemo
-    model: meta-llama/Llama-Prompt-Guard-2-86M
-    device: cpu
-    threshold: 0.5
-    log_path: data/logs/injections.jsonl

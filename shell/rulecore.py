@@ -27,7 +27,8 @@ import shlex
 import tarfile
 from datetime import datetime, timezone
 
-from shell import hardware, identity, network, pipeline
+from core import snapshot as image_snapshot
+from shell import hardware, network, pipeline, screen
 from shell.compound import failed as _printed_an_error
 from shell.world import Fact
 
@@ -102,7 +103,8 @@ class RuleCore:
     def __init__(self, register, fs, hostname: str, users=None, variables=None,
                  username: str = "root", device: str = "801h/2049d",
                  processes=(), kernel: str = "5.15.0-generic", materializer=None, tools=None,
-                 hardware_spec=None, network_spec=None, os_name: str = "", groups=None):
+                 hardware_spec=None, network_spec=None, os_name: str = "", groups=None,
+                 image=None, machine_id: str = "", boot_id: str = ""):
         self.reg = register
         self.fs = fs
         self.hostname = hostname
@@ -112,6 +114,9 @@ class RuleCore:
         self.device = device
         self.changed = False          # the last answer changed the state
         self._peers = []              # later stages of the pipe being answered
+        self._screen_pid = None       # pid of the full-screen program being drawn
+        self.typed = []               # lines the attacker entered this session, for `history`
+        self._hist_from = 0
         self._jobs = 0
         self._job_table = {}          # job number -> (pid, command), for `jobs` and `kill %N`
         self._ended = []              # jobs killed since `jobs` last ran, reported once
@@ -125,6 +130,8 @@ class RuleCore:
         self.hw = hardware_spec       # system_state.hardware: free, df, nproc, /proc
         self.net = network_spec       # system_state.network: ifconfig, ip, netstat, ss
         self.os_name = os_name
+        self.image = image            # core.snapshot.Snapshot: the image's lsb-release
+        self.machine_id, self.boot_id = machine_id, boot_id
         self.groups = groups or (lambda: {})
         # Cowrie-safe commands that reproduce the last answer's change in Cowrie's own
         # filesystem: absolute quoted paths, no -p or ~ (Cowrie's mkdir lacks both)
@@ -203,7 +210,7 @@ class RuleCore:
                                "grep", "head", "tail", "wc", "stat", "du", "echo", "pwd",
                                "printenv", "env", "md5sum", "sha1sum", "sha256sum", "id",
                                "netstat", "ss", "ifconfig", "ip", "free", "df", "hostname",
-                               "lsb_release", "hostnamectl", "nproc", "groups"})
+                               "lsb_release", "hostnamectl", "nproc", "groups", "top", "history"})
 
     def _pipeline(self, stages):
         """`source | filter | ...`: the register answers the source, the filters run exactly.
@@ -734,15 +741,21 @@ class RuleCore:
     # ── the machine: free, df, nproc, and the /proc files that change ──────
 
     def _cmd_free(self, argv):
+        if not self._has("free"):
+            return False, None
         if not self.hw:
             return False, None
         out = hardware.free(self.hw, argv)
         return (True, out) if out else (False, None)
 
     def _cmd_nproc(self, argv):
+        if not self._has("nproc"):
+            return False, None
         return (True, str(self.hw["cpus"])) if self.hw and len(argv) == 1 else (False, None)
 
     def _cmd_df(self, argv):
+        if not self._has("df"):
+            return False, None
         disks = (self.hw or {}).get("disks")
         if not disks:
             return False, None
@@ -755,8 +768,32 @@ class RuleCore:
                     if best is None or len(m) > len(best):
                         best = m
             return best if self._kind(path) is not None or path == "/" else None
-        out = hardware.df(disks, argv, mounted_on)
+        out = hardware.df(disks, argv, mounted_on, self.hw["memory_kb"]["total"])
         return (True, out) if out else (False, None)
+
+    # ── history ────────────────────────────────────────────────────────────
+
+    def note(self, line: str) -> None:
+        """Record a line as typed. Cowrie's own `history` also lists this honeypot's
+        internal sync commands, so `history` is answered here instead."""
+        if line and line.strip():
+            self.typed.append(line.strip())
+
+    def _cmd_history(self, argv):
+        lines = self.typed[self._hist_from:]
+        if len(argv) == 2 and argv[1] == "-c":
+            self._hist_from = len(self.typed)
+            return True, ""
+        if len(argv) == 2 and argv[1].isdigit():
+            count = int(argv[1])
+            start = max(len(self.typed) - count, self._hist_from)
+        elif len(argv) == 1:
+            start = self._hist_from
+        else:
+            return False, None
+        base = self._hist_from
+        return True, "\n".join(f"{i - base + 1:>5}  {l}"
+                               for i, l in enumerate(self.typed[start:], start))
 
     # ── who is who: id and groups ──────────────────────────────────────────
 
@@ -825,16 +862,22 @@ class RuleCore:
                 "lo": pk("lo", 150_000, 900_000)}
 
     def _cmd_ifconfig(self, argv):
+        if not self._has("ifconfig"):
+            return False, None
         ip = self._local_ip()
         out = network.ifconfig(self.net, ip, self._counters(), argv) if ip else None
         return (True, out) if out else (False, None)
 
     def _cmd_ip(self, argv):
+        if not self._has("ip"):
+            return False, None
         ip = self._local_ip()
         out = network.ip_command(self.net, ip, argv) if ip else None
         return (True, out) if out is not None else (False, None)
 
     def _cmd_hostname(self, argv):
+        if not self._has("hostname"):
+            return False, None
         ip = self._local_ip() or ""
         out = network.hostname_command(self.hostname, ip, argv)
         if out is None or (argv[1:] == ["-I"] and not ip):
@@ -853,6 +896,8 @@ class RuleCore:
         return pids, conn
 
     def _cmd_netstat(self, argv):
+        if not self._has("netstat"):
+            return False, None
         ip = self._local_ip()
         if not ip:
             return False, None
@@ -861,6 +906,8 @@ class RuleCore:
         return (True, out) if out else (False, None)
 
     def _cmd_ss(self, argv):
+        if not self._has("ss"):
+            return False, None
         ip = self._local_ip()
         if not ip:
             return False, None
@@ -868,12 +915,25 @@ class RuleCore:
         out = network.ss(self.net, ip, pids, conn, argv)
         return (True, out) if out else (False, None)
 
+    def _has(self, name: str) -> bool:
+        """Is this command on the host? The image decides (plus what the operator adds)."""
+        return self.tools is None or self.tools.available(name)
+
+    def _lsb(self):
+        text = (self.image.text("/etc/lsb-release") or "") if self.image else ""
+        f = dict(l.split("=", 1) for l in text.splitlines() if "=" in l)
+        f = {k: v.strip('"') for k, v in f.items()}
+        if not f:
+            return None
+        return {"i": ("Distributor ID", f.get("DISTRIB_ID", "")),
+                "d": ("Description", f.get("DISTRIB_DESCRIPTION", "")),
+                "r": ("Release", f.get("DISTRIB_RELEASE", "")),
+                "c": ("Codename", f.get("DISTRIB_CODENAME", ""))}
+
     def _cmd_lsb_release(self, argv):
-        info = identity.lsb(self.os_name)
-        if not info:
+        fields = self._lsb()
+        if not fields or not self._has("lsb_release"):
             return False, None
-        fields = {"i": ("Distributor ID", info["id"]), "d": ("Description", info["description"]),
-                  "r": ("Release", info["release"]), "c": ("Codename", info["codename"])}
         short, picks = False, []
         for a in argv[1:]:
             if not re.fullmatch(r"-[aidrcs]+", a):
@@ -888,20 +948,86 @@ class RuleCore:
         if not picks:
             return True, "No LSB modules are available."
         lines = [v if short else f"{k}:\t{v}" for k, v in (fields[p] for p in picks)]
-        if "-a" in argv or any(a.startswith("-") and "a" in a for a in argv[1:]):
+        if any(a.startswith("-") and "a" in a for a in argv[1:]):
             lines.insert(0, "No LSB modules are available.")
         return True, "\n".join(lines)
 
     def _cmd_hostnamectl(self, argv):
-        info, mid = identity.lsb(self.os_name), (self.net or {}).get("machine_id")
-        if len(argv) > 2 or (len(argv) == 2 and argv[1] not in ("status",)) or not info or not mid:
+        pretty = (self.image.os_release().get("PRETTY_NAME") if self.image else None) or self.os_name
+        if (len(argv) > 2 or (len(argv) == 2 and argv[1] != "status") or not pretty
+                or not self.machine_id or not self._has("hostnamectl")):
             return False, None
-        boot = "".join(f"{self.reg.prf(f'bootid{i}', 'boot', 0, 15):x}" for i in range(32))
         rows = [("Static hostname", self.hostname), ("Icon name", "computer-vm"),
-                ("Chassis", "vm"), ("Machine ID", mid), ("Boot ID", boot),
-                ("Virtualization", "kvm"), ("Operating System", info["description"]),
+                ("Chassis", "vm"), ("Machine ID", self.machine_id), ("Boot ID", self.boot_id),
+                ("Virtualization", "kvm"), ("Operating System", pretty),
                 ("Kernel", f"Linux {self.kernel}"), ("Architecture", "x86-64")]
         return True, "\n".join(f"{k:>18}: {v}" for k, v in rows)
+
+    def _image_proc(self, path):
+        """/proc files that follow the declared hardware, then the ones that move with time."""
+        if self.hw and path == "/proc/meminfo":
+            return hardware.meminfo(self.hw)
+        return self._proc_text(path)
+
+    # ── top ────────────────────────────────────────────────────────────────
+
+    def top_options(self, argv):
+        """{batch, count, delay} for a `top` command line, or None for flags not modelled."""
+        opts, args, i = {"batch": False, "count": None, "delay": 3.0}, argv[1:], 0
+        while i < len(args):
+            a = args[i]
+            if not re.fullmatch(r"-[bnd]\w*(\.\d+)?", a):
+                return None
+            letters, j = a[1:], 0
+            while j < len(letters):
+                ch = letters[j]
+                if ch == "b":
+                    opts["batch"] = True
+                    j += 1
+                    continue
+                rest = letters[j + 1:]
+                if not rest:
+                    i += 1
+                    rest = args[i] if i < len(args) else ""
+                try:
+                    value = float(rest)
+                except ValueError:
+                    return None
+                if ch == "n":
+                    opts["count"] = int(value)
+                else:
+                    opts["delay"] = max(value, 0.1)
+                break
+            i += 1
+        return opts
+
+    def top_frame(self, tick, height, delay, sort="cpu"):
+        """One frame of `top`, from the same rows and memory `ps` and `free` use."""
+        if not self.hw:
+            return None
+        return screen.render_top(
+            self._rows("top"), self.hw, self._uptime_line(), tick,
+            lambda name, lo, hi: self.reg.prf(name, "top", lo, hi), delay, height, sort,
+            user_fmt=_ps_user)
+
+    def begin_screen(self):
+        """A full-screen program starts: it keeps one PID for all its frames."""
+        self._screen_pid = self._new_pid()
+
+    def end_screen(self):
+        self._screen_pid = None
+
+    def _cmd_top(self, argv):
+        opts = self.top_options(argv)
+        if not opts or not self.hw or not self._has("top"):
+            return False, None
+        # no terminal to draw on (batch mode, a pipe, ssh without -t): frames are printed
+        self.begin_screen()
+        try:
+            frames = [self.top_frame(t, 0, opts["delay"]) for t in range(opts["count"] or 1)]
+        finally:
+            self.end_screen()
+        return True, "\n".join(frames)
 
     def _proc_text(self, path):
         """/proc files whose value moves with time or load, else None."""
@@ -921,9 +1047,9 @@ class RuleCore:
         if len(args) != 1 or len(argv) != 2:
             return False, None
         arg, path = args[0], self._resolve(args[0])
-        live = self._proc_text(path)
+        live = self._image_proc(path)
         if live is not None:
-            return True, live
+            return True, live.rstrip("\n")
         if self._missing(path):
             return True, f"cat: {arg}: No such file or directory"
         if self._kind(path) == "dir" and self._closed(path):
@@ -977,6 +1103,10 @@ class RuleCore:
     def _text_of(self, arg, tool):
         """(handled, lines-or-error) for a file the register holds."""
         path = self._resolve(arg)
+        proc = self._image_proc(path)
+        if proc is not None:
+            body = proc[:-1] if proc.endswith("\n") else proc
+            return True, (body.split("\n") if body else []), None
         if self._missing(path):
             return True, None, f"{tool}: cannot open '{arg}' for reading: No such file or directory"
         real = self._target(path)
@@ -1065,17 +1195,13 @@ class RuleCore:
         return f"{dt:%b} {dt.day:>2} {dt:%H:%M:%S} {self.hostname}"
 
     def _boot_ns(self) -> int:
-        """Boot time agrees with ps: pid 1's START, at a seeded hour."""
+        """Boot time agrees with ps: pid 1's START, at an hour fixed by the host's boot id."""
         now = self._dt(self.reg.now_ns())
         first = next((p for p in self.processes if p["PID"] == 1), None)
-        if first:
+        if first and self.boot_id:
             try:
-                day = datetime.strptime(f"{now.year} {first['START']}", "%Y %b%d").replace(
-                    tzinfo=timezone.utc, hour=self.reg.prf("boot_h", "boot", 0, 23),
-                    minute=self.reg.prf("boot_m", "boot", 0, 59))
-                if day > now:
-                    day = day.replace(year=now.year - 1)
-                return int(day.timestamp() * 1e9)
+                return int(image_snapshot.boot_datetime(first["START"], self.boot_id, now)
+                           .timestamp() * 1e9)
             except ValueError:
                 pass
         return self.reg.epoch_ns - self.reg.prf("uptime", "boot", 3, 200) * 86_400 * 10**9
@@ -2018,6 +2144,11 @@ class RuleCore:
             pid = top + self.reg.prf("shellpid", "session", 1, 99)
         return pid
 
+    def _mem_pct(self, p) -> float:
+        """%MEM: the process's RSS against the host's memory, as ps computes it."""
+        total = ((self.hw or {}).get("memory_kb") or {}).get("total")
+        return round(int(p.get("RSS") or 0) / 1024 / total * 100, 1) if total else float(p.get("MEM") or 0)
+
     def _rows(self, me: str):
         """The process table: base, the login shell, jobs, then this ps."""
         def hhmm(ns):
@@ -2029,10 +2160,10 @@ class RuleCore:
             # init and kthreadd have no parent; kernel threads hang off kthreadd
             ppid = 0 if p["PID"] in (1, 2) else 2 if p["COMMAND"].startswith("[") else 1
             rows.append({"user": p["USER"], "pid": p["PID"], "ppid": ppid,
-                         "cpu": float(p.get("CPU") or 0), "mem": float(p.get("MEM") or 0),
+                         "cpu": float(p.get("CPU") or 0), "mem": self._mem_pct(p),
                          "vsz": int(p.get("VSZ") or 0) // 1024,
                          "rss": int(p.get("RSS") or 0) // 1024, "tty": p["TTY"],
-                         "stat": p["STAT"], "start": p["START"],
+                         "stat": p["STAT"], "start": p["START"], "comm": p.get("COMM"),
                          "time": int(minutes * 60), "cmd": p["COMMAND"].rstrip()})
         shell = self._shell_pid()
         sshd = self.reg.session("sshd_pid")
@@ -2053,7 +2184,7 @@ class RuleCore:
                          "rss": 576 if small else 1820, "tty": "pts/0", "stat": "S",
                          "start": hhmm(self._started.get(pid, self.reg.now_ns())),
                          "time": 0, "cmd": cmd})
-        rows.append({"user": self.username, "pid": self._new_pid(), "ppid": shell,
+        rows.append({"user": self.username, "pid": self._screen_pid or self._new_pid(), "ppid": shell,
                      "cpu": 0.0, "mem": 0.0, "vsz": 5900, "rss": 2828, "tty": "pts/0",
                      "stat": "R+", "start": hhmm(self.reg.now_ns()), "time": 0,
                      "cmd": me})

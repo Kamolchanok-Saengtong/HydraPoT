@@ -3,17 +3,13 @@ shell/hardware.py -- one machine, described once, answered the same by every com
 
 `free -m` said 32 GB while /proc/meminfo said 4 GB, /proc/uptime printed nothing and
 `df -h` was a model's guess that changed between calls. The numbers live in
-config.yaml (system_state.hardware); free, df, nproc, /proc/meminfo, /proc/uptime,
-/proc/loadavg and ps's %MEM all read them here.
+system_state.hardware in config.yaml, which declares the machine; free, df,
+nproc, /proc/uptime, /proc/loadavg and ps's %MEM all read them here.
 """
 import math
 
-# Fields /proc/meminfo carries that follow from the configured numbers
-_KB = 1024
-
-
 def meminfo(hw: dict) -> str:
-    """/proc/meminfo for the configured memory, in the kernel's own layout."""
+    """/proc/meminfo for the declared memory, in the kernel's own layout."""
     m = hw["memory_kb"]
     total, free, avail = m["total"], m["free"], m["available"]
     buffers, cached, srecl = m["buffers"], m["cached"], m["sreclaimable"]
@@ -43,10 +39,9 @@ def meminfo(hw: dict) -> str:
     ]
     out = [f"{k + ':':<16}{v:>8} kB" if not k.startswith("HugePages_") else f"{k + ':':<16}{v:>8}"
            for k, v in rows]
-    out.append(f"{'Hugepagesize:':<16}{2048:>8} kB")
-    out.append(f"{'Hugetlb:':<16}{0:>8} kB")
-    out.append(f"{'DirectMap4k:':<16}{total // 40:>8} kB")
-    out.append(f"{'DirectMap2M:':<16}{total - total // 40:>8} kB")
+    out += [f"{'Hugepagesize:':<16}{2048:>8} kB", f"{'Hugetlb:':<16}{0:>8} kB",
+            f"{'DirectMap4k:':<16}{total // 40:>8} kB",
+            f"{'DirectMap2M:':<16}{total - total // 40:>8} kB"]
     return "\n".join(out) + "\n"
 
 
@@ -110,7 +105,16 @@ def _human_df(kb: int) -> str:
     return text + unit if kb else "0"
 
 
-def df(disks, argv, mounted_on) -> str:
+def _sized(d: dict, total_kb: int) -> dict:
+    """tmpfs and devtmpfs are a share of RAM, so they follow it instead of a typed size."""
+    if "ram_fraction" not in d:
+        return d
+    size = int(total_kb * d["ram_fraction"])
+    used = d.get("used_kb", 0)
+    return {**d, "size_kb": size, "used_kb": used, "avail_kb": size - used}
+
+
+def df(disks, argv, mounted_on, total_kb: int = 0) -> str:
     """`df`, `df -h`, `df -k`, `df <path>` over the configured filesystems.
 
     `mounted_on(path)` -> the mount point holding that path, or None when unknown.
@@ -126,6 +130,7 @@ def df(disks, argv, mounted_on) -> str:
             return None
         else:
             paths.append(a)
+    disks = [_sized(d, total_kb) for d in disks]
     chosen = disks
     if paths:
         chosen = []

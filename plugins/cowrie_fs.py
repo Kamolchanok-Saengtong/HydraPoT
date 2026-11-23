@@ -50,7 +50,9 @@ Usage
 """
 import argparse
 import calendar
+import datetime
 import hashlib
+import json
 import random
 import re
 import string
@@ -64,8 +66,10 @@ import yaml
 sys.path.insert(0, os.path.abspath(
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")))
 from core.config_loader import load_config
+from shell import hardware
 from shell.fakefs import shadow_days
-from shell import hardware, identity
+from shell.software import stock_packages
+from core import snapshot as snapshot_mod
 
 _HERE = os.path.dirname(os.path.abspath(__file__))          # plugins/
 _ROOT = os.path.abspath(os.path.join(_HERE, ".."))          # repo root
@@ -103,6 +107,8 @@ def _split(path: str) -> list[str]:
 
 def _mtime(value) -> int:
     """'2026-08-14 22:41' -> epoch. Missing means now."""
+    if isinstance(value, (int, float)) and value:
+        return int(value)
     if not value:
         return int(time.time())
     for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
@@ -204,27 +210,9 @@ def count(node) -> tuple[int, int]:
     return files, dirs
 
 
-def split_os(os_string: str) -> tuple[str, str]:
-    """"Ubuntu 22.04 LTS" -> ("Ubuntu", "22.04").
-
-    Parsed rather than looked up in a table: the wizard already offers several
-    distributions and hand-editing config.yaml is supported, so a table here
-    would silently produce the wrong answer for anything not in it. Falls back
-    to the whole string when there is no version token.
-    """
-    parts = os_string.split()
-    name = parts[0] if parts else os_string
-    version = ""
-    for p in parts[1:]:
-        if p[:1].isdigit():
-            version = p
-            break
-    return name, version
-
-
-
-_UBUNTU = identity.UBUNTU
-_DEB_ARCH = {"x86_64": "amd64", "aarch64": "arm64"}
+# Ubuntu resolves through systemd-resolved's stub, which `ss` shows on 127.0.0.53.
+# Docker writes the host's resolv.conf into every container, so the image cannot
+# say what a real install has here.
 _RESOLV = """# This file is managed by man:systemd-resolved(8). Do not edit.
 #
 # This is a dynamic resolv.conf file for connecting local clients to the
@@ -243,39 +231,6 @@ _RESOLV = """# This file is managed by man:systemd-resolved(8). Do not edit.
 
 nameserver 127.0.0.53
 options edns0 trust-ad
-"""
-_CRONTAB = """# /etc/crontab: system-wide crontab
-# Unlike any other crontab you don't have to run the `crontab'
-# command to install the new version when you edit this file
-# and files in /etc/cron.d. These files also have username fields,
-# that none of the other crontabs do.
-
-SHELL=/bin/sh
-PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
-
-# Example of job definition:
-# .---------------- minute (0 - 59)
-# |  .------------- hour (0 - 23)
-# |  |  .---------- day of month (1 - 31)
-# |  |  |  .------- month (1 - 12) OR jan,feb,mar,apr ...
-# |  |  |  |  .---- day of week (0 - 6) (Sunday=0 or 7) OR sun,mon,tue,wed,thu,fri,sat
-# |  |  |  |  |
-# *  *  *  *  * user-name command to be executed
-17 *\t* * *\troot    cd / && run-parts --report /etc/cron.hourly
-25 6\t* * *\troot\ttest -x /usr/sbin/anacron || ( cd / && run-parts --report /etc/cron.daily )
-47 6\t* * 7\troot\ttest -x /usr/sbin/anacron || ( cd / && run-parts --report /etc/cron.weekly )
-52 6\t1 * *\troot\ttest -x /usr/sbin/anacron || ( cd / && run-parts --report /etc/cron.monthly )
-#
-"""
-_SHELLS = """# /etc/shells: valid login shells
-/bin/sh
-/bin/bash
-/usr/bin/bash
-/bin/rbash
-/usr/bin/rbash
-/usr/bin/sh
-/bin/dash
-/usr/bin/dash
 """
 
 
@@ -297,20 +252,31 @@ def _fill_decoys(text: str, seed: str) -> str:
     return re.sub(r"@(AWS_KEY_ID|AWS_SECRET)@", one, text)
 
 
-def build_persona(cfg) -> dict[str, str]:
-    hp = cfg.honeypot
-    name, version = split_os(hp.os)
-    ident = name.lower()
-    majmin = ".".join(version.split(".")[:2])
-    codename, nick, _deb = _UBUNTU.get(majmin, ("", "", "")) if ident == "ubuntu" else ("", "", "")
-    versions = (cfg.system_state or {}).get("versions") or {}
+_DEB_ARCH = {"x86_64": "amd64", "aarch64": "arm64"}
 
-    # COWRIE_<SECTION>_<KEY>, per Cowrie's Docker docs. These override
-    # cowrie.cfg, so `uname` agrees with us no matter how it is invoked --
-    # piped, substituted, or behind &&.
+
+def proc_version(cfg) -> str:
+    """/proc/version for the declared kernel: Linux version <release> (<builder>) (<gcc>, <ld>) <build>.
+
+    The compiler and linker come from the `versions:` the `gcc` command answers with, so
+    the two cannot disagree. Declared, not read from docker: a container's /proc/version
+    is the operator's own kernel.
+    """
+    hp = cfg.honeypot
+    versions = (cfg.system_state or {}).get("versions") or {}
+    arch = _DEB_ARCH.get(hp.arch, hp.arch)
+    host = int(hashlib.sha1(hp.kernel_build.encode()).hexdigest()[:6], 16) % 120
+    gcc = versions.get("gcc", "gcc version 9.4.0")
+    ld = versions.get("ld", "GNU ld (GNU Binutils for Ubuntu) 2.34")
+    return f"Linux version {hp.kernel} (buildd@lcy02-{arch}-{host:03d}) ({gcc}, {ld}) {hp.kernel_build}\n"
+
+
+def build_persona(cfg, snap) -> dict[str, str]:
+    """cowrie.env (the kernel identity Cowrie prints) and the honeyfs files."""
+    hp = cfg.honeypot
     env = "\n".join([
         "# Generated by plugins/cowrie_fs.py — DO NOT EDIT BY HAND.",
-        "# Regenerate after changing honeypot.os / kernel / arch in config.yaml.",
+        "# Kernel identity is declared in config.yaml (honeypot.kernel).",
         f"COWRIE_HONEYPOT_HOSTNAME={hp.hostname}",
         f"COWRIE_SHELL_KERNEL_VERSION={hp.kernel}",
         f"COWRIE_SHELL_KERNEL_BUILD_STRING={hp.kernel_build}",
@@ -318,79 +284,65 @@ def build_persona(cfg) -> dict[str, str]:
         "COWRIE_SHELL_OPERATING_SYSTEM=GNU/Linux",
         "",
     ])
-
-    # /proc/version: Linux version <release> (<builder>) (<gcc>, <ld>) <build>
-    # The compiler and linker come from the same `versions:` the `gcc` command
-    # answers with, so the two cannot disagree. Without them (other distros) the
-    # older shorter form is kept.
-    gcc = versions.get("gcc")
-    if gcc and ident == "ubuntu":
-        arch = _DEB_ARCH.get(hp.arch, hp.arch)
-        host = int(hashlib.sha1(hp.kernel_build.encode()).hexdigest()[:6], 16) % 120
-        ld = versions.get("ld") or "GNU ld (GNU Binutils for Ubuntu)"
-        proc_version = (f"Linux version {hp.kernel} (buildd@lcy02-{arch}-{host:03d}) "
-                        f"({gcc}, {ld}) {hp.kernel_build}\n")
-    else:
-        proc_version = (f"Linux version {hp.kernel} (buildd@{ident}-{hp.arch}) "
-                        f"(gcc version 11.4.0 ({name} {version})) {hp.kernel_build}\n")
-
-    pretty = hp.os
-    if codename:
-        os_release = "\n".join([
-            f'NAME="{name}"',
-            f'VERSION="{version} LTS ({nick})"',
-            f"ID={ident}",
-            "ID_LIKE=debian",
-            f'PRETTY_NAME="{pretty}"',
-            f'VERSION_ID="{majmin}"',
-            'HOME_URL="https://www.ubuntu.com/"',
-            'SUPPORT_URL="https://help.ubuntu.com/"',
-            'BUG_REPORT_URL="https://bugs.launchpad.net/ubuntu/"',
-            'PRIVACY_POLICY_URL="https://www.ubuntu.com/legal/terms-and-policies/privacy-policy"',
-            f"VERSION_CODENAME={codename}",
-            f"UBUNTU_CODENAME={codename}",
-            "",
-        ])
-    else:
-        os_release = "\n".join([
-            f'PRETTY_NAME="{pretty}"',
-            f'NAME="{name}"',
-            f'VERSION_ID="{version}"',
-            f'VERSION="{version} ({name})"',
-            f"ID={ident}",
-            f"HOME_URL=\"https://www.{ident}.com/\"",
-            f"SUPPORT_URL=\"https://help.{ident}.com/\"",
-            "",
-        ])
-
-    issue = f"{pretty} \\n \\l\n\n"
-
-    return {
-        "cowrie.env": env,
-        os.path.join("honeyfs", "proc", "version"): proc_version,
-        os.path.join("honeyfs", "etc", "os-release"): os_release,
-        os.path.join("honeyfs", "etc", "issue"): issue,
-    }
+    out = {"cowrie.env": env, os.path.join("honeyfs", "proc", "version"): proc_version(cfg)}
+    for path in ("/etc/os-release", "/etc/issue"):
+        text = snap.text(path)
+        if text is not None:
+            out[os.path.join("honeyfs", path.lstrip("/"))] = text
+    return out
 
 
-def persona_tree_files(cfg) -> dict[str, str]:
-    """Identity files Cowrie serves from the tree itself (no mount needed).
+def _iso(epoch) -> str:
+    return time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(epoch))
 
-    Cowrie's stock tree names the machine `svr04` (/etc/hostname) and `nas3`
-    (/etc/hosts); both survive a hostname change in config.yaml unless
-    rewritten, and `hostname` then disagrees with the file.
+
+def apply_snapshot(root, snap, cfg, since: str) -> list[str]:
+    """Put the image's own files into the tree, with its modes, owners and dates.
+
+    Accounts are not copied: /etc/passwd, /etc/group and /etc/shadow are built
+    from the image's accounts plus the operator's (sync_system_state), so a
+    declared user cannot be missing from them.
+    """
+    log = []
+    built_elsewhere = {"/etc/passwd", "/etc/group", "/etc/shadow"}
+    for path in snap.paths():
+        m = snap.meta(path)
+        if path in built_elsewhere:
+            continue
+        spec = {"uid": m["uid"], "gid": m["gid"], "perms": f"{m['mode'] & 0o7777:o}",
+                "mtime": _iso(m["mtime"]) if m["mtime"] else since}
+        if m["type"] == "dir":
+            ensure_dir(root, path, spec)
+            continue
+        data = snap.read(path)
+        if data is None:
+            continue
+        add_file(root, path, {**spec, "content": data.decode("utf-8", "replace")})
+    log.append(f"  image files            {len(snap.paths())} from {snap.image}")
+
+    # a login account starts from /etc/skel, dated when the account was created
+    skel = [p for p in snap.paths("/etc/skel/") if snap.meta(p)["type"] != "dir"]
+    for name, u in ((cfg.system_state or {}).get("users") or {}).items():
+        home = u.get("home", "")
+        if u.get("uid", 0) < 1000 or not home.startswith("/home"):
+            continue
+        for p in skel:
+            m = snap.meta(p)
+            add_file(root, f"{home}/{os.path.basename(p)}",
+                     {"uid": u["uid"], "gid": u["gid"], "perms": f"{m['mode'] & 0o7777:o}",
+                      "mtime": since, "content": snap.text(p)})
+    return log
+
+
+def persona_tree_files(cfg, snap) -> dict[str, str]:
+    """The files that describe THIS host rather than the image.
+
+    Docker writes /etc/hostname, /etc/hosts and /etc/machine-id per container, so
+    they come from config. Cowrie's stock tree names the machine `svr04` and `nas3`.
     """
     hp = cfg.honeypot
-    name, version = split_os(hp.os)
-    ident = name.lower()
-    majmin = ".".join(version.split(".")[:2])
-    # /proc/version is stored inline in Cowrie's stock tree and wins over
-    # honeyfs, so a mounted file alone still answered "Debian 6.1". Written into
-    # the tree, the three files below cannot go stale behind a bind mount either.
+    st = cfg.system_state or {}
     out = {
-        "/" + rel[len("honeyfs/"):]: body
-        for rel, body in build_persona(cfg).items() if rel.startswith("honeyfs/")}
-    out.update({
         "/etc/hostname": f"{hp.hostname}\n",
         "/etc/hosts": "\n".join([
             "127.0.0.1 localhost", f"127.0.1.1 {hp.hostname}", "",
@@ -398,31 +350,53 @@ def persona_tree_files(cfg) -> dict[str, str]:
             "::1 ip6-localhost ip6-loopback", "fe00::0 ip6-localnet",
             "ff00::0 ip6-mcastprefix", "ff02::1 ip6-allnodes",
             "ff02::2 ip6-allrouters", ""]),
-    })
-    groups = (cfg.system_state or {}).get("groups")
+        "/etc/machine-id": snapshot_mod.machine_id(snap.image, hp.hostname) + "\n",
+        "/proc/version": proc_version(cfg),
+    }
+    if st.get("hardware"):
+        out["/proc/meminfo"] = hardware.meminfo(st["hardware"])
+    groups = st.get("groups")
     if groups:
         out["/etc/group"] = "\n".join(
             f"{n}:x:{g['gid']}:{','.join(g.get('members') or [])}" for n, g in groups.items()) + "\n"
-    machine_id = ((cfg.system_state or {}).get("network") or {}).get("machine_id")
-    if machine_id:
-        out["/etc/machine-id"] = machine_id + "\n"
-    hw = (cfg.system_state or {}).get("hardware")
-    if hw:
-        out["/proc/meminfo"] = hardware.meminfo(hw)
-    if ident == "ubuntu":
-        # Ubuntu resolves through systemd-resolved's stub, which `ss` shows on
-        # 127.0.0.53; Cowrie's stock file names 8.8.8.8 directly.
+    if "systemd" in installed_packages(st):
         out["/etc/resolv.conf"] = _RESOLV
-        out["/etc/shells"] = _SHELLS
-        out["/etc/crontab"] = _CRONTAB
-    if ident == "ubuntu" and majmin in _UBUNTU:
-        codename, _nick, deb = _UBUNTU[majmin]
-        out["/etc/lsb-release"] = "\n".join([
-            "DISTRIB_ID=Ubuntu", f"DISTRIB_RELEASE={majmin}",
-            f"DISTRIB_CODENAME={codename}", f'DISTRIB_DESCRIPTION="{hp.os}"', ""])
-        out["/etc/issue.net"] = f"{hp.os}\n"
-        out["/etc/debian_version"] = f"{deb}\n"
     return out
+
+
+def systemd_tmp(root, cfg, snap) -> list[str]:
+    """/tmp as systemd leaves it: the per-service private dirs and the socket dirs.
+
+    Present only when systemd is installed; named with the boot id and dated at boot.
+    """
+    st = cfg.system_state or {}
+    if "systemd" not in installed_packages(st):
+        return []
+    boot = snapshot_mod.boot_id(snap.image, cfg.honeypot.hostname)
+    procs = os.path.join(_ROOT, st.get("process_list", "plugins/cowrie/processes.json"))
+    try:
+        with open(procs, encoding="utf-8") as fh:
+            label = next(p["START"] for p in json.load(fh)["processes"] if p["PID"] == 1)
+        when = snapshot_mod.boot_datetime(label, boot, datetime.datetime.now(datetime.timezone.utc))
+    except (OSError, StopIteration, KeyError, ValueError):
+        return []
+    stamp = when.strftime("%Y-%m-%d %H:%M:%S")
+    rng, log = random.Random(boot), []
+    ensure_dir(root, "/tmp", {"perms": "1777", "mtime": stamp})   # nothing in it is older than the boot
+    for d in (".ICE-unix", ".Test-unix", ".X11-unix", ".XIM-unix", ".font-unix"):
+        ensure_dir(root, f"/tmp/{d}", {"perms": "1777", "mtime": stamp})
+    for unit in ("systemd-logind", "systemd-resolved", "systemd-timesyncd"):
+        suffix = "".join(rng.choice(string.ascii_letters + string.digits) for _ in range(6))
+        ensure_dir(root, f"/tmp/systemd-private-{boot}-{unit}.service-{suffix}",
+                   {"perms": "0700", "mtime": stamp})
+    log.append(f"  /tmp                   systemd private dirs, boot id {boot[:8]}…")
+    return log
+
+
+def installed_packages(st: dict) -> set:
+    """Package names on the host: the image's, plus what the operator adds."""
+    names = {n.split(":")[0] for n in stock_packages(st.get("stock_packages"))}
+    return names | set(st.get("extra_packages") or [])
 
 
 def _perm_to_octal(perms: str, is_dir: bool) -> str:
@@ -569,8 +543,15 @@ def main() -> None:
     for line in sync_system_state(root, conf):
         print(line)
 
+    snap = snapshot_mod.load()
+    if snap is None:
+        sys.exit("plugins/snapshot is missing: run `python plugins/image_snapshot.py` first.")
     since = str((conf.system_state or {}).get("shadow_changed") or "")
-    for path, body in persona_tree_files(conf).items():
+    for line in apply_snapshot(root, snap, conf, since):
+        print(line)
+    for line in systemd_tmp(root, conf, snap):
+        print(line)
+    for path, body in persona_tree_files(conf, snap).items():
         what = add_file(root, path, {"content": body, "perms": "0644", "mtime": since})
         print(f"  {path:<22} {what} (identity)")
 
@@ -613,7 +594,7 @@ def main() -> None:
     # config.yaml that drives everything else.
     out_dir = os.path.dirname(out)
     print()
-    for rel, content in build_persona(conf).items():
+    for rel, content in build_persona(conf, snap).items():
         path = os.path.join(out_dir, rel)
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w") as fh:

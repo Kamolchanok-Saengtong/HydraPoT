@@ -84,6 +84,8 @@ def _encode(value):
 def _decode(value):
     if isinstance(value, dict) and "b64" in value:
         return base64.b64decode(value["b64"])
+    if isinstance(value, list):
+        return tuple(value)        # JSON has no tuples; a fact value is never a list (pkg is one)
     return value
 
 

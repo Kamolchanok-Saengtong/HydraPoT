@@ -1,10 +1,10 @@
 {
- "source": "stock Ubuntu 20.04 server baseline (systemd, kernel threads of a 2-CPU 5.15 kernel); VSZ/RSS in bytes, TIME in minutes, MEM against hardware.memory_kb.total",
+ "source": "Ubuntu server daemons, each tagged with its package: shown only when that package is installed (image + extra_packages). VSZ/RSS in bytes, TIME in minutes; %MEM is computed.",
  "processes": [
   {
    "COMMAND": "/sbin/init",
    "CPU": 0.0,
-   "MEM": 0.3,
+   "PACKAGE": "systemd-sysv",
    "PID": 1,
    "RSS": 11943936,
    "START": "Jul22",
@@ -12,12 +12,13 @@
    "TIME": 0.27,
    "TTY": "?",
    "USER": "root",
-   "VSZ": 173465600
+   "VSZ": 173465600,
+   "COMM": "systemd"
   },
   {
    "COMMAND": "[kthreadd]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 2,
    "RSS": 0,
    "START": "Jul22",
@@ -30,7 +31,7 @@
   {
    "COMMAND": "[rcu_gp]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 3,
    "RSS": 0,
    "START": "Jul22",
@@ -43,7 +44,7 @@
   {
    "COMMAND": "[rcu_par_gp]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 4,
    "RSS": 0,
    "START": "Jul22",
@@ -56,7 +57,7 @@
   {
    "COMMAND": "[kworker/0:0H-events_highpri]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 6,
    "RSS": 0,
    "START": "Jul22",
@@ -69,7 +70,7 @@
   {
    "COMMAND": "[mm_percpu_wq]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 9,
    "RSS": 0,
    "START": "Jul22",
@@ -82,7 +83,7 @@
   {
    "COMMAND": "[rcu_tasks_rude_]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 10,
    "RSS": 0,
    "START": "Jul22",
@@ -95,7 +96,7 @@
   {
    "COMMAND": "[rcu_tasks_trace]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 11,
    "RSS": 0,
    "START": "Jul22",
@@ -108,7 +109,7 @@
   {
    "COMMAND": "[ksoftirqd/0]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 12,
    "RSS": 0,
    "START": "Jul22",
@@ -121,7 +122,7 @@
   {
    "COMMAND": "[rcu_sched]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 13,
    "RSS": 0,
    "START": "Jul22",
@@ -134,7 +135,7 @@
   {
    "COMMAND": "[migration/0]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 14,
    "RSS": 0,
    "START": "Jul22",
@@ -147,7 +148,7 @@
   {
    "COMMAND": "[idle_inject/0]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 15,
    "RSS": 0,
    "START": "Jul22",
@@ -160,7 +161,7 @@
   {
    "COMMAND": "[cpuhp/0]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 16,
    "RSS": 0,
    "START": "Jul22",
@@ -173,7 +174,7 @@
   {
    "COMMAND": "[cpuhp/1]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 17,
    "RSS": 0,
    "START": "Jul22",
@@ -186,7 +187,7 @@
   {
    "COMMAND": "[idle_inject/1]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 18,
    "RSS": 0,
    "START": "Jul22",
@@ -199,7 +200,7 @@
   {
    "COMMAND": "[migration/1]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 19,
    "RSS": 0,
    "START": "Jul22",
@@ -212,7 +213,7 @@
   {
    "COMMAND": "[ksoftirqd/1]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 20,
    "RSS": 0,
    "START": "Jul22",
@@ -225,7 +226,7 @@
   {
    "COMMAND": "[kworker/1:0H-events_highpri]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 22,
    "RSS": 0,
    "START": "Jul22",
@@ -238,7 +239,7 @@
   {
    "COMMAND": "[kdevtmpfs]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 23,
    "RSS": 0,
    "START": "Jul22",
@@ -251,7 +252,7 @@
   {
    "COMMAND": "[netns]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 24,
    "RSS": 0,
    "START": "Jul22",
@@ -264,7 +265,7 @@
   {
    "COMMAND": "[rcu_tasks_kthre]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 25,
    "RSS": 0,
    "START": "Jul22",
@@ -277,7 +278,7 @@
   {
    "COMMAND": "[kauditd]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 26,
    "RSS": 0,
    "START": "Jul22",
@@ -290,7 +291,7 @@
   {
    "COMMAND": "[khungtaskd]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 27,
    "RSS": 0,
    "START": "Jul22",
@@ -303,7 +304,7 @@
   {
    "COMMAND": "[oom_reaper]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 28,
    "RSS": 0,
    "START": "Jul22",
@@ -316,7 +317,7 @@
   {
    "COMMAND": "[writeback]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 29,
    "RSS": 0,
    "START": "Jul22",
@@ -329,7 +330,7 @@
   {
    "COMMAND": "[kcompactd0]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 30,
    "RSS": 0,
    "START": "Jul22",
@@ -342,7 +343,7 @@
   {
    "COMMAND": "[khugepaged]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 31,
    "RSS": 0,
    "START": "Jul22",
@@ -355,7 +356,7 @@
   {
    "COMMAND": "[kintegrityd]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 78,
    "RSS": 0,
    "START": "Jul22",
@@ -368,7 +369,7 @@
   {
    "COMMAND": "[kblockd]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 79,
    "RSS": 0,
    "START": "Jul22",
@@ -381,7 +382,7 @@
   {
    "COMMAND": "[blkcg_punt_bio]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 80,
    "RSS": 0,
    "START": "Jul22",
@@ -394,7 +395,7 @@
   {
    "COMMAND": "[tpm_dev_wq]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 81,
    "RSS": 0,
    "START": "Jul22",
@@ -407,7 +408,7 @@
   {
    "COMMAND": "[ata_sff]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 82,
    "RSS": 0,
    "START": "Jul22",
@@ -420,7 +421,7 @@
   {
    "COMMAND": "[md]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 83,
    "RSS": 0,
    "START": "Jul22",
@@ -433,7 +434,7 @@
   {
    "COMMAND": "[edac-poller]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 84,
    "RSS": 0,
    "START": "Jul22",
@@ -446,7 +447,7 @@
   {
    "COMMAND": "[devfreq_wq]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 85,
    "RSS": 0,
    "START": "Jul22",
@@ -459,7 +460,7 @@
   {
    "COMMAND": "[watchdogd]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 86,
    "RSS": 0,
    "START": "Jul22",
@@ -472,7 +473,7 @@
   {
    "COMMAND": "[kswapd0]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 88,
    "RSS": 0,
    "START": "Jul22",
@@ -485,7 +486,7 @@
   {
    "COMMAND": "[ecryptfs-kthrea]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 89,
    "RSS": 0,
    "START": "Jul22",
@@ -498,7 +499,7 @@
   {
    "COMMAND": "[kthrotld]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 91,
    "RSS": 0,
    "START": "Jul22",
@@ -511,7 +512,7 @@
   {
    "COMMAND": "[acpi_thermal_pm]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 92,
    "RSS": 0,
    "START": "Jul22",
@@ -524,7 +525,7 @@
   {
    "COMMAND": "[scsi_eh_0]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 94,
    "RSS": 0,
    "START": "Jul22",
@@ -537,7 +538,7 @@
   {
    "COMMAND": "[scsi_tmf_0]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 95,
    "RSS": 0,
    "START": "Jul22",
@@ -550,7 +551,7 @@
   {
    "COMMAND": "[scsi_eh_1]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 97,
    "RSS": 0,
    "START": "Jul22",
@@ -563,7 +564,7 @@
   {
    "COMMAND": "[scsi_tmf_1]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 98,
    "RSS": 0,
    "START": "Jul22",
@@ -576,7 +577,7 @@
   {
    "COMMAND": "[vfio-irqfd-clea]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 101,
    "RSS": 0,
    "START": "Jul22",
@@ -589,7 +590,7 @@
   {
    "COMMAND": "[ipv6_addrconf]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 103,
    "RSS": 0,
    "START": "Jul22",
@@ -602,7 +603,7 @@
   {
    "COMMAND": "[kstrp]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 113,
    "RSS": 0,
    "START": "Jul22",
@@ -615,7 +616,7 @@
   {
    "COMMAND": "[zswap-shrink]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 116,
    "RSS": 0,
    "START": "Jul22",
@@ -628,7 +629,7 @@
   {
    "COMMAND": "[kworker/u5:0]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 117,
    "RSS": 0,
    "START": "Jul22",
@@ -641,7 +642,7 @@
   {
    "COMMAND": "[charger_manager]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 170,
    "RSS": 0,
    "START": "Jul22",
@@ -654,7 +655,7 @@
   {
    "COMMAND": "[kworker/0:1H-kblockd]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 224,
    "RSS": 0,
    "START": "Jul22",
@@ -667,7 +668,7 @@
   {
    "COMMAND": "[kworker/1:1H-kblockd]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 225,
    "RSS": 0,
    "START": "Jul22",
@@ -680,7 +681,7 @@
   {
    "COMMAND": "[jbd2/sda1-8]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 247,
    "RSS": 0,
    "START": "Jul22",
@@ -693,7 +694,7 @@
   {
    "COMMAND": "[ext4-rsv-conver]",
    "CPU": 0.0,
-   "MEM": 0.0,
+   "PACKAGE": "",
    "PID": 248,
    "RSS": 0,
    "START": "Jul22",
@@ -706,7 +707,7 @@
   {
    "COMMAND": "/lib/systemd/systemd-journald",
    "CPU": 0.0,
-   "MEM": 0.5,
+   "PACKAGE": "systemd",
    "PID": 291,
    "RSS": 19845120,
    "START": "Jul22",
@@ -719,7 +720,7 @@
   {
    "COMMAND": "/lib/systemd/systemd-udevd",
    "CPU": 0.0,
-   "MEM": 0.2,
+   "PACKAGE": "udev",
    "PID": 323,
    "RSS": 6393856,
    "START": "Jul22",
@@ -730,22 +731,9 @@
    "VSZ": 24231936
   },
   {
-   "COMMAND": "/sbin/multipathd -d -s",
-   "CPU": 0.0,
-   "MEM": 0.4,
-   "PID": 407,
-   "RSS": 18345984,
-   "START": "Jul22",
-   "STAT": "SLsl",
-   "TIME": 0.12,
-   "TTY": "?",
-   "USER": "root",
-   "VSZ": 354099200
-  },
-  {
    "COMMAND": "/lib/systemd/systemd-networkd",
    "CPU": 0.0,
-   "MEM": 0.2,
+   "PACKAGE": "systemd",
    "PID": 426,
    "RSS": 8245248,
    "START": "Jul22",
@@ -758,7 +746,7 @@
   {
    "COMMAND": "/lib/systemd/systemd-resolved",
    "CPU": 0.0,
-   "MEM": 0.3,
+   "PACKAGE": "systemd",
    "PID": 428,
    "RSS": 13008896,
    "START": "Jul22",
@@ -771,7 +759,7 @@
   {
    "COMMAND": "/lib/systemd/systemd-timesyncd",
    "CPU": 0.0,
-   "MEM": 0.2,
+   "PACKAGE": "systemd",
    "PID": 430,
    "RSS": 6332416,
    "START": "Jul22",
@@ -782,35 +770,9 @@
    "VSZ": 91594752
   },
   {
-   "COMMAND": "/usr/lib/accountsservice/accounts-daemon",
-   "CPU": 0.0,
-   "MEM": 0.2,
-   "PID": 509,
-   "RSS": 7532544,
-   "START": "Jul22",
-   "STAT": "Ssl",
-   "TIME": 0.02,
-   "TTY": "?",
-   "USER": "root",
-   "VSZ": 238301184
-  },
-  {
-   "COMMAND": "/usr/sbin/atd -f",
-   "CPU": 0.0,
-   "MEM": 0.1,
-   "PID": 511,
-   "RSS": 2478080,
-   "START": "Jul22",
-   "STAT": "Ss",
-   "TIME": 0.0,
-   "TTY": "?",
-   "USER": "root",
-   "VSZ": 8740864
-  },
-  {
    "COMMAND": "/usr/sbin/cron -f",
    "CPU": 0.0,
-   "MEM": 0.1,
+   "PACKAGE": "cron",
    "PID": 513,
    "RSS": 2920448,
    "START": "Jul22",
@@ -823,7 +785,7 @@
   {
    "COMMAND": "/usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only",
    "CPU": 0.0,
-   "MEM": 0.1,
+   "PACKAGE": "dbus",
    "PID": 514,
    "RSS": 4571136,
    "START": "Jul22",
@@ -834,48 +796,9 @@
    "VSZ": 7536640
   },
   {
-   "COMMAND": "/usr/sbin/irqbalance --foreground",
-   "CPU": 0.0,
-   "MEM": 0.1,
-   "PID": 519,
-   "RSS": 2232320,
-   "START": "Jul22",
-   "STAT": "Ss",
-   "TIME": 0.18,
-   "TTY": "?",
-   "USER": "root",
-   "VSZ": 243806208
-  },
-  {
-   "COMMAND": "/usr/bin/python3 /usr/bin/networkd-dispatcher --run-startup-triggers",
-   "CPU": 0.0,
-   "MEM": 0.5,
-   "PID": 521,
-   "RSS": 20963328,
-   "START": "Jul22",
-   "STAT": "Ss",
-   "TIME": 0.05,
-   "TTY": "?",
-   "USER": "root",
-   "VSZ": 32116736
-  },
-  {
-   "COMMAND": "/usr/lib/policykit-1/polkitd --no-debug",
-   "CPU": 0.0,
-   "MEM": 0.2,
-   "PID": 523,
-   "RSS": 7991296,
-   "START": "Jul22",
-   "STAT": "Ssl",
-   "TIME": 0.03,
-   "TTY": "?",
-   "USER": "root",
-   "VSZ": 240332800
-  },
-  {
    "COMMAND": "/usr/sbin/rsyslogd -n -iNONE",
    "CPU": 0.0,
-   "MEM": 0.1,
+   "PACKAGE": "rsyslog",
    "PID": 525,
    "RSS": 5341184,
    "START": "Jul22",
@@ -886,22 +809,9 @@
    "VSZ": 229732352
   },
   {
-   "COMMAND": "/usr/lib/snapd/snapd",
-   "CPU": 0.0,
-   "MEM": 0.8,
-   "PID": 528,
-   "RSS": 31752192,
-   "START": "Jul22",
-   "STAT": "Ssl",
-   "TIME": 0.55,
-   "TTY": "?",
-   "USER": "root",
-   "VSZ": 1349980160
-  },
-  {
    "COMMAND": "/lib/systemd/systemd-logind",
    "CPU": 0.0,
-   "MEM": 0.2,
+   "PACKAGE": "systemd",
    "PID": 531,
    "RSS": 7462912,
    "START": "Jul22",
@@ -912,48 +822,9 @@
    "VSZ": 17371136
   },
   {
-   "COMMAND": "/usr/lib/udisks2/udisksd",
-   "CPU": 0.0,
-   "MEM": 0.3,
-   "PID": 533,
-   "RSS": 11792384,
-   "START": "Jul22",
-   "STAT": "Ssl",
-   "TIME": 0.08,
-   "TTY": "?",
-   "USER": "root",
-   "VSZ": 403271680
-  },
-  {
-   "COMMAND": "/usr/bin/python3 /usr/share/unattended-upgrades/unattended-upgrade-shutdown --wait-for-signal",
-   "CPU": 0.0,
-   "MEM": 0.3,
-   "PID": 556,
-   "RSS": 13369344,
-   "START": "Jul22",
-   "STAT": "Ssl",
-   "TIME": 0.0,
-   "TTY": "?",
-   "USER": "root",
-   "VSZ": 110669824
-  },
-  {
-   "COMMAND": "/usr/sbin/ModemManager",
-   "CPU": 0.0,
-   "MEM": 0.2,
-   "PID": 603,
-   "RSS": 6574080,
-   "START": "Jul22",
-   "STAT": "Ssl",
-   "TIME": 0.02,
-   "TTY": "?",
-   "USER": "root",
-   "VSZ": 252801024
-  },
-  {
    "COMMAND": "/sbin/agetty -o -p -- \\u --noclear tty1 linux",
    "CPU": 0.0,
-   "MEM": 0.1,
+   "PACKAGE": "util-linux",
    "PID": 617,
    "RSS": 2183168,
    "START": "Jul22",
@@ -966,7 +837,7 @@
   {
    "COMMAND": "/sbin/agetty -o -p -- \\u --keep-baud 115200,57600,38400,9600 ttyS0 vt220",
    "CPU": 0.0,
-   "MEM": 0.1,
+   "PACKAGE": "util-linux",
    "PID": 619,
    "RSS": 2228224,
    "START": "Jul22",
@@ -979,7 +850,7 @@
   {
    "COMMAND": "sshd: /usr/sbin/sshd -D",
    "CPU": 0.0,
-   "MEM": 0.2,
+   "PACKAGE": "openssh-server",
    "PID": 662,
    "RSS": 7389184,
    "START": "Jul22",
