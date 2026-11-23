@@ -103,3 +103,6 @@ experiment_data/archive/
 
 # Next.js experimental dashboard (not plugged in)
 console_test/
+
+# Local notes for Claude sessions
+note.md

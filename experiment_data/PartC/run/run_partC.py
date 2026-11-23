@@ -265,6 +265,11 @@ def main():
                      help="human-readable label for the output folder, e.g. "
                           "--tag cloud_new -> results/partC/fidelity_cloud_new/ "
                           "(default: results/partC/fidelity/, overwritten each run)")
+    ap.add_argument("--cloud-model", type=str, default="deepseek/deepseek-v4.1-flash",
+                     help="model the cloud arm calls (default: the Part C model); "
+                          "a different one is how a replacement model is measured")
+    ap.add_argument("--out-dir", type=str, default=None,
+                     help="write the arm files here instead of results/partC/fidelity[_tag]")
     args = ap.parse_args()
 
     if args.arms:
@@ -279,7 +284,7 @@ def main():
     run_id   = datetime.now().strftime("%Y%m%d_%H%M%S")
     # No timestamp — a rerun overwrites the same folder (run_id stays in records).
     dir_name = f"fidelity_{args.tag}" if args.tag else "fidelity"
-    out_dir  = os.path.join(RESULTS_DIR, dir_name)
+    out_dir  = os.path.abspath(args.out_dir) if args.out_dir else os.path.join(RESULTS_DIR, dir_name)
     os.makedirs(out_dir, exist_ok=True)
     log, close_log = _make_logger(os.path.join(out_dir, "run.log"))
 
@@ -314,7 +319,7 @@ def main():
     if cloud is not None:
         from openai import OpenAI
         partc_url = (os.environ.get("PARTC_BASE_URL") or "").rstrip("/") or cloud._base_url
-        cloud.model     = "deepseek/deepseek-v4.1-flash"
+        cloud.model     = args.cloud_model
         cloud._base_url = partc_url
         cloud._api_key  = cloud._pool.current()
         cloud.client    = OpenAI(api_key=cloud._api_key, base_url=partc_url)

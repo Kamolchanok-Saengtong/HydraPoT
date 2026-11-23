@@ -107,7 +107,7 @@ py-modules = [
 # silently drops a new one. Excludes keep test/experiment trees out of the wheel.
 [tool.setuptools.packages.find]
 include = ["agent_manager*", "prompt*", "plugins*", "threat_intel*",
-           "hydrasentinel*", "api*", "guardrail*", "shell*", "cost*", "cli*", "core*"]
+           "hydrasentinel*", "honeyrouter*", "api*", "guardrail*", "shell*", "cost*", "cli*", "core*"]
 exclude = ["tests*", "threat_intel.tests*", "experiment_data*", "archive_code*",
            "evaluation*", "honeypot_new*", "dataset*", "models*", "var*"]
 # A real package is a directory with __init__.py. Left at the pyproject default

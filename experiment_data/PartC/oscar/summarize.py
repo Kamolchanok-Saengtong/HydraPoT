@@ -41,15 +41,13 @@ def load(path):
 
 def table1(runs, label):
     counts = [len(r["contradictions"]) for r in runs]
-    n, detected = len(counts), sum(c > 0 for c in counts)
-    lo, hi = wilson(detected, n)
+    n = len(counts)
     sd = statistics.stdev(counts) if n > 1 else 0.0
     gates = [r["gate"] for r in runs if r.get("gate")]
     fallback = (sum(g["fallbacks"] for g in gates) / sum(g["turns"] for g in gates)
                 if gates else None)
     fb = f"{100 * fallback:5.1f}%" if fallback is not None else "    —"
-    print(f"  {label:<6} {n:>3}  {statistics.mean(counts):5.2f} ± {sd:4.2f}   "
-          f"{100 * detected / n:5.1f}% [{lo:4.1f}, {hi:5.1f}]   {fb}")
+    print(f"  {label:<6} {n:>3}  {statistics.mean(counts):5.2f} ± {sd:4.2f}   {fb}")
 
 
 def table14(old, new):
@@ -91,8 +89,7 @@ def main():
               f"over {len(real)} sessions (must be 0)\n")
     if t1_old or t1_new:
         print("TABLE I — create-then-revisit probe")
-        print(f"  {'system':<6} {'N':>3}  {'contra/session':>14}   "
-              f"{'detected [95% Wilson]':>22}   fallback")
+        print(f"  {'system':<6} {'N':>3}  {'contra/session':>14}   fallback")
         for label, runs in (("old", t1_old), ("new", t1_new)):
             if runs:
                 table1(runs, label)

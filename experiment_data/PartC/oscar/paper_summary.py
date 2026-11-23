@@ -16,7 +16,6 @@ import sys
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _HERE)
 import paper_suite as ps                 # noqa: E402
-from summarize import wilson             # noqa: E402
 from probe import CREATE                 # noqa: E402
 
 
@@ -42,14 +41,12 @@ def line(label, rows):
     stable = sum(r["stable"] for r in rows)
     exact = sum(r["exact"] for r in rows) / max(1, stable)
     con = [len(r["contradictions"]) for r in rows]
-    det = sum(c > 0 for c in con)
-    lo, hi = wilson(det, n)
     return (f"  {label:<24} {n:>4} {cmds:>6}  {crr:5.3f}  {fsrr:5.2f}  {depth:6.1f}  {msl:5.2f}  "
-            f"{exact:5.3f}  {statistics.mean(con):5.2f}  {100*det/n:4.0f}% [{lo:3.0f},{hi:3.0f}]")
+            f"{exact:5.3f}  {statistics.mean(con):5.2f}")
 
 
 HEAD = (f"  {'':<24} {'N':>4} {'cmds':>6}  {'CRR':>5}  {'FSRR':>5}  {'depth':>6}  {'MSL%':>5}  "
-        f"{'exact':>5}  {'contra':>5}  detected [95% Wilson]")
+        f"{'exact':>5}  {'contra':>5}")
 
 
 def main():
