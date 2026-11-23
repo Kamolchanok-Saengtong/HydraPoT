@@ -29,7 +29,7 @@ import tarfile
 from datetime import datetime, timedelta, timezone
 
 from core import snapshot as image_snapshot
-from shell import hardware, netsim, network, packages, pipeline, screen
+from shell import gpu, hardware, netsim, network, packages, pipeline, screen
 from shell.compound import failed as _printed_an_error
 from shell.world import Fact
 
@@ -205,7 +205,7 @@ class RuleCore:
             denied = self._permission_denied(argv)
             if denied:
                 return True, denied
-        handler = getattr(self, f"_cmd_{argv[0]}", None)
+        handler = getattr(self, "_cmd_" + argv[0].replace("-", "_"), None)
         if not handler:
             return False, None
         handled, out = handler(argv)
@@ -219,7 +219,7 @@ class RuleCore:
                                "grep", "head", "tail", "wc", "stat", "du", "echo", "pwd",
                                "printenv", "env", "md5sum", "sha1sum", "sha256sum", "id",
                                "netstat", "ss", "ifconfig", "ip", "free", "df", "hostname",
-                               "lsb_release", "hostnamectl", "nproc", "groups", "top", "history", "dpkg", "apt", "whoami", "mount"})
+                               "lsb_release", "hostnamectl", "nproc", "groups", "top", "history", "dpkg", "apt", "whoami", "mount", "nvidia-smi", "lscpu"})
 
     def _pipeline(self, stages):
         """`source | filter | ...`: the register answers the source, the filters run exactly.
@@ -359,7 +359,7 @@ class RuleCore:
         path = self._resolve(argv[0])
         if self._virtual(path):
             return False, None
-        handler = getattr(self, f"_cmd_{posixpath.basename(path)}", None)
+        handler = getattr(self, "_cmd_" + posixpath.basename(path).replace("-", "_"), None)
         if posixpath.dirname(path) in self._BIN_DIRS and handler:
             return handler([posixpath.basename(path)] + argv[1:])
         if self._kind(path) is None and self._missing(path):
@@ -762,6 +762,25 @@ class RuleCore:
             return False, None
         return (True, str(self.hw["cpus"])) if self.hw and len(argv) == 1 else (False, None)
 
+    def _cmd_lscpu(self, argv):
+        if not self._has("lscpu") or not self.hw:
+            return False, None
+        out = hardware.lscpu(self.hw, argv)
+        return (True, out) if out else (False, None)
+
+    def _gpu_trainers(self):
+        """{gpu index: pid} for the training processes still in the table, lowest pid first."""
+        pids = sorted(r["pid"] for r in self._rows("") if "train.py" in (r.get("cmd") or "")
+                      and "torchrun" not in r["cmd"] and "grep" not in r["cmd"].split()[0])
+        return dict(enumerate(pids))
+
+    def _cmd_nvidia_smi(self, argv):
+        g = (self.hw or {}).get("gpus")
+        if not g or not self._has("nvidia-smi"):
+            return False, None
+        out = gpu.smi(g, self.boot_id or "", self.reg.now_ns() / 1e9, self._gpu_trainers(), argv)
+        return (True, out) if out else (False, None)
+
     def _cmd_df(self, argv):
         if not self._has("df"):
             return False, None
@@ -1067,6 +1086,8 @@ class RuleCore:
         """/proc files that follow the declared hardware, then the ones that move with time."""
         if self.hw and path == "/proc/meminfo":
             return hardware.meminfo(self.hw)
+        if self.hw and path == "/proc/cpuinfo" and self.hw.get("cpu"):
+            return hardware.cpuinfo(self.hw)
         return self._proc_text(path)
 
     # ── top ────────────────────────────────────────────────────────────────
@@ -1126,9 +1147,10 @@ class RuleCore:
         so `uptime` ten minutes apart does not print the same numbers."""
         import math
         t = self.reg.now_ns() / 1e9
+        busy = sum(r["cpu"] for r in self._rows("") if r["stat"][:1] == "R") / 100    # runnable work
         out = []
         for i, period in enumerate((90, 420, 1500)):
-            base = self.reg.prf(f"load{i}", "load", 0, 30) / 100
+            base = busy * (1.0, 0.99, 0.97)[i] + self.reg.prf(f"load{i}", "load", 0, 30) / 100
             wave = 0.06 * math.sin(t / period + i) + 0.03 * math.sin(t / (period * 0.37))
             out.append(max(round(base + wave * (1 if i == 0 else 0.6), 2), 0.0))
         return out
@@ -1401,12 +1423,14 @@ class RuleCore:
         if not self.boot_id:
             return []
         rng = random.Random(self.boot_id + "logins")
+        staff = next((n for n, u in sorted(self.users().items(), key=lambda kv: kv[1].get("uid", 0))
+                      if u.get("uid", 0) >= 1000 and u.get("shell", "").endswith("sh")), None)
         boot, now = self._dt(self._boot_ns()), self._dt(self.reg.now_ns())
         span = max((now - boot).total_seconds() - 86400, 3600)
         out = []
         for k in range(5):
-            user = "cocadmin" if k % 3 == 1 else "root"
-            ip = (f"10.{rng.randint(0, 40)}.{rng.randint(0, 250)}.{rng.randint(2, 250)}" if user == "cocadmin"
+            user = staff if (k % 3 == 1 and staff) else "root"
+            ip = (f"10.{rng.randint(0, 40)}.{rng.randint(0, 250)}.{rng.randint(2, 250)}" if user != "root"
                   else netsim._public(rng))
             when = boot + timedelta(seconds=span * (k + 1) / 5.5 + rng.randint(0, 40000))
             if when < now - timedelta(hours=2):
@@ -2380,9 +2404,11 @@ class RuleCore:
 
         rows = []
         for p in self.processes:
+            if self.inst.get("killed", p["PID"]):
+                continue
             minutes = float(p.get("TIME") or 0)
             # init and kthreadd have no parent; kernel threads hang off kthreadd
-            ppid = 0 if p["PID"] in (1, 2) else 2 if p["COMMAND"].startswith("[") else 1
+            ppid = p.get("PPID", 0 if p["PID"] in (1, 2) else 2 if p["COMMAND"].startswith("[") else 1)
             rows.append({"user": p["USER"], "pid": p["PID"], "ppid": ppid,
                          "cpu": float(p.get("CPU") or 0), "mem": self._mem_pct(p),
                          "vsz": int(p.get("VSZ") or 0) // 1024,
@@ -2480,12 +2506,66 @@ class RuleCore:
                 pid = int(a)
                 cmd = self.inst.get("proc", pid)
                 if cmd is None:
-                    return False, None
+                    base = next((p for p in self.processes if p["PID"] == pid and not self.inst.get("killed", pid)), None)
+                    if base is None:
+                        out.append(f"bash: kill: ({pid}) - No such process")
+                        continue
+                    if pid in (1, 2) or base["COMMAND"].startswith("["):
+                        return False, None              # init and kernel threads are not ours to end
+                    self.reg.commit(add={Fact("killed", pid)}, why=f"kill {pid}")
+                    self.changed = True
+                    continue
             self.reg.commit(remove={Fact("proc", pid, self.inst.get("proc", pid))},
                             why=f"kill {pid}")
             self.changed = True
         self.status = 1 if out else 0
         return True, "\n".join(out)
+
+    def _cmd_pkill(self, argv):
+        return self._kill_by_name(argv, "pkill")
+
+    def _cmd_killall(self, argv):
+        return self._kill_by_name(argv, "killall")
+
+    def _kill_by_name(self, argv, tool):
+        """`pkill [-f] [-SIG] pattern` and `killall name`: end every matching process."""
+        args, full = argv[1:], False
+        pattern = None
+        for a in args:
+            if a == "-f" and tool == "pkill":
+                full = True
+            elif re.fullmatch(r"-(?:\d+|[A-Z]+)", a) or a in ("-u", "-x", "-q", "-w"):
+                continue
+            elif a.startswith("-") or pattern is not None:
+                return False, None
+            else:
+                pattern = a
+        if not pattern:
+            return False, None
+        me = self._shell_pid()
+        hit = []
+        for r in self._rows(tool):
+            cmd = r["cmd"]
+            name = (r.get("comm") or screen.comm(cmd))
+            if r["pid"] in (1, 2, me) or cmd.startswith("[") or cmd.startswith(("pkill", "killall")):
+                continue
+            ok = re.search(pattern, cmd if full else name) if tool == "pkill" else name == pattern
+            if ok:
+                hit.append(r["pid"])
+        if not hit:
+            if tool == "killall":
+                self.status = 1
+                return True, f"{pattern}: no process found"
+            self.status = 1
+            return True, ""
+        for pid in hit:
+            cur = self.inst.get("proc", pid)
+            if cur is not None:
+                self.reg.commit(remove={Fact("proc", pid, cur)}, why=f"{tool} {pid}")
+            else:
+                self.reg.commit(add={Fact("killed", pid)}, why=f"{tool} {pid}")
+        self.changed = True
+        return True, ""
 
     def _cmd_jobs(self, argv):
         if len(argv) > 1:

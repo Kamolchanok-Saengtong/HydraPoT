@@ -55,8 +55,18 @@ def render_top(rows, hw, uptime_line, tick, noise, delay, height, sort="cpu", us
     used = mem["total"] - free - buff_cache
     swap_used = mem["swap_total"] - mem["swap_free"]
 
+    busy = [r for r in rows if r["cpu"] >= 5]                # compute jobs the machine declares
+    busy_total = sum(r["cpu"] for r in busy)                  # in % of one CPU
+    ncpu = max(hw.get("cpus", 1), 1)
+
     def cpu_split(label, salt):
-        us, sy = noise(f"us{salt}{tick}", 2, 9), noise(f"sy{salt}{tick}", 1, 6)
+        extra = 0
+        if busy_total:
+            if isinstance(salt, int):
+                extra = 940 if salt < len(busy) else 0        # one core per busy process
+            else:
+                extra = int(busy_total * 10 / ncpu)
+        us, sy = noise(f"us{salt}{tick}", 2, 9) + extra, noise(f"sy{salt}{tick}", 1, 6)
         wa, si = noise(f"wa{salt}{tick}", 0, 3), noise(f"si{salt}{tick}", 0, 2)
         idle = 1000 - us - sy - wa - si
         return (f"{label} {us / 10:4.1f} us, {sy / 10:4.1f} sy,  0.0 ni, {idle / 10:4.1f} id, "
@@ -71,6 +81,8 @@ def render_top(rows, hw, uptime_line, tick, noise, delay, height, sort="cpu", us
         name = r.get("comm") or comm(r["cmd"])      # PID 1 is `systemd`, though started as /sbin/init
         if r["cmd"] == "top" or r["cmd"].startswith("top"):
             cpu = 0.3 + noise(f"t{tick}", 0, 5) / 10
+        elif r["cpu"] >= 5:
+            cpu = min(r["cpu"] + noise(f"w{r['pid']}x{tick}", 0, 4) / 10 - 0.2, 100.0)
         elif name in _BUSY_COMM and noise(f"b{r['pid']}x{tick}", 0, 99) > 88:
             cpu = noise(f"c{r['pid']}x{tick}", 3, 12) / 10
         else:
@@ -81,7 +93,7 @@ def render_top(rows, hw, uptime_line, tick, noise, delay, height, sort="cpu", us
             pr, ni = "rt", 0
         shr = int(r["rss"] * (0.25 + noise(f"s{r['pid']}", 0, 30) / 100))
         shown.append({**r, "cpu": cpu, "name": name, "pr": pr, "ni": ni, "shr": shr,
-                      "state": "R" if cpu >= 0.3 and name == "top" else stat[0]})
+                      "state": "R" if (cpu >= 0.3 and name == "top") or r["cpu"] >= 5 else stat[0]})
     if opts.get("user"):
         shown = [r for r in shown if r["user"] == opts["user"]]
     if opts.get("pids"):
@@ -176,7 +188,7 @@ def render_htop(rows, hw, uptime_text, loads, tick, noise, height, width=80, sel
     cpus = hw.get("cpus", 1)
     left, right = [], []
     for i in range(cpus):
-        pct = noise(f"hc{i}x{tick}", 0, 25) / 10
+        pct = noise(f"hc{i}x{tick}", 0, 25) / 10 + (95.0 if i < sum(1 for r in rows if r["cpu"] >= 5) else 0.0)
         left.append(_bar(f"{i + 1:>3}", pct / 100, f"{pct:.1f}%", half - 1, "green"))
     left.append(_bar("Mem", used / mem["total"], f"{_meter_size(used)}/{_meter_size(mem['total'])}", half - 1, "green"))
     left.append(_bar("Swp", swap_used / max(mem["swap_total"], 1), f"{_meter_size(swap_used)}/{_meter_size(mem['swap_total'])}", half - 1, "red"))
@@ -200,7 +212,7 @@ def render_htop(rows, hw, uptime_text, loads, tick, noise, height, width=80, sel
     shown = []
     for r in rows:
         name = r.get("comm") or comm(r["cmd"])
-        cpu = (0.3 + noise(f"ht{tick}", 0, 5) / 10) if r["cmd"].startswith("htop") else (
+        cpu = r["cpu"] + noise(f"hw{r['pid']}x{tick}", 0, 4) / 10 - 0.2 if r["cpu"] >= 5 else (0.3 + noise(f"ht{tick}", 0, 5) / 10) if r["cmd"].startswith("htop") else (
             noise(f"hb{r['pid']}x{tick}", 3, 12) / 10 if name in _BUSY_COMM and noise(f"hq{r['pid']}x{tick}", 0, 99) > 90 else 0.0)
         shown.append({**r, "cpu": cpu})
     shown.sort(key=key)

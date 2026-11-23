@@ -78,6 +78,8 @@ def path_type(path: str):
         return "sshd_config"
     if path == "/etc/ssh/ssh_config" or path.endswith("/.ssh/config"):
         return "ssh_config"
+    if path == "/opt/ai-training/logs/train.log":
+        return "train_log"
     if path in ("/var/log/auth.log", "/var/log/secure"):
         return "auth_log"
     if posixpath.dirname(path) == "/var/log" and name in _SYSLOG_FILES:
@@ -91,6 +93,7 @@ _META = {
     "ssh_config": ("root", "root", 0o644),
     "auth_log": ("syslog", "adm", 0o640),
     "log": ("syslog", "adm", 0o640),
+    "train_log": ("mlops", "mlops", 0o644),
     "generic": ("root", "root", 0o644),
 }
 
@@ -142,6 +145,8 @@ class Generator:
         owner, group, mode = _META[path_type(path)]
         rng = PRF(self.seed, path, "meta")
         mtime = self.epoch - timedelta(seconds=rng.int(3600, 90 * 86400))
+        if path_type(path) == "train_log":                    # written to a moment ago
+            mtime = self.epoch - timedelta(seconds=rng.int(2, 30))
         # Probe past taken inodes so eps3 (unique inode) holds
         used = {inst.get("inode", p) for p in inst.keys("inode")}
         inode = rng.int(100_000, 9_999_999)
@@ -255,6 +260,35 @@ def _log(gen, rng, path):
     return "\n".join(lines) + "\n"
 
 
+_STEP_SECONDS, _CKPT_STEPS, _RESUMED_FROM = 34, 500, 15000
+_RUN_STARTED = datetime(2026, 11, 20, 5, 14, tzinfo=timezone.utc)
+
+
+def _train_log(gen, rng, path):
+    """The training run's log: one line per optimiser step, every 34 s, since the last resume.
+
+    Steps and losses come from the clock, not the session, so two logins in the same minute
+    read the same lines. The step counter runs from the newest checkpoint on disk (step-15000)
+    and starts over when the next one would be written.
+    """
+    import hashlib
+    import math
+    cycle = _STEP_SECONDS * _CKPT_STEPS
+    since = (gen.epoch - _RUN_STARTED).total_seconds()
+    resumed = gen.epoch - timedelta(seconds=since % cycle)
+    lines = [f"[{resumed - timedelta(seconds=2):%Y-%m-%d %H:%M:%S}] INFO resumed from /data/checkpoints/llama3-70b/step-{_RESUMED_FROM}"]
+    for k in range(1, int((since % cycle) // _STEP_SECONDS) + 1):
+        step, t = _RESUMED_FROM + k, resumed + timedelta(seconds=k * _STEP_SECONDS)
+        h = int(hashlib.sha1(f"{step}".encode()).hexdigest()[:8], 16)
+        loss = 1.62 - 0.35 * (1 - math.exp(-step / 30000)) + ((h % 2000) - 1000) / 25000
+        lines.append(f"[{t:%Y-%m-%d %H:%M:%S}] step {step}/60000 | loss {loss:.4f} | lr 1.50e-05 | "
+                     f"grad_norm {0.28 + (h >> 12) % 300 / 1000:.3f} | {3.9 + (h >> 20) % 40 / 100:.2f} samples/s | "
+                     f"{418_000 + (h >> 8) % 9000} tok/s | mem 72.{(h >> 4) % 10}GB")
+        if k % _CKPT_STEPS == 0:
+            lines.append(f"[{t:%Y-%m-%d %H:%M:%S}] INFO saved checkpoint step-{step}")
+    return "\n".join(lines) + "\n"
+
+
 def _generic(gen, rng, path):
     name = posixpath.basename(path)
     if name.endswith((".conf", ".cfg", ".ini", ".cnf")):
@@ -278,5 +312,6 @@ _REALIZERS = {
     "ssh_config": _ssh_config,
     "auth_log": _auth_log,
     "log": _log,
+    "train_log": _train_log,
     "generic": _generic,
 }

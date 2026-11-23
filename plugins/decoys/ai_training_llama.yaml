@@ -1,0 +1,11 @@
+model: meta-llama/Meta-Llama-3-70B
+dataset: /data/datasets/mix-v7
+seq_len: 8192
+global_batch_size: 512
+micro_batch_size: 1
+lr: 1.5e-5
+warmup_steps: 200
+save_every: 500
+checkpoint_dir: /data/checkpoints/llama3-70b
+precision: bf16
+fsdp: full_shard

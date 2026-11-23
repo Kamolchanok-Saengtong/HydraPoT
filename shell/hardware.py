@@ -199,3 +199,89 @@ def mount_lines(disks, total_kb: int, uid: int = 0) -> str:
     owner = f",uid={uid},gid={uid}" if uid else ""
     out.append(f"tmpfs on /run/user/{uid} type tmpfs (rw,nosuid,nodev,relatime,size={size('/run') - 4}k,mode=700{owner})")
     return "\n".join(out)
+
+
+# ── the processor, declared once ────────────────────────────────────────────
+
+_FLAGS = ("fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush dts acpi mmx "
+          "fxsr sse sse2 ss ht tm pbe syscall nx pdpe1gb rdtscp lm constant_tsc art arch_perfmon pebs bts "
+          "rep_good nopl xtopology nonstop_tsc cpuid aperfmperf pni pclmulqdq dtes64 monitor ds_cpl vmx smx "
+          "est tm2 ssse3 sdbg fma cx16 xtpr pdcm pcid dca sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer "
+          "aes xsave avx f16c rdrand lahf_lm abm 3dnowprefetch cpuid_fault epb cat_l3 cat_l2 cdp_l3 invpcid_single "
+          "intel_ppin cdp_l2 ssbd mba ibrs ibpb stibp ibrs_enhanced tpr_shadow vnmi flexpriority ept vpid "
+          "ept_ad fsgsbase tsc_adjust bmi1 avx2 smep bmi2 erms invpcid cqm rdt_a avx512f avx512dq rdseed adx "
+          "smap avx512ifma clflushopt clwb intel_pt avx512cd sha_ni avx512bw avx512vl xsaveopt xsavec xgetbv1 "
+          "xsaves cqm_llc cqm_occup_llc cqm_mbm_total cqm_mbm_local split_lock_detect avx_vnni avx512_bf16 "
+          "wbnoinvd dtherm ida arat pln pts avx512vbmi umip pku ospke waitpkg avx512_vbmi2 gfni vaes vpclmulqdq "
+          "avx512_vnni avx512_bitalg tme avx512_vpopcntdq la57 rdpid bus_lock_detect cldemote movdiri movdir64b "
+          "enqcmd fsrm md_clear serialize tsxldtrk pconfig arch_lbr amx_bf16 avx512_fp16 amx_tile amx_int8 "
+          "flush_l1d arch_capabilities")
+
+
+def _cpu(hw: dict):
+    c = hw.get("cpu")
+    return c if c and hw.get("cpus") else None
+
+
+def _topology(hw: dict, i: int):
+    """(socket, core) of logical CPU i: socket-major, hyperthreads in the upper half, as Linux numbers them."""
+    c = hw["cpu"]
+    per_socket, cores = c["cores_per_socket"], c["cores_per_socket"] * c["sockets"]
+    core = i % cores
+    return core // per_socket, core
+
+
+def cpuinfo(hw: dict) -> str:
+    """/proc/cpuinfo for the declared processor, one block per logical CPU."""
+    c = _cpu(hw)
+    if not c:
+        return ""
+    blocks = []
+    for i in range(hw["cpus"]):
+        socket, core = _topology(hw, i)
+        mhz = c["mhz"] + ((i * 37) % 200) / 10 - 5
+        blocks.append("\n".join([
+            f"processor\t: {i}", "vendor_id\t: GenuineIntel", f"cpu family\t: {c['family']}",
+            f"model\t\t: {c['model']}", f"model name\t: {c['name']}", f"stepping\t: {c['stepping']}",
+            f"microcode\t: {c['microcode']}", f"cpu MHz\t\t: {mhz:.3f}", f"cache size\t: {c['l3_kb']} KB",
+            f"physical id\t: {socket}", f"siblings\t: {c['cores_per_socket'] * c['threads_per_core']}",
+            f"core id\t\t: {core % c['cores_per_socket']}", f"cpu cores\t: {c['cores_per_socket']}",
+            f"apicid\t\t: {core * 2 + (i // (hw['cpus'] // c['threads_per_core']))}",
+            f"initial apicid\t: {core * 2 + (i // (hw['cpus'] // c['threads_per_core']))}",
+            "fpu\t\t: yes", "fpu_exception\t: yes", "cpuid level\t: 27", "wp\t\t: yes", f"flags\t\t: {_FLAGS}",
+            "vmx flags\t: vnmi preemption_timer posted_intr invvpid ept_x_only ept_ad ept_1gb flexpriority "
+            "apicv tsc_offset vtpr mtf vapic ept vpid unrestricted_guest vapic_reg vid ple shadow_vmcs pml ept_mode_based_exec tsc_scaling",
+            "bugs\t\t: spectre_v1 spectre_v2 spec_store_bypass swapgs eibrs_pbrsb",
+            f"bogomips\t: {c['mhz'] * 2:.2f}", "clflush size\t: 64", "cache_alignment\t: 64",
+            "address sizes\t: 46 bits physical, 57 bits virtual", "power management:", ""]))
+    return "\n".join(blocks) + "\n"
+
+
+def lscpu(hw: dict, argv=()) -> str:
+    """util-linux 2.34 `lscpu` for the declared processor."""
+    c = _cpu(hw)
+    if not c or len(argv) > 1:
+        return ""
+    n, sockets = hw["cpus"], c["sockets"]
+    per_node = n // sockets
+    cores = c["cores_per_socket"] * sockets
+    half = lambda k: f"{k * cores // sockets}-{(k + 1) * cores // sockets - 1},{n // 2 + k * cores // sockets}-{n // 2 + (k + 1) * cores // sockets - 1}"
+    kib = lambda per, total: f"{per * total // 1024} MiB" if per * total >= 1048576 else f"{per * total} KiB"
+    rows = [("Architecture:", "x86_64"), ("CPU op-mode(s):", "32-bit, 64-bit"), ("Byte Order:", "Little Endian"),
+            ("Address sizes:", "46 bits physical, 57 bits virtual"), ("CPU(s):", str(n)),
+            ("On-line CPU(s) list:", f"0-{n - 1}"), ("Thread(s) per core:", str(c["threads_per_core"])),
+            ("Core(s) per socket:", str(c["cores_per_socket"])), ("Socket(s):", str(sockets)),
+            ("NUMA node(s):", str(sockets)), ("Vendor ID:", "GenuineIntel"), ("CPU family:", str(c["family"])),
+            ("Model:", str(c["model"])), ("Model name:", c["name"]), ("Stepping:", str(c["stepping"])),
+            ("CPU MHz:", f"{c['mhz']:.3f}"), ("BogoMIPS:", f"{c['mhz'] * 2:.2f}"), ("Virtualization:", "VT-x"),
+            ("L1d cache:", kib(48, cores)), ("L1i cache:", kib(32, cores)), ("L2 cache:", kib(2048, cores)),
+            ("L3 cache:", f"{c['l3_kb'] * sockets // 1024} MiB")]
+    rows += [(f"NUMA node{k} CPU(s):", half(k)) for k in range(sockets)]
+    rows += [("Vulnerability Itlb multihit:", "Not affected"), ("Vulnerability L1tf:", "Not affected"),
+             ("Vulnerability Mds:", "Not affected"), ("Vulnerability Meltdown:", "Not affected"),
+             ("Vulnerability Spec store bypass:", "Mitigation; Speculative Store Bypass disabled via prctl and seccomp"),
+             ("Vulnerability Spectre v1:", "Mitigation; usercopy/swapgs barriers and __user pointer sanitization"),
+             ("Vulnerability Spectre v2:", "Mitigation; Enhanced IBRS, IBPB conditional, RSB filling"),
+             ("Vulnerability Srbds:", "Not affected"), ("Vulnerability Tsx async abort:", "Not affected"),
+             ("Flags:", _FLAGS)]
+    return "\n".join(f"{k:<34}{v}" for k, v in rows)

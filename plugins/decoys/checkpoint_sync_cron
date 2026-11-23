@@ -1,0 +1,4 @@
+# nightly checkpoint backup
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+30 2 * * * mlops /usr/local/bin/aws s3 sync /data/checkpoints/llama3-70b s3://nexa-ml-checkpoints/llama3-70b --only-show-errors >> /var/log/checkpoint_sync.log 2>&1

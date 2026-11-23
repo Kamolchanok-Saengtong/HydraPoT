@@ -235,21 +235,26 @@ options edns0 trust-ad
 
 
 def _fill_decoys(text: str, seed: str) -> str:
-    """Swap @AWS_KEY_ID@ / @AWS_SECRET@ for random fake values.
+    """Swap the @NAME@ placeholders in a decoy file for random fake values.
 
     Kept out of git on purpose: a literal key-shaped string, fake or not, is
     blocked by GitHub push protection. Seeded by hostname so a rebuild gives the
     same values, and an attacker sees one stable file.
     """
-    rng, n = random.Random(seed), [0]
-    pools = {"AWS_KEY_ID": ("AKIA", string.ascii_uppercase + string.digits, 16),
-             "AWS_SECRET": ("", string.ascii_letters + string.digits + "+/", 40)}
+    seen = {}
+    up, low, hexd = string.ascii_uppercase + string.digits, string.ascii_letters + string.digits, "0123456789abcdef"
+    pools = {"AWS_KEY_ID": ("AKIA", up, 16), "AWS_SECRET": ("", low + "+/", 40),
+             "OPENAI_KEY": ("sk-proj-", low + "-_", 132), "HF_TOKEN": ("hf_", low, 34),
+             "WANDB_KEY": ("", hexd, 40), "ETH_WALLET": ("0x", hexd, 40),
+             "ETH_PRIVKEY": ("0x", hexd, 64)}
 
     def one(m):
-        prefix, alphabet, length = pools[m.group(1)]
-        n[0] += 1
+        name = m.group(1)
+        prefix, alphabet, length = pools[name]
+        seen[name] = k = seen.get(name, 0) + 1           # same secret in every file that names it
+        rng = random.Random(f"{seed}{name}{k}")
         return prefix + "".join(rng.choice(alphabet) for _ in range(length))
-    return re.sub(r"@(AWS_KEY_ID|AWS_SECRET)@", one, text)
+    return re.sub(r"@(" + "|".join(pools) + r")@", one, text)
 
 
 _DEB_ARCH = {"x86_64": "amd64", "aarch64": "arm64"}
@@ -355,6 +360,8 @@ def persona_tree_files(cfg, snap) -> dict[str, str]:
     }
     if st.get("hardware"):
         out["/proc/meminfo"] = hardware.meminfo(st["hardware"])
+        if st["hardware"].get("cpu"):
+            out["/proc/cpuinfo"] = hardware.cpuinfo(st["hardware"])
     groups = st.get("groups")
     if groups:
         out["/etc/group"] = "\n".join(
@@ -567,7 +574,7 @@ def main() -> None:
         if spec.get("source"):
             # contents kept as a file beside the generator, relative to plugins/
             with open(os.path.join(_HERE, spec.pop("source")), encoding="utf-8") as fh:
-                spec["content"] = _fill_decoys(fh.read(), conf.honeypot.hostname + path)
+                spec["content"] = _fill_decoys(fh.read(), conf.honeypot.hostname)
         what = add_file(root, path, spec)
         size = spec.get("size", len(spec.get("content") or ""))
         print(f"  file   {path:<42} {what}, size {size}")

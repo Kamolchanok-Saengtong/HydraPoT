@@ -232,7 +232,7 @@ class Register:
 
     # What does not survive a logout, as on a real machine: who is logged in, the working
     # directory, exported variables, background processes.
-    _FORGOTTEN = frozenset({"session", "event", "proc", "cwd", "env"})
+    _FORGOTTEN = frozenset({"session", "event", "proc", "cwd", "env", "killed"})
 
     def restore(self, rows) -> list:
         """Bring back what an earlier visit by this attacker changed. Returns the paths it touched.

@@ -259,10 +259,14 @@ def _fields(spec: str, count: int):
 
 
 def _cut(argv, data):
-    delim, spec, i = "\t", None, 1
+    delim, spec, i, chars = "\t", None, 1, False
     while i < len(argv):
         a = argv[i]
-        if a == "-d" and i + 1 < len(argv):
+        if a == "-c" and i + 1 < len(argv):
+            spec, chars, i = argv[i + 1], True, i + 2
+        elif a.startswith("-c") and len(a) > 2:
+            spec, chars, i = a[2:], True, i + 1
+        elif a == "-d" and i + 1 < len(argv):
             delim, i = argv[i + 1], i + 2
         elif a.startswith("-d") and len(a) > 2:
             delim, i = a[2:], i + 1
@@ -276,6 +280,12 @@ def _cut(argv, data):
         return None
     out = []
     for line in _lines(data):
+        if chars:
+            idx = _fields(spec, len(line))
+            if idx is None:
+                return None
+            out.append("".join(line[k - 1] for k in sorted(set(idx)) if k <= len(line)))
+            continue
         if delim not in line:
             out.append(line)
             continue

@@ -1,0 +1,6 @@
+{
+  "coin": "ETH",
+  "address": "@ETH_WALLET@",
+  "private_key": "@ETH_PRIVKEY@",
+  "note": "idle-gpu payout wallet, move to cold storage monthly"
+}

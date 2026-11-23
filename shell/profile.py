@@ -21,7 +21,7 @@ from shell.world import Fact
 
 A_NAME, A_TYPE, A_UID, A_GID, A_SIZE, A_MODE, A_CTIME, A_CONTENTS, A_TARGET = range(9)
 _KIND = {0: "symlink", 1: "dir", 2: "file"}
-_TYPED = frozenset({"sshd_config", "ssh_config", "auth_log", "log"})
+_TYPED = frozenset({"sshd_config", "ssh_config", "auth_log", "log", "train_log"})
 # Virtual or identity files are answered elsewhere, never copied from the pickle
 _SKIP = ("/proc", "/sys", "/dev", "/run")
 _IDENTITY = frozenset({"/etc/passwd", "/etc/shadow", "/etc/group", "/etc/gshadow"})
@@ -243,6 +243,10 @@ class Materializer:
             if data is not None:
                 facts |= {Fact("content", path, data), Fact("size", path, len(data))}
                 facts = self._touched(path, facts)
+                if path_type(path) == "train_log":                 # a log being written to right now
+                    wrote = self.reg.now_ns() - 17 * 10**9
+                    facts = {f for f in facts if f.rel not in ("mtime", "atime", "ctime")} | {
+                        Fact(rel, path, wrote) for rel in ("mtime", "atime", "ctime")}
             else:
                 facts.add(Fact("psize", path, int(node[A_SIZE])))
         return facts

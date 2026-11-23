@@ -48,7 +48,8 @@ FUNCTIONAL = frozenset({
 # sealed(dir): closed-world; the procedural generator invents no children
 # listed(path): shown in the old SYSTEM_STATE["files"] view
 # profiled(dir): its children are exactly those the filesystem design lists
-PRESENCE = frozenset({"absent", "user", "sealed", "listed", "profiled"})
+# killed(pid): a process of the base table the attacker ended
+PRESENCE = frozenset({"absent", "user", "sealed", "listed", "profiled", "killed"})
 RELATIONS = FUNCTIONAL | PRESENCE
 KINDS = frozenset({"file", "dir", "symlink"})
 

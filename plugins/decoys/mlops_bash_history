@@ -1,0 +1,20 @@
+cd /opt/ai-training
+source .venv/bin/activate
+nvidia-smi
+torchrun --nproc_per_node=8 train.py --config configs/llama3-70b.yaml
+tail -f logs/train.log
+watch -n 1 nvidia-smi
+df -h /data
+cat .env
+vim configs/llama3-70b.yaml
+huggingface-cli login
+aws s3 ls s3://nexa-ml-checkpoints/
+aws s3 sync /data/checkpoints/llama3-70b s3://nexa-ml-checkpoints/llama3-70b
+ssh mlops@dgx-h100-01
+htop
+cd ~/crypto-node
+cat wallet.json
+./start.sh
+sudo systemctl status nvidia-persistenced
+python3 -c "import torch; print(torch.cuda.device_count())"
+sudo reboot
