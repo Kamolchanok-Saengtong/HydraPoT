@@ -6,6 +6,10 @@
 honeypot:
   hostname: psu
   instance_name: default
+  # A returning attacker (same source address) finds the files, packages, history and
+  # logins they left, for this many days. Never shared between addresses.
+  remember_attackers: true
+  remember_days: 30
   # The OS name comes from the stock image (plugins/snapshot). Kernel and arch are
   # declared here: a container shares the host's kernel, so reading them from docker
   # would show the machine running the honeypot.

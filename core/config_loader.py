@@ -185,6 +185,11 @@ class HoneypotCfg:
     # instances and tell them apart WITHOUT relying on which folder/host a
     # log file happened to be collected from.
     instance_name: str = "default"
+    # A returning attacker (same source address) finds what they left: files they made,
+    # packages they installed, their shell history, their earlier logins. Never shared
+    # between addresses. Off = every login starts from a clean machine.
+    remember_attackers: bool = True
+    remember_days: int = 30
 
 @dataclass
 class CowrieCfg:

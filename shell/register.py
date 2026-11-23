@@ -20,7 +20,7 @@ import time
 from collections.abc import MutableMapping
 
 from prompt.prompt_manager import _decode_echo_payload
-from shell.world import Fact, Instance, Proposal, chase, feasible
+from shell.world import FUNCTIONAL, Fact, Instance, Proposal, chase, feasible
 
 _TYPE = {"-": "file", "d": "dir", "l": "symlink"}
 _TYPE_CHAR = {v: k for k, v in _TYPE.items()}
@@ -229,6 +229,51 @@ class Register:
         return inst
 
     # ── old-style records ──────────────────────────────────────────────────
+
+    # What does not survive a logout, as on a real machine: who is logged in, the working
+    # directory, exported variables, background processes.
+    _FORGOTTEN = frozenset({"session", "event", "proc", "cwd", "env"})
+
+    def restore(self, rows) -> list:
+        """Bring back what an earlier visit by this attacker changed. Returns the paths it touched.
+
+        Applies only the rows their commands wrote (seq >= 0), in order, onto this session's
+        own profile. A session's own profile rows are skipped: each visit draws its own
+        random times, so stacking them would contradict. Not logged again: the earlier rows
+        stay in the database and are applied again for the next visit."""
+        touched, self.created = set(), set()
+        for row in rows:
+            if row.get("seq", -1) < 0 or row.get("op") not in ("+", "-") or row.get("rel") in self._FORGOTTEN:
+                continue
+            key = _decode(row["key"])
+            if not isinstance(key, str):
+                continue
+            fact = Fact(row["rel"], key, _decode(row["value"]))
+            try:
+                if row["op"] == "+":
+                    if fact.rel == "kind":
+                        self.created.add(key)
+                    cur = self.inst.get(fact.rel, fact.key)
+                    if cur is not None and cur != fact.value:
+                        self.inst.remove(Fact(fact.rel, fact.key, cur))
+                    self.inst.add(fact)
+                elif self.inst.holds(fact):
+                    if fact.rel == "kind":
+                        self.created.discard(key)
+                    self.inst.remove(fact)
+            except Exception:
+                continue                       # one fact that no longer fits must not lose the rest
+            touched.add(key)
+        return sorted(touched)
+
+    def set_file_bytes(self, path: str, data: bytes, mtime_ns: int) -> None:
+        """Make `path` hold exactly `data`, as if a shell had saved it then (a history file)."""
+        for f in [f for f in self.inst.facts() if f.key == path
+                  and f.rel in ("content", "size", "psize", "mtime", "ctime", "atime")]:
+            self.inst.remove(f)
+        for rel, value in (("content", data), ("size", len(data)), ("mtime", mtime_ns),
+                           ("ctime", mtime_ns), ("atime", mtime_ns)):
+            self.inst.add(Fact(rel, path, value))
 
     def write_record(self, path: str, rec: dict) -> bool:
         """Store an old SYSTEM_STATE["files"] record as facts."""

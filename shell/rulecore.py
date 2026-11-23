@@ -22,13 +22,14 @@ import gzip
 import io
 import math
 import posixpath
+import random
 import re
 import shlex
 import tarfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from core import snapshot as image_snapshot
-from shell import hardware, network, packages, pipeline, screen
+from shell import hardware, netsim, network, packages, pipeline, screen
 from shell.compound import failed as _printed_an_error
 from shell.world import Fact
 
@@ -116,6 +117,7 @@ class RuleCore:
         self._peers = []              # later stages of the pipe being answered
         self._screen_pid = None       # pid of the full-screen program being drawn
         self.typed = []               # lines the attacker entered this session, for `history`
+        self.prior_logins = []        # [(user, ip, datetime, minutes)] this address's earlier visits
         self._hist_from = 0
         self._jobs = 0
         self._job_table = {}          # job number -> (pid, command), for `jobs` and `kill %N`
@@ -796,6 +798,8 @@ class RuleCore:
         return (True, out) if out is not None else (False, None)
 
     def _cmd_apt(self, argv):
+        if argv[1:] == ["list", "--upgradable"] and self._has("apt"):
+            return True, "Listing..." if self._peers else "Listing... Done"
         rows = self._package_rows()
         if rows is None or not self._has("apt"):
             return False, None
@@ -1391,6 +1395,59 @@ class RuleCore:
             f"{self.reg.session('user'):<8} {self.reg.session('tty'):<8} "
             f"{self.reg.session('ip'):<16} {dt:%H:%M}   {'0.00s':>6} {'0.04s':>6} {'0.00s':>6} w"])
 
+    def login_history(self):
+        """Earlier logins, newest first: [(user, ip, datetime, minutes)]. Made up once from the
+        machine id, so `last` and the `Last login:` line agree at every login."""
+        if not self.boot_id:
+            return []
+        rng = random.Random(self.boot_id + "logins")
+        boot, now = self._dt(self._boot_ns()), self._dt(self.reg.now_ns())
+        span = max((now - boot).total_seconds() - 86400, 3600)
+        out = []
+        for k in range(5):
+            user = "cocadmin" if k % 3 == 1 else "root"
+            ip = (f"10.{rng.randint(0, 40)}.{rng.randint(0, 250)}.{rng.randint(2, 250)}" if user == "cocadmin"
+                  else netsim._public(rng))
+            when = boot + timedelta(seconds=span * (k + 1) / 5.5 + rng.randint(0, 40000))
+            if when < now - timedelta(hours=2):
+                out.append((user, ip, when, rng.randint(1, 95)))
+        # the attacker's own earlier visits are real: they replace any made-up login near them
+        out = [e for e in out if all(abs((e[2] - r[2]).total_seconds()) > 7200 for r in self.prior_logins)]
+        return sorted(out + list(self.prior_logins), key=lambda e: e[2], reverse=True)
+
+    def motd(self, os_banner: str, term: bool = True) -> str:
+        """What a Ubuntu 20.04 server prints at login, built from this machine's own numbers."""
+        info = self.image.os_release() if self.image else {}
+        now = self._dt(self.reg.now_ns())
+        disk = next((d for d in (self.hw or {}).get("disks", []) if d["mount"] == "/"), None)
+        mem = (self.hw or {}).get("memory_kb", {})
+        iface = (self.net or {}).get("interface", "eth0")
+        lines = [f"Welcome to {info.get('PRETTY_NAME', os_banner)} (GNU/Linux {self.kernel} x86_64)", "",
+                 " * Documentation:  https://help.ubuntu.com",
+                 " * Management:     https://landscape.canonical.com",
+                 " * Support:        https://ubuntu.com/advantage", ""]
+        if disk and mem:
+            used = mem["total"] - mem["free"] - mem["buffers"] - mem["cached"] - mem["sreclaimable"]
+            swap = mem["swap_total"] - mem["swap_free"]
+            left = [("System load:", f"{self._loads()[0]:.2f}"),
+                    ("Usage of /:", f"{100 * disk['used_kb'] / (disk['used_kb'] + disk['avail_kb']):.1f}% of "
+                                    f"{disk['size_kb'] / 1048576:.2f}GB"),
+                    ("Memory usage:", f"{round(100 * used / mem['total'])}%"),
+                    ("Swap usage:", f"{round(100 * swap / max(mem['swap_total'], 1))}%")]
+            right = [("Processes:", str(len(self._rows("")))), ("Users logged in:", "1"),
+                     (f"IPv4 address for {iface}:", str(self.reg.session("local_ip") or ""))]
+            lines.append(f"  System information as of {now:%a %b} {now.day:>2} {now:%H:%M:%S} UTC {now:%Y}")
+            lines.append("")
+            for i in range(len(left)):
+                l = f"{left[i][0]:<14}{left[i][1]}"
+                r = f"{right[i][0]:<26}{right[i][1]}" if i < len(right) else ""
+                lines.append(f"  {l:<33}{r}".rstrip())
+            lines += ["", "0 updates can be applied immediately.", ""]
+        prev = next((e for e in self.login_history() if e[0] == self.username), None)
+        if prev:
+            lines += ["", f"Last login: {prev[2]:%a %b} {prev[2].day:>2} {prev[2]:%H:%M:%S %Y} from {prev[1]}"]
+        return "\n".join(lines) + "\n"
+
     def _cmd_last(self, argv):
         if len(argv) != 1 or self.reg.session("ip") is None:
             return False, None
@@ -1398,12 +1455,14 @@ class RuleCore:
 
         def when(dt):
             return f"{dt:%a %b} {dt.day:>2} {dt:%H:%M}"
-        return True, "\n".join([
-            f"{self.reg.session('user'):<8} {self.reg.session('tty'):<12} "
-            f"{self.reg.session('ip'):<16} {when(login)}   still logged in",
-            f"{'reboot':<8} {'system boot':<12} {self.kernel[:16]:<16} {when(boot)}   still running",
-            "",
-            f"wtmp begins {boot:%a %b} {boot.day:>2} {boot:%H:%M:%S %Y}"])
+        rows = [f"{self.reg.session('user'):<8} {self.reg.session('tty'):<12} "
+                f"{self.reg.session('ip'):<16} {when(login)}   still logged in"]
+        for n, (user, ip, at, minutes) in enumerate(self.login_history()):
+            end = at + timedelta(minutes=minutes)
+            rows.append(f"{user:<8} {'pts/' + str(n % 3):<12} {ip:<16} {when(at)} - {end:%H:%M}  "
+                        f"({minutes // 60:02d}:{minutes % 60:02d})")
+        rows.append(f"{'reboot':<8} {'system boot':<12} {self.kernel[:16]:<16} {when(boot)}   still running")
+        return True, "\n".join(rows + ["", f"wtmp begins {boot:%a %b} {boot.day:>2} {boot:%H:%M:%S %Y}"])
 
     def live_lines(self, path: str) -> bytes:
         """Lines this session added to a log: the login, then sudo events."""
@@ -2330,6 +2389,13 @@ class RuleCore:
                          "rss": int(p.get("RSS") or 0) // 1024, "tty": p["TTY"],
                          "stat": p["STAT"], "start": p["START"], "comm": p.get("COMM"),
                          "time": int(minutes * 60), "cmd": p["COMMAND"].rstrip()})
+        bucket = int(self.reg.now_ns() / 1e9 // 300)
+        for k in range(self.reg.prf(f"kw{bucket}", "ps", 1, 3)):
+            cpu_n, seq = k % max((self.hw or {}).get("cpus", 2), 1), self.reg.prf(f"kn{bucket}{k}", "ps", 0, 9)
+            rows.append({"user": "root", "pid": 30000 + self.reg.prf(f"kp{bucket}{k}", "ps", 0, 9000),
+                         "ppid": 2, "cpu": 0.0, "mem": 0.0, "vsz": 0, "rss": 0, "tty": "?",
+                         "stat": "I", "start": hhmm(bucket * 300 * 10**9), "time": 0, "comm": None,
+                         "cmd": f"[kworker/{cpu_n}:{seq}-events]"})
         shell = self._shell_pid()
         sshd = self.reg.session("sshd_pid")
         if sshd is not None:

@@ -513,6 +513,56 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
                       on_degrade=_count_degradation, sync_state=sync_state)
     link.tracker = tracker          # lets link.catch_up() read state + deltas
 
+    # ── a returning attacker finds what they left ──────────────────────────
+    def _restore_previous_visits():
+        """Same source address, earlier visits: their files, packages, history and logins.
+
+        Keyed by the address alone, so nothing an attacker made is ever shown to another one.
+        Whatever goes wrong here, the login still works, on a clean machine."""
+        if not (getattr(config.honeypot, "remember_attackers", False) and store == "sqlite"
+                and src_ip not in ("?", "")):
+            return
+        try:
+            from core import storage
+            visits = storage.prior_sessions(src_ip, INSTANCE, exclude=SESSION_ID,
+                                            days=getattr(config.honeypot, "remember_days", 30))
+            if not visits:
+                return
+            ids = [v["session_id"] for v in visits]
+            touched = register.restore(storage.state_rows_of(ids, INSTANCE))
+
+            def utc(ts):
+                return datetime.strptime(ts, "%Y-%m-%d %H:%M:%S").astimezone(timezone.utc)
+            cmds = [c for c in storage.commands_of(ids, INSTANCE) if c]
+            rulecore.typed = cmds[-1000:]                       # `history` carries on counting
+            home = SYSTEM_STATE["users"][username]["home"]
+            if cmds:                                            # bash saved it when they logged out
+                register.set_file_bytes(f"{home}/.bash_history", ("\n".join(cmds[-2000:]) + "\n").encode(),
+                                        int(utc(visits[-1]["last"]).timestamp() * 1e9))
+            rulecore.prior_logins = [
+                (username, src_ip, utc(v["first"]),
+                 max(1, round((utc(v["last"]) - utc(v["first"])).total_seconds() / 60)))
+                for v in visits if v["commands"]][-6:][::-1]
+            # Cowrie starts empty every time: put back the few files its own commands may meet
+            keep = [p for p in sorted(register.created) if p.startswith("/") and not p.startswith(("/proc", "/sys", "/dev", "/run"))
+                    and p != f"{home}/.bash_history"]
+            dirs = sorted((p for p in keep if register.inst.get("kind", p) == "dir"), key=lambda p: p.count("/"))
+            files = [p for p in keep if register.inst.get("kind", p) == "file"
+                     and isinstance(register.inst.get("content", p), bytes)]
+            rulecore.sync_cmds = []
+            for d in dirs[:15]:
+                rulecore._replay(f"mkdir {shlex.quote(d)}")
+            for f in files[:15]:
+                rulecore._sync_bytes(f, register.inst.get("content", f))
+            for c in rulecore.sync_cmds:
+                link.sync(c)
+            rulecore.sync_cmds = []
+            print(f"[HydraPot] {src_ip}: restored {len(touched)} paths and {len(cmds)} commands "
+                  f"from {len(visits)} earlier visit(s)")
+        except Exception as exc:
+            print(f"[HydraPot] could not restore earlier visits for {src_ip}: {type(exc).__name__}: {exc}")
+    _restore_previous_visits()
+
     # ── shortcut: log + return ────────────────────────────────────────────
     def _reaches_a_model(needs_llm, base, lookup_base, cmd) -> bool:
         """Is the first word a real command? If not, no model is ever asked.
@@ -1277,6 +1327,7 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
     handle.prompt_manager = prompt_manager
     handle.register = register
     handle.rulecore = rulecore
+    handle.motd = lambda: rulecore.motd(config.honeypot.os)
 
     # `su`, `sudo -u` and `exit` change who the commands run as; the SSH layer owns the prompt
     def _switch_user(name, login):

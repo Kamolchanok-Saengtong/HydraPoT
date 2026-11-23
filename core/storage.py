@@ -266,6 +266,49 @@ def state_rows(session_id: str, instance: str = "default",
                     (instance, str(session_id)))]
 
 
+def prior_sessions(src_ip: str, instance: str = "default", exclude: str = "", days: int = 30,
+                   limit: int = 200, path: str = DB_PATH) -> list:
+    """This address's earlier sessions, oldest first: [{session_id, first, last, commands}].
+
+    Keyed by source address and nothing else, so one attacker's files are never another's."""
+    try:
+        with connect(path) as conn:
+            return [dict(r) for r in conn.execute(
+                "SELECT session_id, MIN(timestamp) AS first, MAX(timestamp) AS last, COUNT(*) AS commands "
+                "FROM sessions WHERE instance=? AND src_ip=? AND session_id != ? "
+                "AND timestamp >= datetime('now', 'localtime', ?) GROUP BY session_id "
+                "ORDER BY MIN(timestamp) DESC LIMIT ?",
+                (instance, src_ip, str(exclude), f"-{int(days)} days", limit))][::-1]
+    except sqlite3.Error:
+        return []
+
+
+def commands_of(session_ids: list, instance: str = "default", path: str = DB_PATH) -> list:
+    """What was typed in these sessions, in order."""
+    if not session_ids:
+        return []
+    marks = ",".join("?" * len(session_ids))
+    with connect(path) as conn:
+        return [r["cmd"] for r in conn.execute(
+            f"SELECT cmd FROM sessions WHERE instance=? AND session_id IN ({marks}) "
+            "ORDER BY session_id, seq", (instance, *map(str, session_ids)))]
+
+
+def state_rows_of(session_ids: list, instance: str = "default", path: str = DB_PATH,
+                  limit: int = 50000) -> list:
+    """The state-change rows of several sessions, oldest session first, ready for replay."""
+    if not session_ids:
+        return []
+    marks = ",".join("?" * len(session_ids))
+    with connect(path) as conn:
+        return [{"seq": r["seq"], "op": r["op"], "rel": r["rel"],
+                 "key": json.loads(r["key"]), "value": json.loads(r["value"])}
+                for r in conn.execute(
+                    f"SELECT seq, op, rel, key, value FROM state_log WHERE instance=? "
+                    f"AND session_id IN ({marks}) ORDER BY session_id, id LIMIT ?",
+                    (instance, *map(str, session_ids), limit))]
+
+
 def query_all(path: str = DB_PATH, columns: tuple = None) -> list:
     """Every command, oldest first. Used for full-dataset scans.
 
