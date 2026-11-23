@@ -38,7 +38,7 @@ import sys
 import urllib.request
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.dirname(_HERE))
+sys.path.insert(0, os.path.dirname(os.path.dirname(_HERE)))
 
 SCOPE_URL = ("https://raw.githubusercontent.com/INerverRead/Scope/"
              "main/data/Scope.csv")

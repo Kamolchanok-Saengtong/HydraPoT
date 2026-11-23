@@ -2,7 +2,7 @@
 experiment_data/PartC/run/select_onboarding_prompts.py -- pick the prompts a new model is fitted on.
 
 Uses the production network and the three existing arms (nothing about the new model),
-through honeyrouter/onboarding.py, so the same set serves every later model and every
+through experiment_data/PartC/run/onboarding.py, so the same set serves every later model and every
 experiment. Writes ONE file: partC_onboarding/selected_prompts.json.
 
     python experiment_data/PartC/run/select_onboarding_prompts.py
@@ -17,7 +17,7 @@ import torch
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 sys.path.insert(0, ROOT)
 
-from honeyrouter import onboarding as OB                     # noqa: E402
+import onboarding as OB                     # noqa: E402
 from honeyrouter import predictor as P                       # noqa: E402
 from honeyrouter.sessions import load_sessions               # noqa: E402
 

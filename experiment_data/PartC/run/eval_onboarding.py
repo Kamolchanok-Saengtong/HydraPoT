@@ -3,7 +3,7 @@ experiment_data/PartC/run/eval_onboarding.py -- is "frozen network + fit only th
 
 Each arm is treated as the NEW model in turn. The network is trained on the other
 two arms only, so the new arm is unseen. Then its 3-number identity is fitted on a
-few prompts chosen by honeyrouter/onboarding.py and compared, on sessions held
+few prompts chosen by experiment_data/PartC/run/onboarding.py and compared, on sessions held
 out from everything, with fully retraining the network on all three arms.
 
     exp A  start from the benchmark score:  I0 = [GPQA score, 2 small random numbers]
@@ -23,7 +23,7 @@ import torch.nn as nn
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 sys.path.insert(0, ROOT)
 
-from honeyrouter import onboarding as OB                     # noqa: E402
+import onboarding as OB                     # noqa: E402
 from honeyrouter import predictor as P                       # noqa: E402
 from honeyrouter.action import AGENTS                        # noqa: E402
 from honeyrouter.sessions import load_sessions               # noqa: E402

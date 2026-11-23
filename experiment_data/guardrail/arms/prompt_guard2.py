@@ -6,7 +6,7 @@ base is multilingual (Thai included). Gated on HuggingFace, and its
 config.json ships no id2label -- the arm measures which class means attack
 rather than assuming a name or an index.
 """
-from guardrail.detector_arm.hf_classifier import HFClassifierArm
+from arms.hf_classifier import HFClassifierArm
 
 NAME = "prompt_guard2"
 DEFAULT_MODEL = "meta-llama/Llama-Prompt-Guard-2-86M"

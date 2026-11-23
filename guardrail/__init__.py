@@ -25,7 +25,7 @@ injection must PROTECT the LLM while PRESERVING believable attacker
 interaction. Detection never turns into a refusal or a canned error — that is
 itself a character break and tells the attacker they hit a filter.
 """
-from guardrail.detector import Detection, Detector, ProtectAIDetector, make_detector
+from guardrail.detector import Detection, Detector, make_detector
 from guardrail.sanitizer import Sanitizer, Sanitized
 from guardrail.isolation import Isolation
 from guardrail.policy import Action, Decision, Policy
@@ -33,7 +33,7 @@ from guardrail.validator import OutputValidator, Validation
 from guardrail.logger import InjectionLogger
 
 __all__ = [
-    "Detection", "Detector", "ProtectAIDetector", "make_detector",
+    "Detection", "Detector", "make_detector",
     "Sanitizer", "Sanitized", "Isolation",
     "Action", "Decision", "Policy",
     "OutputValidator", "Validation", "InjectionLogger",

@@ -5,7 +5,7 @@ protectai/deberta-v3-base-prompt-injection-v2. English-only, and its model
 card states it does not detect jailbreak attacks; the project is archived.
 Kept as the baseline arm because the earlier results were measured with it.
 """
-from guardrail.detector_arm.hf_classifier import HFClassifierArm
+from arms.hf_classifier import HFClassifierArm
 
 NAME = "protectai"
 DEFAULT_MODEL = "protectai/deberta-v3-base-prompt-injection-v2"

@@ -1,5 +1,5 @@
 """
-honeyrouter/onboarding.py -- add a new arm without retraining (LLM Bandit Sec 2.6).
+experiment_data/PartC/run/onboarding.py -- add a new arm without retraining (LLM Bandit Sec 2.6).
 
 When a model joins, the network f and the other arms' identities stay frozen and
 only the new arm's identity vector is fitted, on a few prompts that tell models

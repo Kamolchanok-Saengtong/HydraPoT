@@ -76,6 +76,7 @@ import time
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, "..", "..", ".."))
 sys.path.insert(0, _ROOT)
+sys.path.insert(0, os.path.join(_ROOT, "experiment_data", "guardrail"))   # the other detector arms
 
 from guardrail.validator import ask, build_agent, make_prompt_manager
 
@@ -106,7 +107,7 @@ def _arm_matches(provider, arm) -> bool:
     `provider: llama`, which is one of prompt_guard2's ALIASES, so a plain
     `==` against "prompt_guard2" would say no.
     """
-    from guardrail import detector_arm
+    import arms as detector_arm
 
     def _canonical(p):
         want = (p or "").strip().lower()
@@ -146,9 +147,9 @@ def _build_detector(config):
     it (session.py:439-444) -- same provider/model/device/threshold, read from
     the same place. Loaded ONCE per arm, outside any timed region, same
     principle as build_agent()."""
-    from guardrail.detector import make_detector
+    from arms import build as _build_arm
     d = config.guardrail.detector
-    det = make_detector({"provider": d.provider, "model": d.model,
+    det = _build_arm(d.provider, {"provider": d.provider, "model": d.model,
                          "device": d.device, "threshold": d.threshold})
     # The HF arms load lazily -- _ensure_loaded() plus resolve_labels()' two
     # probe forward passes fire on the FIRST classify(), which would otherwise

@@ -4,7 +4,7 @@ import sys
 import torch
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from core.config_loader import load_config                      # noqa: E402
 
 model_id = load_config().guardrail.detector.model

@@ -66,8 +66,10 @@ import tempfile
 import time
 from collections import defaultdict
 
-_HERE = os.path.dirname(os.path.abspath(__file__))                   # guardrail/
-_ROOT = os.path.dirname(_HERE)
+_HERE = os.path.dirname(os.path.abspath(__file__))                   # experiment_data/guardrail/
+_ROOT = os.path.dirname(os.path.dirname(_HERE))                  # repo root
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
 for p in (_ROOT,
           os.path.join(_ROOT, "evaluation"),
           os.path.join(_ROOT, "experiment_data"),

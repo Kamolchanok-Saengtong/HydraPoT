@@ -28,7 +28,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
 sys.path.insert(0, ROOT)
 sys.path.insert(0, HERE)
 
-from honeyrouter import onboarding as OB                     # noqa: E402
+import onboarding as OB                     # noqa: E402
 from honeyrouter import predictor as P                       # noqa: E402
 from honeyrouter.action import AGENTS                        # noqa: E402
 from honeyrouter.sessions import load_sessions               # noqa: E402
