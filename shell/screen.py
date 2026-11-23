@@ -7,6 +7,7 @@ built from the same process rows and memory numbers those commands read, and red
 while the attacker watches. The SSH layer (core/fullscreen.py) owns the loop and keys.
 """
 import posixpath
+import re
 
 # %CPU a process may show on a quiet box: most are 0.0, a few tick over now and then
 _BUSY_COMM = ("rsyslogd", "systemd-journal", "dbus-daemon", "systemd", "sshd")
@@ -135,3 +136,86 @@ def render_watch(cmd: str, hostname: str, now_text: str, output: str, delay: flo
     right = f"{hostname}: {now_text}"
     gap = max(2, width - len(left) - len(right))
     return left + " " * gap + right + "\n\n" + output
+
+
+def _htop_mem(kb: float) -> str:
+    """htop's size columns: plain KiB below 100 MB, then M and G."""
+    if kb < 100_000:
+        return str(int(kb))
+    mb = kb / 1024
+    return f"{mb:.0f}M" if mb < 10_000 else f"{mb / 1024:.1f}G"
+
+
+def _meter_size(kb: float) -> str:
+    """htop's Mem/Swp meters: K, M, then G with two decimals from 1 GiB."""
+    return f"{kb / 1048576:.2f}G" if kb >= 1048576 else f"{kb / 1024:.0f}M" if kb >= 1024 else f"{int(kb)}K"
+
+
+def _htop_time(seconds: float) -> str:
+    t = int(seconds * 100)
+    m, s, c = t // 6000, (t // 100) % 60, t % 100
+    return f"{m // 60}h{m % 60:02d}:{s:02d}" if m >= 60 else f"{m}:{s:02d}.{c:02d}"
+
+
+def _bar(label, frac, text, width, color):
+    """htop meter: Label[|||||      text]."""
+    inner = width - len(label) - 2
+    filled = int(inner * min(max(frac, 0), 1))
+    body = ("|" * filled).ljust(inner - len(text)) + text if filled < inner - len(text) else ("|" * (inner - len(text))) + text
+    return f"{label}[\x1b[32m{body[:filled]}\x1b[0m{body[filled:]}]"
+
+
+def render_htop(rows, hw, uptime_text, loads, tick, noise, height, width=80, selected=0,
+                sort="cpu", user_fmt=None, running=1, mem_drift=0):
+    """One frame of htop 2.2, in colour, from the same rows and memory as ps and free."""
+    mem = hw["memory_kb"]
+    buff_cache = mem["buffers"] + mem["cached"] + mem["sreclaimable"] - mem_drift
+    used = mem["total"] - (mem["free"] + mem_drift) - buff_cache
+    swap_used = mem["swap_total"] - mem["swap_free"]
+    half = width // 2
+    cpus = hw.get("cpus", 1)
+    left, right = [], []
+    for i in range(cpus):
+        pct = noise(f"hc{i}x{tick}", 0, 25) / 10
+        left.append(_bar(f"{i + 1:>3}", pct / 100, f"{pct:.1f}%", half - 1, "green"))
+    left.append(_bar("Mem", used / mem["total"], f"{_meter_size(used)}/{_meter_size(mem['total'])}", half - 1, "green"))
+    left.append(_bar("Swp", swap_used / max(mem["swap_total"], 1), f"{_meter_size(swap_used)}/{_meter_size(mem['swap_total'])}", half - 1, "red"))
+    user_tasks = [r for r in rows if not r["cmd"].startswith("[")]
+    right = [f"Tasks: \x1b[1m{len(user_tasks)}\x1b[0m, \x1b[1m{len(user_tasks) + 2 * len(user_tasks) // 3}\x1b[0m thr; "
+             f"\x1b[1m{running}\x1b[0m running",
+             f"Load average: \x1b[1m{loads[0]:.2f}\x1b[0m {loads[1]:.2f} \x1b[36m{loads[2]:.2f}\x1b[0m",
+             f"Uptime: \x1b[1m{uptime_text}\x1b[0m"]
+    lines = []
+    for k in range(max(len(left), len(right))):
+        l = left[k] if k < len(left) else ""
+        r = right[k] if k < len(right) else ""
+        pad = half - len(re.sub(r"\x1b\[[0-9;]*m", "", l)) if l else half
+        lines.append(f"{l}{' ' * max(pad, 1)}{r}")
+    lines.append("")
+    cols = "  PID USER      PRI  NI  VIRT   RES   SHR S CPU% MEM%   TIME+  Command"
+    lines.append("\x1b[30;42m" + cols.ljust(width) + "\x1b[0m")
+    fmt = user_fmt or (lambda u: u[:8])
+    key = {"cpu": lambda r: (-r["cpu"], r["pid"]), "mem": lambda r: (-r["mem"], r["pid"]),
+           "pid": lambda r: r["pid"], "time": lambda r: (-r["time"], r["pid"])}[sort]
+    shown = []
+    for r in rows:
+        name = r.get("comm") or comm(r["cmd"])
+        cpu = (0.3 + noise(f"ht{tick}", 0, 5) / 10) if r["cmd"].startswith("htop") else (
+            noise(f"hb{r['pid']}x{tick}", 3, 12) / 10 if name in _BUSY_COMM and noise(f"hq{r['pid']}x{tick}", 0, 99) > 90 else 0.0)
+        shown.append({**r, "cpu": cpu})
+    shown.sort(key=key)
+    room = max(height - len(lines) - 1, 1)
+    for idx, r in enumerate(shown[:room]):
+        stat = r["stat"]
+        pri, ni = ("0", "-20") if "<" in stat else ("20", "0")
+        line = (f"{r['pid']:>5} {fmt(r['user']):<9} {pri:>3} {ni:>3} {_htop_mem(r['vsz']):>5} "
+                f"{_htop_mem(r['rss']):>5} {_htop_mem(r['rss'] * 0.4):>5} {stat[0]} {r['cpu']:>4.1f} "
+                f"{r['mem']:>4.1f} {_htop_time(r['time']):>7}  {r['cmd']}")
+        line = line[:width]
+        lines.append(("\x1b[30;46m" + line.ljust(width) + "\x1b[0m") if idx == selected else line)
+    while len(lines) < height - 1:
+        lines.append("")
+    bar = [("F1", "Help  "), ("F2", "Setup "), ("F3", "Search"), ("F4", "Filter"), ("F5", "Tree  "),
+           ("F6", "SortBy"), ("F7", "Nice -"), ("F8", "Nice +"), ("F9", "Kill  "), ("F10", "Quit")]
+    lines.append("".join(f"{k}\x1b[30;46m{v}\x1b[0m" for k, v in bar))
+    return "\n".join(lines)

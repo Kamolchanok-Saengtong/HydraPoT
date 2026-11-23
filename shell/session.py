@@ -1290,6 +1290,10 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
             return None
         if argv[:1] == ["sudo"]:
             argv = argv[1:]
+        if argv[:1] == ["htop"] and sw.available("htop") and not argv[1:]:
+            return {"kind": "htop", "delay": 1.5, "count": None, "sort": "cpu",
+                    "begin": rulecore.begin_screen, "end": rulecore.end_screen,
+                    "frame": rulecore.htop_frame}
         if argv[:1] != ["top"] or not sw.available("top"):
             return None
         opts = rulecore.top_options(argv)

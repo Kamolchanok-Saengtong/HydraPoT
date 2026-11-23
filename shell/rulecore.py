@@ -1074,6 +1074,22 @@ class RuleCore:
             lambda name, lo, hi: self.reg.prf(name, "top", lo, hi), delay, height, sort,
             user_fmt=_ps_user, opts=opts, width=width, mem_drift=self._mem_drift(), color=color)
 
+    def _uptime_text(self) -> str:
+        """`124 days, 03:31:11`, the way htop prints the uptime."""
+        delta = self._dt(self.reg.now_ns()) - self._dt(self._boot_ns())
+        h, rem = divmod(delta.seconds, 3600)
+        m, sec = divmod(rem, 60)
+        days = f"{delta.days} day{'s' if delta.days != 1 else ''}, " if delta.days else ""
+        return f"{days}{h:02d}:{m:02d}:{sec:02d}"
+
+    def htop_frame(self, tick, height, width=80, selected=0, sort="cpu"):
+        if not self.hw:
+            return None
+        return screen.render_htop(
+            self._rows("htop"), self.hw, self._uptime_text(), self._loads(), tick,
+            lambda name, lo, hi: self.reg.prf(name, "htop", lo, hi), height, width, selected,
+            sort, user_fmt=_ps_user, mem_drift=self._mem_drift())
+
     def begin_screen(self):
         """A full-screen program starts: it keeps one PID for all its frames."""
         self._screen_pid = self._new_pid()

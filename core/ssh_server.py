@@ -363,6 +363,7 @@ async def _shell_session(process, handler_factory, hostname, os_banner):
                     if process.get_terminal_type():
                         spec = (getattr(command_handler, "screen", lambda c: None)(cmd)
                                 or fullscreen.watch_spec(cmd, command_handler, hostname)
+                                or fullscreen.pager_spec(cmd, command_handler)
                                 or fullscreen.stream_spec(cmd, command_handler,
                                                           {"hostname": hostname,
                                                            "local_ip": conn_info.get("local_ip")}))

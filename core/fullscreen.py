@@ -17,6 +17,30 @@ import asyncssh
 from shell import netsim
 from shell import screen as screen_mod
 
+_ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+
+
+def clip(line: str, width: int) -> str:
+    """Cut a line to `width` VISIBLE columns, keeping its colour codes whole.
+
+    Counting the escape bytes as columns cut coloured lines short and dropped their
+    reset code, so reverse video bled into every line below."""
+    out, seen, i = [], 0, 0
+    while i < len(line):
+        m = _ANSI.match(line, i)
+        if m:
+            out.append(m.group(0))
+            i = m.end()
+            continue
+        if seen >= width:
+            break
+        out.append(line[i])
+        seen += 1
+        i += 1
+    clipped = "".join(out)
+    return clipped + "\x1b[0m" if "\x1b[" in clipped else clipped
+
+
 _SORT_KEYS = {"P": "cpu", "M": "mem", "N": "pid", "T": "time"}
 # keys that flip a display option, as in the real top: c = full command lines,
 # 1 = one line per CPU, i = hide idle tasks
@@ -150,10 +174,121 @@ async def run_stream(process, spec) -> None:
                 pass
 
 
+def pager_spec(cmd: str, handler):
+    """Spec for `less FILE`, `more FILE` and `<command> | less`, or None."""
+    try:
+        argv = shlex.split(cmd)
+    except ValueError:
+        return None
+    if argv[:1] == ["sudo"]:
+        argv = argv[1:]
+    source = name = None
+    if argv[:1] in (["less"], ["more"]):
+        files = [a for a in argv[1:] if not a.startswith("-")]
+        if len(files) != 1:
+            return None
+        source, name, prog = f"cat {shlex.quote(files[0])}", files[0], argv[0]
+    elif "|" in cmd and cmd.rsplit("|", 1)[1].strip() in ("less", "more"):
+        source, prog = cmd.rsplit("|", 1)[0].strip(), cmd.rsplit("|", 1)[1].strip()
+    else:
+        return None
+    buf = []
+    response, _ = handler(source, buf.append, lambda: None)
+    text = (response if isinstance(response, str) and response else "".join(buf)).replace("\r\n", "\n")
+    if name and text.startswith("cat: ") and "No such file" in text:
+        return {"kind": "stream", "start": f"{name}: No such file or directory", "interval": 1.0,
+                "count": 0, "tick": lambda n: None, "finish": lambda n, ms: ""}
+    if not text.strip():
+        return {"kind": "stream", "start": "", "interval": 1.0, "count": 0,
+                "tick": lambda n: None, "finish": lambda n, ms: ""}
+    return {"kind": "pager", "lines": text.rstrip("\n").split("\n"), "name": name, "prog": prog}
+
+
+async def _key(process, reader):
+    """One key press as a name; arrow and function keys arrive as escape sequences."""
+    ch = await reader
+    if ch != "\x1b":
+        return ch
+    try:
+        rest = await asyncio.wait_for(process.stdin.read(2), timeout=0.1)
+    except asyncio.TimeoutError:
+        return "esc"
+    return {"[A": "up", "[B": "down", "[5": "pgup", "[6": "pgdn", "OA": "up", "OB": "down",
+            "[2": "f10x", "[1": "home"}.get(rest, "esc")
+
+
+async def run_pager(process, spec) -> None:
+    lines, prog = spec["lines"], spec["prog"]
+    size = process.get_terminal_size() or (80, 24, 0, 0)
+    width, height = size[0] or 80, size[1] or 24
+    page = height - 1
+    chan = process.channel
+    chan.set_line_mode(False)
+    chan.set_echo(False)
+    w = lambda t: None if process.stdout.is_closing() else process.stdout.write(t)
+    top = 0
+    try:
+        if prog == "more":
+            shown = 0
+            while True:
+                chunk = lines[shown:shown + page if shown == 0 else shown + page]
+                for l in chunk:
+                    w(l[:width] + "\r\n")
+                shown += len(chunk)
+                if shown >= len(lines):
+                    return
+                w(f"\x1b[7m--More--({100 * shown // len(lines)}%)\x1b[0m")
+                k = await _key(process, asyncio.ensure_future(process.stdin.read(1)))
+                w("\r\x1b[K")
+                if k in ("q", "Q", "\x03", ""):
+                    return
+                if k in ("\r", "\n"):
+                    w(lines[shown][:width] + "\r\n")
+                    shown += 1
+        w("\x1b[?1049h")
+        while True:
+            body = lines[top:top + page]
+            at_end = top + page >= len(lines)
+            frame = [clip(l, width) for l in body] + ["~"] * (page - len(body))
+            status = "(END)" if at_end else ":"
+            w("\x1b[H" + "\x1b[K\r\n".join(frame) + "\x1b[K\r\n\x1b[7m" + status + "\x1b[0m\x1b[K")
+            k = await _key(process, asyncio.ensure_future(process.stdin.read(1)))
+            last = max(len(lines) - page, 0)
+            if k in ("q", "Q", "\x03", "", "Z"):
+                break
+            elif k in (" ", "f", "z", "pgdn", "\x06"):
+                top = min(top + page, last)
+            elif k in ("b", "pgup", "\x02"):
+                top = max(top - page, 0)
+            elif k in ("j", "e", "\r", "\n", "down", "\x0e"):
+                top = min(top + 1, last)
+            elif k in ("k", "y", "up", "\x10"):
+                top = max(top - 1, 0)
+            elif k in ("g", "<", "home"):
+                top = 0
+            elif k in ("G", ">"):
+                top = last
+            elif k == "d":
+                top = min(top + page // 2, last)
+            elif k == "u":
+                top = max(top - page // 2, 0)
+    finally:
+        if prog != "more":
+            w("\x1b[?1049l")
+        if not (process.stdout.is_closing() or chan.is_closing()):
+            try:
+                chan.set_echo(True)
+                chan.set_line_mode(True)
+            except Exception:
+                pass
+
+
 async def run(process, spec) -> None:
     """Draw `spec` until the attacker quits. The prompt is written by the caller."""
     if spec["kind"] == "stream":
         return await run_stream(process, spec)
+    if spec["kind"] == "pager":
+        return await run_pager(process, spec)
     size = process.get_terminal_size() or (80, 24, 0, 0)
     width, height = size[0] or 80, size[1] or 24
     chan = process.channel
@@ -162,15 +297,18 @@ async def run(process, spec) -> None:
     process.stdout.write("\x1b[?1049h\x1b[?25l")
     sort, tick, reader = spec.get("sort", "cpu"), 0, None
     opts = dict(spec.get("opts") or {})
+    selected = 0
     spec["begin"]()
     try:
         while tick < _MAX_TICKS:
-            if spec["kind"] == "top":
+            if spec["kind"] == "htop":
+                text = await asyncio.to_thread(spec["frame"], tick, height, width, selected, sort)
+            elif spec["kind"] == "top":
                 text = await asyncio.to_thread(spec["frame"], tick, height, spec["delay"], sort,
                                                opts, width, True)
             else:
                 text = await asyncio.to_thread(spec["frame"], tick, height, width, sort)
-            lines = [l[:width] for l in text.split("\n")][:height]
+            lines = [clip(l, width) for l in text.split("\n")][:height]
             if process.stdout.is_closing() or chan.is_closing():
                 break                              # the client is gone: draw nothing more
             try:
@@ -195,9 +333,21 @@ async def run(process, spec) -> None:
             except asyncssh.BreakReceived:
                 break
             reader = None
+            if key == "\x1b" and spec["kind"] == "htop":
+                try:
+                    rest = await asyncio.wait_for(process.stdin.read(2), timeout=0.1)
+                except asyncio.TimeoutError:
+                    rest = ""
+                if rest in ("[B", "OB"):
+                    selected += 1
+                elif rest in ("[A", "OA"):
+                    selected = max(selected - 1, 0)
+                elif rest == "[2":                    # F10 sends ESC [ 2 1 ~
+                    break
+                continue
             if not key or key in ("q", "Q", "\x03", "\x04"):
                 break
-            if key in _SORT_KEYS and spec["kind"] == "top":
+            if key in _SORT_KEYS and spec["kind"] in ("top", "htop"):
                 sort = _SORT_KEYS[key]
             elif key in _TOGGLES and spec["kind"] == "top":
                 opt = _TOGGLES[key]
