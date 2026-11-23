@@ -249,6 +249,9 @@ class AgentsCfg:
 
 @dataclass
 class RoutingCfg:
+    # user_control: you set fi_routing below. smart_router: the network trained
+    # by `hp --router` picks the agent; its omega is saved by that CLI, not here.
+    mode: str = "user_control"
     fallback: str = "cowrie"
     fi_fallback: int = 3   # FI band assigned when no pattern matches (e.g. garbled obfuscation output)
     fi_routing: dict = field(default_factory=lambda: {
@@ -258,6 +261,10 @@ class RoutingCfg:
         3: "on_device",
         4: "on_device",
     })
+
+    def __post_init__(self):
+        if self.mode not in ("user_control", "smart_router"):
+            raise ValueError(f"routing.mode must be user_control or smart_router, got {self.mode!r}")
 
 @dataclass
 class LoggingCfg:

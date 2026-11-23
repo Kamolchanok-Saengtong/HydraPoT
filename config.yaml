@@ -55,6 +55,9 @@ git_clone:
       raw: https://raw.githubusercontent.com/{owner}/{repo}/HEAD/{path}
 
 routing:
+  # user_control: you pick the agent per FI score (fi_routing below).
+  # smart_router: the network trained with `hp --router` decides; fi_routing is ignored.
+  mode: user_control
   fallback: cowrie
   fi_routing:
     0: cowrie
