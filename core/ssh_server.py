@@ -12,6 +12,8 @@ import os
 import queue
 import json
 import asyncssh
+
+from core import fullscreen
 from datetime import datetime
 
 from core.config_loader import load_config
@@ -356,6 +358,21 @@ async def _shell_session(process, handler_factory, hostname, os_banner):
                         process.stdout.write(prompt)
                         continue
 
+                    # ── full-screen programs (top, watch) keep the terminal ──
+                    if process.get_terminal_type():
+                        spec = (getattr(command_handler, "screen", lambda c: None)(cmd)
+                                or fullscreen.watch_spec(cmd, command_handler, hostname))
+                        if spec:
+                            try:
+                                await fullscreen.run(process, spec)
+                            except asyncssh.ConnectionLost:
+                                raise
+                            except Exception as e:
+                                print(f"[ssh_server] full-screen error on '{cmd}': {e!r}")
+                            if not process.stdout.is_closing():
+                                process.stdout.write(prompt)
+                            continue
+
                     # ── everything else goes to the agent ──
                     try:
                         response, new_prompt = await asyncio.to_thread(
@@ -403,8 +420,8 @@ async def _shell_session(process, handler_factory, hostname, os_banner):
                 process.stdout.write("^C\r\n" + prompt)
                 continue
 
-    except (SystemExit, asyncssh.ConnectionLost):
-        pass
+    except (SystemExit, asyncssh.ConnectionLost, BrokenPipeError):
+        pass                          # the client went away: not an error worth a traceback
     except Exception as e:
         import traceback
         print(f"[ssh_server] Session error from {peer_str}: {e!r}")

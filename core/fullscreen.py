@@ -1,0 +1,119 @@
+"""
+core/fullscreen.py -- programs that take over the terminal (top, watch).
+
+The shell reads a line at a time, so a program that redraws and waits for keys cannot
+run through it: `top` used to print once and return to the prompt. Here the channel
+is switched to raw keys, the program is drawn on the alternate screen, and it ends on
+`q` or Ctrl-C, leaving the terminal as it was, which is what ncurses programs do.
+"""
+import asyncio
+import re
+import shlex
+from datetime import datetime
+
+import asyncssh
+
+from shell import screen as screen_mod
+
+_SORT_KEYS = {"P": "cpu", "M": "mem", "N": "pid", "T": "time"}
+_MAX_TICKS = 400                    # a `watch` nobody stops ends on its own after a while
+
+
+def watch_spec(cmd: str, handler, hostname: str):
+    """Spec for `watch [-n SEC] command...`, or None when it is not one we model."""
+    try:
+        argv = shlex.split(cmd)
+    except ValueError:
+        return None
+    if argv[:1] == ["sudo"]:
+        argv = argv[1:]
+    if argv[:1] != ["watch"]:
+        return None
+    delay, i = 2.0, 1
+    while i < len(argv) and argv[i].startswith("-"):
+        a = argv[i]
+        if a in ("-n", "--interval") and i + 1 < len(argv):
+            try:
+                delay = max(float(argv[i + 1]), 0.1)
+            except ValueError:
+                return None
+            i += 2
+        elif re.fullmatch(r"-n\d+(\.\d+)?", a):
+            delay, i = max(float(a[2:]), 0.1), i + 1
+        elif a in ("-t", "--no-title", "-d", "--differences", "-b", "--beep"):
+            i += 1
+        else:
+            return None
+    inner = " ".join(argv[i:])
+    if not inner:
+        return None
+
+    def frame(tick, height, width, sort):
+        buf = []
+        response, _ = handler(inner, buf.append, lambda: None)
+        out = response if isinstance(response, str) and response and not response.startswith("__SWALLOW_") \
+            else "".join(buf)
+        out = out.replace("\r\n", "\n")
+        body = "\n".join(l[:width] for l in out.split("\n")[: max(1, height - 2)])
+        now = datetime.now().strftime("%a %b %e %H:%M:%S %Y")
+        return screen_mod.render_watch(inner, hostname, now, body, delay, width)
+    return {"kind": "watch", "delay": delay, "count": None, "frame": frame,
+            "begin": lambda: None, "end": lambda: None}
+
+
+async def run(process, spec) -> None:
+    """Draw `spec` until the attacker quits. The prompt is written by the caller."""
+    size = process.get_terminal_size() or (80, 24, 0, 0)
+    width, height = size[0] or 80, size[1] or 24
+    chan = process.channel
+    chan.set_line_mode(False)
+    chan.set_echo(False)
+    process.stdout.write("\x1b[?1049h\x1b[?25l")
+    sort, tick, reader = "cpu", 0, None
+    spec["begin"]()
+    try:
+        while tick < _MAX_TICKS:
+            if spec["kind"] == "top":
+                text = await asyncio.to_thread(spec["frame"], tick, height, spec["delay"], sort)
+            else:
+                text = await asyncio.to_thread(spec["frame"], tick, height, width, sort)
+            lines = [l[:width] for l in text.split("\n")][:height]
+            if process.stdout.is_closing() or chan.is_closing():
+                break                              # the client is gone: draw nothing more
+            try:
+                process.stdout.write("\x1b[H" + "\x1b[K\r\n".join(lines) + "\x1b[K\x1b[J")
+            except (BrokenPipeError, ConnectionError, asyncssh.Error):
+                break
+            tick += 1
+            if spec.get("count") and tick >= spec["count"]:
+                break
+            if reader is None:
+                reader = asyncio.ensure_future(process.stdin.read(1))
+            done, _ = await asyncio.wait({reader}, timeout=spec["delay"])
+            if not done:
+                continue
+            try:
+                key = reader.result()
+            except asyncssh.TerminalSizeChanged:
+                size = process.get_terminal_size() or size
+                width, height = size[0] or width, size[1] or height
+                reader = None
+                continue
+            except asyncssh.BreakReceived:
+                break
+            reader = None
+            if not key or key in ("q", "Q", "\x03", "\x04"):
+                break
+            if key in _SORT_KEYS:
+                sort = _SORT_KEYS[key]
+    finally:
+        if reader is not None and not reader.done():
+            reader.cancel()
+        spec["end"]()
+        if not (process.stdout.is_closing() or chan.is_closing()):
+            try:
+                process.stdout.write("\x1b[?25h\x1b[?1049l")
+                chan.set_echo(True)
+                chan.set_line_mode(True)
+            except Exception:
+                pass
