@@ -43,7 +43,7 @@ Pick whichever matches how your org already does TLS — HydraPoT stays the same
 
 | your org already has… | how to plug in |
 |---|---|
-| **Internal CA (AD CS) cert** | mount your `.crt`/`.key` into Caddy: `tls /etc/caddy/org.crt /etc/caddy/org.key` (see `Caddyfile` footer), or use nginx below |
+| **Internal CA (AD CS) cert** | set `dashboard.tls_cert` / `tls_key` / `tls_names` in `config.yaml` (the only place); `hp --run` or `hp --dashboard` copies them to `./certs` and `.env` for Caddy. Or use nginx below |
 | **nginx standard** | run nginx instead of Caddy, `proxy_pass http://dashboard:8050;` with your cert |
 | **A load balancer / ingress** (F5, AWS ALB, k8s ingress) | point it at the dashboard's `8050`; skip the TLS overlay entirely |
 | **Identity-aware proxy** (Cloudflare Access, Tailscale) | front it with that; HydraPoT just serves HTTP behind it |

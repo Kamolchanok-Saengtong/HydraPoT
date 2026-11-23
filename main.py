@@ -20,7 +20,7 @@ import sys
 # finds both it and .env regardless of the caller's working directory.
 _HERE = os.path.dirname(os.path.abspath(__file__))
 
-from core.config_loader import load_config, sync_compose_env, CLOUD_API_KEY_ENV
+from core.config_loader import load_config, sync_compose_env, sync_proxy_env, CLOUD_API_KEY_ENV
 from agent_manager.cowrie_agent import CowrieAgent
 from agent_manager.ondevice_agent import OnDeviceAgent
 from agent_manager.cloud_agent import CloudAgent
@@ -324,6 +324,11 @@ def main():
     # sure something is actually listening there. Done on every run so hand-
     # editing config.yaml is enough -- the two cannot drift, and a stopped
     # container does not silently degrade every cowrie-routed command.
+    try:
+        if sync_proxy_env(config.dashboard):
+            print("[HydraPot] .env dashboard TLS settings updated from config.yaml")
+    except ValueError as e:
+        print(f"[HydraPot] dashboard TLS not synced: {e}")
     if config.agents.cowrie.enabled:
         _port = config.agents.cowrie.port
         _moved = sync_compose_env(_port)

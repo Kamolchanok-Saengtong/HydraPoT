@@ -286,6 +286,11 @@ def _dashboard(debug, foreground):
 
     from core.config_loader import load_config
     cfg = load_config(os.path.join(_HP_DIR, "config.yaml")).dashboard
+    try:
+        from core.config_loader import sync_proxy_env
+        sync_proxy_env(cfg)       # keeps the compose proxy on the same settings
+    except ValueError:
+        pass                      # tls.start below reports a bad cert properly
     caddy = tls.find_caddy(_HP_DIR)
     if not caddy:
         click.echo(click.style("\n  Caddy is not installed, and the dashboard "

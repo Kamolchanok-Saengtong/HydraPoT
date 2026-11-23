@@ -76,6 +76,56 @@ def sync_compose_env(port: int, path: str = None) -> bool:
     return True
 
 
+def sync_proxy_env(dash, path: str = None, certs_dir: str = None) -> bool:
+    """Write the dashboard's HTTPS settings into .env for the compose `caddy`
+    service, so config.yaml (dashboard.https_port / tls_cert / tls_key /
+    tls_names) is the only place they are set. Returns True if .env changed.
+
+    The cert and key are copied into ./certs, which compose mounts at /certs;
+    the host paths in config.yaml mean nothing inside the container. Only the
+    TLS lines of .env are rewritten -- the file holds API keys.
+    """
+    import shutil
+    path = path or ENV_PATH
+    certs_dir = certs_dir or os.path.join(_HERE, "certs")
+    cert, key = (dash.tls_cert or ""), (dash.tls_key or "")
+    if bool(cert) != bool(key):
+        raise ValueError("dashboard.tls_cert and dashboard.tls_key go together")
+    values = {"HTTPS_PORT": str(dash.https_port),
+              "TLS_SITE": (list(dash.tls_names or []) or ["localhost"])[0],
+              "TLS_CERT": "internal", "TLS_KEY": ""}
+    if cert:
+        for f in (cert, key):
+            if not os.path.isfile(f):
+                raise ValueError(f"TLS file not found: {f}")
+        os.makedirs(certs_dir, mode=0o700, exist_ok=True)
+        for src, name in ((cert, "hydrapot.crt"), (key, "hydrapot.key")):
+            dst = os.path.join(certs_dir, name)
+            shutil.copyfile(src, dst)
+            os.chmod(dst, 0o644 if name.endswith(".crt") else 0o600)
+        values.update(TLS_CERT="/certs/hydrapot.crt", TLS_KEY="/certs/hydrapot.key")
+
+    note = "# managed by hp -- change dashboard.https_port/tls_* in config.yaml\n"
+    try:
+        with open(path, encoding="utf-8") as fh:
+            lines = fh.readlines()
+    except FileNotFoundError:
+        lines = []
+    before = list(lines)
+    lines = [l for l in lines if l != note
+             and l.split("=", 1)[0].strip() not in values]
+    while lines and not lines[-1].strip():
+        lines.pop()
+    if lines and not lines[-1].endswith("\n"):
+        lines[-1] += "\n"
+    lines += ["\n", note] + [f"{k}={v}\n" for k, v in values.items()]
+    if lines == before:
+        return False
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.writelines(lines)
+    return True
+
+
 def load_dotenv(path: str = None, override: bool = False) -> dict:
     """Read KEY=VALUE lines from .env into the environment.
 

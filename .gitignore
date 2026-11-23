@@ -107,3 +107,6 @@ console_test/
 # Local notes for Claude sessions
 note.md
 plugins/cowrie/.machine
+
+# private key copied from dashboard.tls_key for the compose proxy
+certs/
