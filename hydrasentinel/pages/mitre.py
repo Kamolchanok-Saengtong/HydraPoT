@@ -18,7 +18,7 @@ from core import storage
 from threat_intel.mitre_mapper import _load_catalog as _mitre_catalog
 
 from hydrasentinel.server import app
-from hydrasentinel.theme import theme_layout, GRAPH_CONFIG, TABLE_STYLE, INK, INK_3, PAPER, Y_50, LINE, AMBER_SCALE
+from hydrasentinel.theme import theme_layout, GRAPH_CONFIG, TABLE_STYLE, INK, INK_2, INK_3, LINE
 from hydrasentinel.data import load_all, _cached_page
 
 
@@ -42,15 +42,6 @@ MITRE_STAGES = [
     ("DATA LOSS",    ["Command And Control", "Impact", "Stealth", "Defense Impairment"], "#2F4A6B"),
 ]
 
-# HydraPoT has no success/failure signal — it's a honeypot, every command
-# "works" by design. Severity here is the FI band it already computes and
-# defends in the evaluation, which is a real measured property rather than an
-# invented outcome label.
-SEV = [("High impact",   "high",   3, 4, "#C1443A"),
-       ("State-changing", "medium", 1, 2, "#E07B39"),
-       ("Reconnaissance", "low",    0, 0, "#AAAAAA")]
-
-
 def _mitre_window(df, days):
     """Current window + the preceding window of equal length, for % change."""
     d = df[df["timestamp"].notna()]
@@ -64,94 +55,6 @@ def _mitre_window(df, days):
     return d[d["timestamp"] > start], d[(d["timestamp"] > prev_start) & (d["timestamp"] <= start)]
 
 
-def _stage_stats(cur, prev, tactics):
-    s = cur[cur["tactic"].isin(tactics)]
-    p = prev[prev["tactic"].isin(tactics)]
-    counts = {key: int(((s["fi_score"] >= lo) & (s["fi_score"] <= hi)).sum())
-              for _, key, lo, hi, _ in SEV}
-    total, ptotal = len(s), len(p)
-    pct = ((total - ptotal) / ptotal * 100) if ptotal else None
-    return s, counts, total, pct
-
-
-def _donut(counts, total, colors):
-    vals = [counts[k] for _, k, _, _, _ in SEV]
-    fig = go.Figure(go.Pie(
-        values=vals or [1], hole=0.68, sort=False,
-        marker=dict(colors=colors, line=dict(color=PAPER, width=2)),
-        textinfo="none", hoverinfo="label+value",
-        labels=[lbl for lbl, _, _, _, _ in SEV],
-    ))
-    fig.add_annotation(text=f"<b>{total:,}</b><br><span style='font-size:11px'>TOTAL</span>",
-                       showarrow=False, font=dict(size=26, color=INK, family="Inter"))
-    fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", showlegend=False,
-                      margin=dict(t=6, b=6, l=6, r=6), height=190)
-    return fig
-
-
-def _trend(sub, days=7):
-    """Total vs high-impact per day over the last `days`."""
-    fig = go.Figure()
-    if not sub.empty:
-        d = sub.copy()
-        d["day"] = d["timestamp"].dt.floor("D")
-        last = sorted(d["day"].unique())[-days:]
-        d = d[d["day"].isin(last)]
-        tot = d.groupby("day").size()
-        hi = d[d["fi_score"] >= 3].groupby("day").size().reindex(tot.index, fill_value=0)
-        lbl = [pd.Timestamp(x).strftime("%d %b") for x in tot.index]
-        fig.add_trace(go.Scatter(x=lbl, y=tot.values, name="All", mode="lines+markers",
-                                 line=dict(color="#AAAAAA", width=2), marker=dict(size=5)))
-        fig.add_trace(go.Scatter(x=lbl, y=hi.values, name="High impact", mode="lines+markers",
-                                 line=dict(color="#C1443A", width=2.5), marker=dict(size=5)))
-    theme_layout(fig, height=140)
-    fig.update_layout(margin=dict(t=6, b=4, l=4, r=4))
-    return fig
-
-
-def _pct_badge(pct):
-    if pct is None:
-        return html.Span("— no prior period", className="caption")
-    if pct > 0:
-        return html.Span(f"▲ {pct:+.0f}% vs previous", style={"color": "#C1443A", "fontWeight": 700})
-    if pct < 0:
-        return html.Span(f"▼ {pct:.0f}% vs previous", style={"color": "#1f7a3a", "fontWeight": 700})
-    return html.Span("— unchanged", className="caption")
-
-
-def _stage_card(name, tactics, color, cur, prev):
-    sub, counts, total, pct = _stage_stats(cur, prev, tactics)
-    return html.Div(className="stage-card", children=[
-        html.Div(name, className="stage-head", style={"background": color}),
-        html.Div(className="stage-body", children=[
-            html.Div(className="stage-top", children=[
-                html.Div([html.Div(t, className="stage-tactic") for t in tactics],
-                         className="stage-tactics"),
-                html.Div([
-                    dcc.Graph(figure=_donut(counts, total, [c for *_, c in SEV]),
-                              config=GRAPH_CONFIG),
-                    # ring segments explained in place, so the donut reads on
-                    # its own without scanning down to the badges
-                    html.Div(className="donut-key", children=[
-                        html.Span([html.Span(className="key-dot", style={"background": col}),
-                                   short], className="key-item")
-                        for short, col in (("High", "#C1443A"), ("State", "#E07B39"),
-                                           ("Recon", "#AAAAAA"))
-                    ]),
-                    html.Div(_pct_badge(pct), style={"textAlign": "center", "fontSize": "0.76rem"}),
-                ], style={"flex": "1"}),
-            ]),
-            html.Div(className="sev-row", children=[
-                html.Div([html.Span(className="sev-dot", style={"background": col}),
-                          html.Span(f"{counts[key]:,}", className="sev-n"),
-                          html.Div(lbl, className="sev-lbl")], className="sev-badge")
-                for lbl, key, _, _, col in SEV
-            ]),
-            dcc.Graph(figure=_trend(sub), config=GRAPH_CONFIG),
-        ]),
-    ])
-
-
 def _top_table(rows, cols, widths=None, tooltip_col=None, row_padding="2px 6px"):
     """Sidebar list. maxWidth:0 + ellipsis is the dash idiom for "let the
     percentage widths win and clip overflow" — without it a long technique
@@ -162,19 +65,65 @@ def _top_table(rows, cols, widths=None, tooltip_col=None, row_padding="2px 6px")
         tips = [{tooltip_col: {"value": str(r[tooltip_col]), "type": "markdown"}} for r in rows]
     return dash_table.DataTable(
         data=rows, columns=[{"name": c, "id": c} for c in cols],
-        style_data_conditional=[{"if": {"row_index": "odd"}, "backgroundColor": Y_50}],
-        style_header={**TABLE_STYLE["style_header"], "fontSize": "10px", "padding": "4px 6px"},
+        style_data_conditional=[],
+        style_header={**TABLE_STYLE["style_header"], "backgroundColor": "#fff", "color": INK_3,
+                      "fontSize": "11.5px", "fontWeight": "600", "padding": "8px 10px",
+                      "borderBottom": f"1px solid {LINE}"},
         style_cell={
-            "backgroundColor": PAPER, "color": INK_3,
-            "fontFamily": "JetBrains Mono, monospace", "fontSize": "10.5px",
+            "backgroundColor": "#fff", "color": INK_2,
+            "fontFamily": "JetBrains Mono, monospace", "fontSize": "12px",
             "border": "none", "borderTop": f"1px solid {LINE}",
-            "padding": row_padding, "textAlign": "left",
+            "padding": "8px 10px", "textAlign": "left",
             "overflow": "hidden", "textOverflow": "ellipsis", "maxWidth": 0,
         },
         style_cell_conditional=widths or [],
         tooltip_data=tips, tooltip_duration=None,
         style_table={"overflowX": "hidden"},
     )
+
+
+def _fmt_delta(now, before):
+    """'+12% vs previous period', or '' when there is nothing earlier to compare with."""
+    if not before:
+        return ""
+    pct = (now - before) / before * 100
+    return f"{pct:+.0f}% vs previous period" if abs(pct) >= 1 else "unchanged vs previous period"
+
+
+def _kpi(label, value, sub=""):
+    return html.Div(className="mx-kpi", children=[
+        html.Div(label, className="mx-kpi-l"),
+        html.Div(value, className="mx-kpi-v"),
+        html.Div(sub or "\u00a0", className="mx-kpi-s"),
+    ])
+
+
+def _panel(title, note, body, extra_class=""):
+    return html.Div(className=f"mx-panel {extra_class}".strip(), children=[
+        html.Div(className="mx-panel-head", children=[
+            html.Div(title, className="mx-panel-title"),
+            html.Div(note, className="mx-panel-note") if note else None,
+        ]),
+        html.Div(body, className="mx-panel-body"),
+    ])
+
+
+def _bars(rows):
+    """Ranked list with an inline bar. rows: [(label, sublabel, count)], already ordered."""
+    if not rows:
+        return html.Div("Nothing in this period.", className="empty-state")
+    top = max(c for *_, c in rows) or 1
+    return html.Div(className="mx-bars", children=[
+        html.Div(className="mx-bar-row", children=[
+            html.Div(className="mx-bar-label", children=[
+                html.Span(sub, className="mx-bar-sub") if sub else None,
+                html.Span(label, className="mx-bar-name", title=label),
+            ]),
+            html.Div(className="mx-bar-track", children=[
+                html.Div(className="mx-bar-fill", style={"width": f"{max(c / top * 100, 2):.1f}%"})]),
+            html.Div(f"{c:,}", className="mx-bar-val"),
+        ]) for label, sub, c in rows
+    ])
 
 
 def build_mitre_body(days):
@@ -186,64 +135,38 @@ def build_mitre_body(days):
     tagged = cur[cur["tactic"].notna()]
     if tagged.empty:
         return html.Div("No ATT&CK-mapped commands in this period.", className="empty-state")
+    ptagged = prev[prev["tactic"].notna()]
 
-    top_ip = (tagged.groupby("src_ip").size().sort_values(ascending=False).head(10)
-              .reset_index(name="Events").rename(columns={"src_ip": "Source IP"}))
-    # Explode ONLY here. `tagged` keeps one row per command everywhere else, so
-    # the coverage headline and the per-IP table below stay divided by commands;
-    # this chart alone counts every technique in each command's chain.
+    # Counts only. What a technique MEANS (severity) is decided by the detection layer,
+    # never here: this page shows what was observed.
     _exp = tagged.explode("technique_ids")
     _exp = _exp[_exp["technique_ids"].notna()]
-    top_tech = (_exp.groupby("technique_ids").size()
-                .sort_values(ascending=False).head(10).reset_index(name="Events")
-                .rename(columns={"technique_ids": "ID"}))
-    top_tech["Technique"] = top_tech["ID"].map(_technique_name)
+    top_tech = [(_technique_name(t), t, int(n)) for t, n in
+                _exp.groupby("technique_ids").size().sort_values(ascending=False).head(8).items()]
+    top_ip = [(ip, "", int(n)) for ip, n in
+              tagged.groupby("src_ip").size().sort_values(ascending=False).head(8).items()]
+    by_tactic = [(t, "", int(n)) for t, n in
+                 tagged.groupby("tactic").size().sort_values(ascending=False).items()]
 
-    cov = f"{len(tagged):,} of {len(cur):,} commands mapped ({len(tagged)/max(len(cur),1)*100:.0f}%) · " \
-          f"{tagged['technique_id'].nunique()} techniques · {tagged['tactic'].nunique()} tactics"
+    kpis = html.Div(className="mx-kpis", children=[
+        _kpi("Mapped commands", f"{len(tagged):,}",
+             f"{len(tagged) / max(len(cur), 1) * 100:.0f}% of {len(cur):,} commands"),
+        _kpi("Techniques", f"{tagged['technique_id'].nunique():,}",
+             _fmt_delta(tagged["technique_id"].nunique(), ptagged["technique_id"].nunique())),
+        _kpi("Tactics", f"{tagged['tactic'].nunique():,}", f"of {len(TACTIC_ORDER)} in ATT&CK"),
+        _kpi("Attacker sources", f"{tagged['src_ip'].nunique():,}",
+             _fmt_delta(tagged["src_ip"].nunique(), ptagged["src_ip"].nunique())),
+    ])
 
-    # techniques render as a full-width horizontal bar chart below the cards:
-    # long names get the whole page width instead of a 54%-of-330px column, so
-    # nothing clips, and it fills the space the old sidebar entry left empty.
-    tt = top_tech.sort_values("Events")
-    fig_tech = go.Figure(go.Bar(
-        x=tt["Events"], y=tt["ID"] + "  " + tt["Technique"], orientation="h",
-        marker=dict(color=tt["Events"], colorscale=AMBER_SCALE,
-                    line=dict(color=INK, width=1.2)),
-        text=tt["Events"], textposition="outside",
-        textfont=dict(size=11, family="JetBrains Mono, monospace"),
-        hovertemplate="%{y}<br>%{x} events<extra></extra>",
-    ))
-    theme_layout(fig_tech, height=max(430, 46 * len(tt)))
-    fig_tech.update_layout(coloraxis_showscale=False, margin=dict(t=8, b=8, l=8, r=48))
-    fig_tech.update_yaxes(title="", tickfont=dict(size=11, family="JetBrains Mono, monospace"))
-    fig_tech.update_xaxes(title="Commands")
-
-    return html.Div([
-        html.Div(cov, className="caption", style={"marginBottom": "8px"}),
-        html.Div(className="mitre-grid", children=[
-            html.Div(className="mitre-side", children=[
-                html.Div("Top 10 Attacker Sources", className="side-head"),
-                _top_table(top_ip.to_dict("records"), ["Source IP", "Events"],
-                           widths=[{"if": {"column_id": "Source IP"}, "width": "68%"},
-                                   {"if": {"column_id": "Events"}, "width": "32%",
-                                    "textAlign": "right"}],
-                           row_padding="9px 6px"),
-            ]),
-            html.Div(className="stage-grid", children=[
-                _stage_card(n, t, c, tagged, prev[prev["tactic"].notna()])
-                for n, t, c in MITRE_STAGES
-            ]),
+    return html.Div(className="mx", children=[
+        kpis,
+        _panel("ATT&CK matrix", "Tactics left to right in kill-chain order. Darker = more events. "
+               "Select a technique for its events.", _killchain_flow(days), "mx-wide"),
+        html.Div(className="mx-grid3", children=[
+            _panel("Activity by tactic", f"{len(by_tactic)} observed", _bars(by_tactic)),
+            _panel("Top techniques", "by commands", _bars(top_tech)),
+            _panel("Top attacker sources", "by mapped commands", _bars(top_ip)),
         ]),
-        # full page width — spans the sidebar AND all three cards, no gap
-        html.Div(className="stage-card tech-card", children=[
-            html.Div("TOP 10 ATTACK TECHNIQUES", className="stage-head",
-                     style={"background": "#5B7FA6"}),
-            html.Div(dcc.Graph(figure=fig_tech, config=GRAPH_CONFIG,
-                               style={"width": "100%"}),
-                     className="stage-body"),
-        ]),
-        # Sequence views: how the attack unfolded, not just how much of it.
         *_attack_chain_section(days),
     ])
 
@@ -447,7 +370,8 @@ def _playbook_rows(ngrams, n_sessions):
     for n in (3, 4):
         for g, count, nsess in ngrams.get(n, [])[:6]:
             rows.append({
-                "Sequence": " → ".join(g),
+                "Sequence": " → ".join(_technique_name(t) for t in g),
+                "Techniques": " → ".join(g),
                 "Count": count,
                 "% sessions": f"{nsess / max(1, n_sessions) * 100:.0f}%",
             })
@@ -521,7 +445,7 @@ def _session_timeline_fig(events):
             marker=dict(size=11 if dense else 13, color=_tactic_color(tactic),
                         opacity=0.75 if dense else 1.0,
                         line=dict(color=INK, width=1.2 if dense else 1.4),
-                        symbol=["diamond" if int(e.get("fi_score") or 0) >= 3 else "circle"
+                        symbol=["circle"
                                 for e in pts]),
             name=tactic, showlegend=False,
             customdata=[[str(e.get("technique") or ""), str(e.get("cmd") or "")[:90],
@@ -562,23 +486,17 @@ def _session_timeline_fig(events):
 
 
 def _session_meta(events):
-    """Source IP / duration / event count / high-impact count strip."""
+    """Source / duration / events / techniques for one session."""
     ts = [e["timestamp"] for e in events if pd.notna(e.get("timestamp"))]
-    dur = "—"
+    dur = "\u2014"
     if len(ts) >= 2:
         secs = (max(ts) - min(ts)).total_seconds()
         dur = f"{secs/60:.0f}m {secs%60:.0f}s" if secs >= 60 else f"{secs:.0f}s"
-    high = sum(1 for e in events if int(e.get("fi_score") or 0) >= 3)
-    ip = next((e.get("src_ip") for e in events if e.get("src_ip")), "—")
-    items = [("SOURCE IP", str(ip)), ("DURATION", dur),
-             ("MAPPED EVENTS", f"{len(events):,}"), ("HIGH IMPACT", f"{high:,}")]
-    return html.Div(className="hp-tally", style={"marginBottom": "8px"}, children=[
-        html.Div(className="hp-stat", children=[
-            html.Div(lbl, className="hp-stat-l"),
-            html.Div(val, className="hp-stat-v",
-                     style={"color": "#C1443A"} if lbl == "HIGH IMPACT" and high else {}),
-        ]) for lbl, val in items
-    ])
+    ip = next((e.get("src_ip") for e in events if e.get("src_ip")), "\u2014")
+    techs = len({e.get("technique_id") for e in events if e.get("technique_id")})
+    items = [("Source IP", str(ip)), ("Duration", dur),
+             ("Mapped events", f"{len(events):,}"), ("Techniques", f"{techs:,}")]
+    return html.Div(className="mx-kpis mx-kpis-tight", children=[_kpi(l, v) for l, v in items])
 
 
 def _attack_chain_section(days):
@@ -590,17 +508,17 @@ def _attack_chain_section(days):
     # ── Playbooks ────────────────────────────────────────────────────────────
     rows = _playbook_rows(a["ngrams"], a["n_sessions"])
     if rows:
-        play_body = _top_table(rows, ["Sequence", "Count", "% sessions"],
-                               widths=[{"if": {"column_id": "Sequence"}, "width": "62%"},
-                                       {"if": {"column_id": "Count"}, "width": "18%",
+        play_body = _top_table(rows, ["Sequence", "Techniques", "Count", "% sessions"], tooltip_col="Sequence",
+                               widths=[{"if": {"column_id": "Sequence"}, "width": "46%"},
+                                       {"if": {"column_id": "Techniques"}, "width": "28%"},
+                                       {"if": {"column_id": "Count"}, "width": "12%",
                                         "textAlign": "right"},
-                                       {"if": {"column_id": "% sessions"}, "width": "20%",
+                                       {"if": {"column_id": "% sessions"}, "width": "14%",
                                         "textAlign": "right"}],
                                row_padding="9px 6px")
     else:
         play_body = html.Div(
-            "No repeated 3-technique sequence yet — sessions in this window are "
-            "too short or too varied to form a playbook.", className="empty-state")
+            "No repeated sequence yet: sessions in this window are too short or too varied.", className="empty-state")
 
     # ── Session picker ───────────────────────────────────────────────────────
     opts = [{"label": f"{sid[:18]}  ·  {n} events", "value": sid}
@@ -608,39 +526,19 @@ def _attack_chain_section(days):
     default_sid = a["sessions"][0][0] if a["sessions"] else None
 
     return [
-        # Kill-chain flow replaces the Sankey: same progression, read as
-        # columns left-to-right instead of crossing ribbons.
-        html.Div(className="stage-card tech-card", children=[
-            html.Div("KILL CHAIN FLOW", className="stage-head",
-                     style={"background": "#5B7FA6"}),
-            html.Div(_killchain_flow(days), className="stage-body"),
-        ]),
-        html.Div(className="stage-card tech-card", children=[
-            html.Div("TOP ATTACK PLAYBOOKS", className="stage-head",
-                     style={"background": "#2F4A6B"}),
-            html.Div(className="stage-body", children=[
-                html.Div("Recurring 3- and 4-step technique sequences",
-                         className="caption", style={"marginBottom": "6px"}),
-                play_body,
+        _panel("Common attack sequences", "recurring 3- and 4-technique runs", play_body, "mx-wide"),
+        _panel("Session timeline", "one attacker session, command by command", html.Div([
+            html.Div(className="chain-pick", children=[
+                html.Span("Session", className="caption"),
+                dcc.Dropdown(id="chain-session-dd", options=opts, value=default_sid,
+                             clearable=False, searchable=True, style={"minWidth": "320px"}),
             ]),
-        ]),
-        html.Div(className="stage-card tech-card", children=[
-            html.Div("SESSION KILL CHAIN", className="stage-head",
-                     style={"background": "#7EB3C8"}),
-            html.Div(className="stage-body", children=[
-                html.Div(className="chain-pick", children=[
-                    html.Span("Session", className="caption"),
-                    dcc.Dropdown(id="chain-session-dd", options=opts,
-                                 value=default_sid, clearable=False,
-                                 searchable=True, style={"minWidth": "320px"}),
-                ]),
-                dcc.Store(id="chain-days-store", data=days),
-                html.Div(id="chain-timeline-body"),
-            ]),
-        ]),
+            dcc.Store(id="chain-days-store", data=days),
+            html.Div(id="chain-timeline-body"),
+        ]), "mx-wide"),
         dcc.Store(id="kc-detail-store"),
         html.Div(id="kc-sheet", className="kc-sheet", children=[
-            html.Button("✕", id="kc-close", n_clicks=0, className="kc-close",
+            html.Button("\u2715", id="kc-close", n_clicks=0, className="kc-close",
                         **{"aria-label": "Close detail"}),
             html.Div(id="kc-sheet-body", className="kc-sheet-body"),
         ]),
@@ -667,7 +565,7 @@ def render_session_chain(session_id, days):
         _session_meta(events),
         dcc.Graph(figure=_session_timeline_fig(events), config=GRAPH_CONFIG,
                   style={"width": "100%"}),
-        html.Div("◆ = high impact (FI ≥ 3)   ● = other mapped events",
+        html.Div("Each point is one mapped command, in the order it was typed.",
                  className="caption", style={"marginTop": "2px"}),
     ])
 
@@ -681,132 +579,77 @@ def render_session_chain(session_id, days):
 # Plotly has no cycle layout, so the ribbons piled into one mass. A column per
 # tactic in kill-chain order says the same thing without any crossing lines.
 #
-# Everything here is real: tactics and techniques come from the mapper, counts
-# from the DB, severity from the FI band main.py already computed. Nothing is
-# simulated.
-
-# FI band -> incident severity. FI_RULES in prompt/fi_manager.py is the source
-# of the band, so this is a relabelling for the SOC vocabulary, not a new score.
-KC_SEVERITY = [
-    (4, "CRITICAL", "#C1443A"),
-    (3, "HIGH",     "#D4622C"),
-    (2, "MEDIUM",   "#E07B39"),
-    (1, "LOW",      "#B99A4A"),
-    (0, "MONITORED", "#7E96A6"),
-]
-
-
-def _kc_severity(fi):
-    fi = int(fi or 0)
-    for band, label, colour in KC_SEVERITY:
-        if fi >= band:
-            return label, colour
-    return "MONITORED", "#7E96A6"
-
+# Everything here is real: tactics and techniques come from the mapper, counts from the DB.
 
 def _killchain_columns(tagged):
-    """-> [ {tactic, order, alerts, techniques:[...]} ] in kill-chain order.
-
-    A technique's severity is the HIGHEST FI seen for it: a tactic column has
-    to surface its worst event, not its average, or a single destructive
-    command hides behind fifty recon ones.
-    """
-    if tagged.empty:
-        return []
-    d = tagged[tagged["technique_id"].notna()]
+    """-> [ {tactic, alerts, techniques:[...]} ] in kill-chain order, techniques by event count."""
+    d = tagged[tagged["technique_id"].notna()] if not tagged.empty else tagged
     if d.empty:
         return []
     cols = {}
     for (tactic, tid), grp in d.groupby(["tactic", "technique_id"], sort=False):
         col = cols.setdefault(tactic, {"tactic": tactic, "alerts": 0, "techniques": []})
-        top_fi = int(grp["fi_score"].max()) if "fi_score" in grp else 0
         col["alerts"] += len(grp)
-        col["techniques"].append({
-            "id": tid,
-            "name": _technique_name(tid),
-            "count": len(grp),
-            "fi": top_fi,
-            "sessions": grp["session_id"].nunique(),
-        })
+        col["techniques"].append({"id": tid, "name": _technique_name(tid), "count": len(grp),
+                                  "sessions": grp["session_id"].nunique()})
     out = []
     for tactic in sorted(cols, key=_tactic_rank):
         c = cols[tactic]
-        c["techniques"].sort(key=lambda t: (-t["fi"], -t["count"]))
+        c["techniques"].sort(key=lambda t: -t["count"])
         out.append(c)
-    for i, c in enumerate(out, 1):
-        c["order"] = i
     return out
 
 
-def _kc_card(tactic, t):
-    """One technique card. Severity drives the left stripe and the count chip."""
-    label, colour = _kc_severity(t["fi"])
+def _kc_card(tactic, t, peak):
+    """One technique cell. Colour intensity is its share of the busiest technique."""
+    share = t["count"] / max(peak, 1)
     return html.Button(
         id={"type": "kc-card", "tid": t["id"], "tactic": tactic},
-        n_clicks=0, className="kc-card", style={"borderLeftColor": colour},
+        n_clicks=0, className="kc-card", style={"--heat": f"{0.10 + 0.55 * share:.2f}"},
         children=[
             html.Div(className="kc-card-top", children=[
                 html.Span(t["id"], className="kc-tid"),
-                html.Span(f"{t['count']:,}", className="kc-count",
-                          style={"background": colour}),
+                html.Span(f"{t['count']:,}", className="kc-count"),
             ]),
             html.Div(t["name"], className="kc-tname"),
-            html.Div(className="kc-card-foot", children=[
-                html.Span(label, className="kc-sev", style={"color": colour}),
-                html.Span(f"{t['sessions']} sess", className="kc-sess"),
-            ]),
+            html.Div(f"{t['sessions']} session{'s' if t['sessions'] != 1 else ''}", className="kc-sess"),
         ])
 
 
-def _kc_column(col):
-    worst = max((t["fi"] for t in col["techniques"]), default=0)
-    _lbl, colour = _kc_severity(worst)
+def _kc_column(col, peak):
     return html.Div(className="kc-col", children=[
-        html.Div(className="kc-head", style={"borderBottomColor": colour}, children=[
-            html.Div(className="kc-head-top", children=[
-                html.Span(f"{col['order']:02d}", className="kc-ord"),
-                html.Span(f"{col['alerts']:,}", className="kc-badge",
-                          style={"background": colour}),
-            ]),
+        html.Div(className="kc-head", children=[
             html.Div(col["tactic"], className="kc-tactic"),
+            html.Div(f"{col['alerts']:,} events \u00b7 {len(col['techniques'])} technique"
+                     f"{'s' if len(col['techniques']) != 1 else ''}", className="kc-head-sub"),
         ]),
-        html.Div(className="kc-stack", children=[
-            _kc_card(col["tactic"], t) for t in col["techniques"]
-        ]),
+        html.Div(className="kc-stack", children=[_kc_card(col["tactic"], t, peak)
+                                                 for t in col["techniques"]]),
     ])
 
 
 def _killchain_flow(days):
-    """The full rail. Empty-state when the window has no mapped commands."""
+    """The matrix. Tactics with no activity are listed underneath so coverage is clear."""
     df = load_all()
     if df.empty or "tactic" not in df.columns:
         return html.Div("No data yet.", className="empty-state")
     cur, _prev = _mitre_window(df, days)
-    tagged = cur[cur["tactic"].notna()]
-    cols = _killchain_columns(tagged)
+    cols = _killchain_columns(cur[cur["tactic"].notna()])
     if not cols:
-        return html.Div("No ATT&CK-mapped commands in this period.",
-                        className="empty-state")
-
-    rail = []
-    for i, c in enumerate(cols):
-        if i:
-            rail.append(html.Div("›", className="kc-chevron", **{"aria-hidden": "true"}))
-        rail.append(_kc_column(c))
-
-    total = sum(c["alerts"] for c in cols)
-    ntech = sum(len(c["techniques"]) for c in cols)
+        return html.Div("No ATT&CK-mapped commands in this period.", className="empty-state")
+    peak = max(t["count"] for c in cols for t in c["techniques"])
+    seen = {c["tactic"].lower() for c in cols}
+    quiet = [t for t in TACTIC_ORDER if t.lower() not in seen]
     return html.Div([
-        html.Div(f"{total:,} mapped events · {ntech} techniques across "
-                 f"{len(cols)} tactics · ordered by MITRE kill chain · "
-                 f"click a technique for detail",
-                 className="caption", style={"marginBottom": "10px"}),
-        html.Div(className="kc-rail", children=rail),
+        html.Div(className="kc-rail", children=[_kc_column(c, peak) for c in cols]),
+        html.Div(className="mx-quiet", children=[
+            html.Span("No activity observed:", className="mx-quiet-l"),
+            *[html.Span(t, className="mx-chip") for t in quiet]]) if quiet else None,
     ])
 
 
 def _kc_detail(tid, tactic, days):
-    """Drill-down body: the real events behind one technique card."""
+    """Drill-down body: the real events behind one technique."""
     df = load_all()
     cur, _prev = _mitre_window(df, days)
     d = cur[(cur["technique_id"] == tid) & (cur["tactic"] == tactic)]
@@ -814,13 +657,9 @@ def _kc_detail(tid, tactic, days):
         return html.Div("No events for this technique in the current window.",
                         className="empty-state")
     d = d.sort_values("timestamp", ascending=False)
-    worst = int(d["fi_score"].max()) if "fi_score" in d else 0
-    label, colour = _kc_severity(worst)
 
-    # Usernames come from the auth table, matched on src_ip. auth has no
-    # session_id column, so this is "accounts seen from these sources", not
-    # "the account that ran this command" — labelled as such rather than
-    # implying a join the schema cannot support.
+    # Usernames come from the auth table, matched on src_ip. auth has no session_id column,
+    # so this is "accounts seen from these sources", not "the account that ran this command".
     users = []
     try:
         ips = tuple(str(x) for x in d["src_ip"].dropna().unique()[:40])
@@ -834,24 +673,18 @@ def _kc_detail(tid, tactic, days):
         users = []
 
     rows = [{
-        "Time": (r["timestamp"].strftime("%Y-%m-%d %H:%M:%S")
-                 if pd.notna(r["timestamp"]) else "—"),
-        "Source": str(r.get("src_ip") or "—")[:16],
-        "Sev": _kc_severity(r.get("fi_score"))[0],
+        "Time": (r["timestamp"].strftime("%Y-%m-%d %H:%M:%S") if pd.notna(r["timestamp"]) else "\u2014"),
+        "Source": str(r.get("src_ip") or "\u2014")[:16],
         "Command": str(r.get("cmd") or "")[:120],
     } for _i, r in d.head(40).iterrows()]
 
-    # Single-sensor deployment: no per-sensor column or SENSORS stat (they only
-    # ever show 'default' now).
-    facts = [("TECHNIQUE", tid), ("TACTIC", tactic), ("SEVERITY", label),
-             ("EVENTS", f"{len(d):,}"), ("SESSIONS", f"{d['session_id'].nunique():,}"),
-             ("ACCOUNTS SEEN", ", ".join(users) if users else "none recorded")]
+    facts = [("Tactic", tactic), ("Events", f"{len(d):,}"), ("Sessions", f"{d['session_id'].nunique():,}"),
+             ("Sources", f"{d['src_ip'].nunique():,}"),
+             ("Accounts seen", ", ".join(users) if users else "none recorded")]
 
     return html.Div([
         html.Div(className="kc-detail-head", children=[
-            html.Div([html.Span(tid, className="kc-detail-id"),
-                      html.Span(label, className="kc-detail-sev",
-                                style={"background": colour})]),
+            html.Span(tid, className="kc-detail-id"),
             html.Div(_technique_name(tid), className="kc-detail-name"),
         ]),
         html.Div(className="kc-facts", children=[
@@ -859,17 +692,13 @@ def _kc_detail(tid, tactic, days):
                 html.Div(k, className="kc-fact-l"), html.Div(v, className="kc-fact-v")])
             for k, v in facts
         ]),
-        html.Div("MOST RECENT EVENTS", className="side-head",
-                 style={"marginTop": "14px"}),
-        _top_table(rows, ["Time", "Source", "Sev", "Command"],
-                   widths=[{"if": {"column_id": "Time"}, "width": "20%"},
-                           {"if": {"column_id": "Source"}, "width": "16%"},
-                           {"if": {"column_id": "Sev"}, "width": "12%"},
-                           {"if": {"column_id": "Command"}, "width": "52%"}],
+        html.Div("Most recent events", className="mx-panel-title", style={"margin": "16px 0 6px"}),
+        _top_table(rows, ["Time", "Source", "Command"],
+                   widths=[{"if": {"column_id": "Time"}, "width": "34%"},
+                           {"if": {"column_id": "Source"}, "width": "17%"},
+                           {"if": {"column_id": "Command"}, "width": "49%"}],
                    row_padding="7px 6px"),
-        html.Div(f"Showing {min(40, len(d))} of {len(d):,} events. Response "
-                 "playbooks are not wired to this deployment — no automated "
-                 "remediation status is available to display.",
+        html.Div(f"Showing {min(40, len(d))} of {len(d):,} events.",
                  className="caption", style={"marginTop": "8px"}),
     ])
 
@@ -915,8 +744,8 @@ def build_mitre_page():
                         "alignItems": "center", "flexWrap": "wrap", "gap": "12px"},
                  children=[
             html.Div([
-                html.H3("⚔ MITRE ATT&CK Summary"),
-                html.Div("Attacker activity mapped to ATT&CK tactics and techniques",
+                html.H3("MITRE ATT&CK"),
+                html.Div("What attackers did, mapped to ATT&CK tactics and techniques",
                          className="caption"),
             ]),
             html.Div([
