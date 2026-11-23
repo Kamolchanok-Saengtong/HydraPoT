@@ -131,6 +131,29 @@ def smi(g: dict, seed: str, now: float, trainers: dict, argv) -> str:
         return _table(g, seed, now, trainers)
     if args in (["-L"], ["--list-gpus"]):
         return "\n".join(f"GPU {i}: {g['name']} (UUID: {_uuid(seed, i)})" for i in range(g["count"]))
+    if args in (["topo", "-m"], ["topo", "--matrix"]):
+        return _topo(g)
     if any(a.startswith("--query-gpu=") for a in args):
         return _query(g, seed, now, trainers, args)
     return None
+
+
+def _topo(g: dict) -> str:
+    """`nvidia-smi topo -m` for an NVLink-switch machine: every pair NV18, two NUMA nodes."""
+    n, cpus = g["count"], g.get("cpus", 2)
+    quarter = max(cpus // 4, 1)
+    nodes = [f"{k * quarter}-{(k + 1) * quarter - 1},{cpus // 2 + k * quarter}-{cpus // 2 + (k + 1) * quarter - 1}"
+             for k in range(2)]
+    rows = ["\t" + "\t".join(f"GPU{j}" for j in range(n)) + "\tCPU Affinity\tNUMA Affinity\tGPU NUMA ID"]
+    for i in range(n):
+        node = 0 if i < n // 2 else 1
+        rows.append(f"GPU{i}\t" + "\t".join(" X " if i == j else "NV18" for j in range(n))
+                    + f"\t{nodes[node]}\t{node}\t\tN/A")
+    return "\n".join(rows + ["", "Legend:", "",
+        "  X    = Self",
+        "  SYS  = Connection traversing PCIe as well as the SMP interconnect between NUMA nodes (e.g., QPI/UPI)",
+        "  NODE = Connection traversing PCIe as well as the interconnect between PCIe Host Bridges within a NUMA node",
+        "  PHB  = Connection traversing PCIe as well as a PCIe Host Bridge (typically the CPU)",
+        "  PXB  = Connection traversing multiple PCIe bridges (without traversing the PCIe Host Bridge)",
+        "  PIX  = Connection traversing at most a single PCIe bridge",
+        "  NV#  = Connection traversing a bonded set of # NVLinks"])

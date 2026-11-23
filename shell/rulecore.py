@@ -117,6 +117,7 @@ class RuleCore:
         self._peers = []              # later stages of the pipe being answered
         self._screen_pid = None       # pid of the full-screen program being drawn
         self.typed = []               # lines the attacker entered this session, for `history`
+        self._load_tail = []          # (when, load) of work the attacker stopped; the averages fade it out
         self.prior_logins = []        # [(user, ip, datetime, minutes)] this address's earlier visits
         self._hist_from = 0
         self._jobs = 0
@@ -778,7 +779,7 @@ class RuleCore:
         g = (self.hw or {}).get("gpus")
         if not g or not self._has("nvidia-smi"):
             return False, None
-        out = gpu.smi(g, self.boot_id or "", self.reg.now_ns() / 1e9, self._gpu_trainers(), argv)
+        out = gpu.smi({**g, "cpus": self.hw.get("cpus", 2)}, self.boot_id or "", self.reg.now_ns() / 1e9, self._gpu_trainers(), argv)
         return (True, out) if out else (False, None)
 
     def _cmd_df(self, argv):
@@ -1150,7 +1151,8 @@ class RuleCore:
         busy = sum(r["cpu"] for r in self._rows("") if r["stat"][:1] == "R") / 100    # runnable work
         out = []
         for i, period in enumerate((90, 420, 1500)):
-            base = busy * (1.0, 0.99, 0.97)[i] + self.reg.prf(f"load{i}", "load", 0, 30) / 100
+            fade = sum(w * math.exp(-(t - at) / (60, 300, 900)[i]) for at, w in self._load_tail)
+            base = busy * (1.0, 0.99, 0.97)[i] + fade + self.reg.prf(f"load{i}", "load", 0, 30) / 100
             wave = 0.06 * math.sin(t / period + i) + 0.03 * math.sin(t / (period * 0.37))
             out.append(max(round(base + wave * (1 if i == 0 else 0.6), 2), 0.0))
         return out
@@ -2513,6 +2515,7 @@ class RuleCore:
                     if pid in (1, 2) or base["COMMAND"].startswith("["):
                         return False, None              # init and kernel threads are not ours to end
                     self.reg.commit(add={Fact("killed", pid)}, why=f"kill {pid}")
+                    self._note_stopped(pid)
                     self.changed = True
                     continue
             self.reg.commit(remove={Fact("proc", pid, self.inst.get("proc", pid))},
@@ -2520,6 +2523,13 @@ class RuleCore:
             self.changed = True
         self.status = 1 if out else 0
         return True, "\n".join(out)
+
+    def _note_stopped(self, pid):
+        """A busy process ended: its load does not vanish from the averages at once."""
+        base = next((p for p in self.processes if p["PID"] == pid), None)
+        cpu = float((base or {}).get("CPU") or 0)
+        if cpu >= 5:
+            self._load_tail.append((self.reg.now_ns() / 1e9, cpu / 100))
 
     def _cmd_pkill(self, argv):
         return self._kill_by_name(argv, "pkill")
@@ -2564,6 +2574,7 @@ class RuleCore:
                 self.reg.commit(remove={Fact("proc", pid, cur)}, why=f"{tool} {pid}")
             else:
                 self.reg.commit(add={Fact("killed", pid)}, why=f"{tool} {pid}")
+                self._note_stopped(pid)
         self.changed = True
         return True, ""
 
