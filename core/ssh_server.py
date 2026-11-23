@@ -231,8 +231,9 @@ async def _shell_session(process, handler_factory, hostname, os_banner):
         handler_factory, src_ip=src_ip, public_ip=public_ip, username=username)
 
     try:
-        process.stdout.write(f"Welcome to {os_banner}\r\n\r\n")
-        process.stdout.write(prompt)
+        if process.command is None:
+            process.stdout.write(f"Welcome to {os_banner}\r\n\r\n")
+            process.stdout.write(prompt)
     except (BrokenPipeError, asyncssh.ConnectionLost):
         print(f"[ssh_server] {peer_str} disconnected before shell opened")
         process.exit(0)
@@ -251,6 +252,22 @@ async def _shell_session(process, handler_factory, hostname, os_banner):
             return keystroke_q.get_nowait()
         except queue.Empty:
             return None
+
+    # `ssh host cmd`: run it once through the same handler, no banner or prompt,
+    # then close. Without this the session waited for typed input and hung.
+    if process.command is not None:
+        cmd = process.command.strip()
+        print(f"\033[36m[{datetime.now().strftime('%H:%M:%S')}] {peer_str} ➜\033[0m {cmd}")
+        try:
+            response, _ = await asyncio.to_thread(command_handler, cmd, write_fn, read_fn)
+        except Exception as e:
+            print(f"[ssh_server] Handler error on '{cmd}' from {peer_str}: {e!r}")
+            response = f"bash: error: {e}"
+        if isinstance(response, str) and response and not response.startswith("__SWALLOW_"):
+            process.stdout.write(response.replace("\r\n", "\n") + "\n")
+        print(f"[ssh_server] {peer_str} exec session ending")
+        process.exit(0)
+        return
 
     try:
         while True:
