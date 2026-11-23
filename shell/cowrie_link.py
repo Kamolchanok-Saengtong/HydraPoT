@@ -25,6 +25,7 @@ imports an agent and its tests need neither a container nor a model.
 
 
 import base64
+import re
 import shlex
 
 from prompt.prompt_manager import _decode_echo_payload
@@ -60,6 +61,16 @@ def _levels(path: str):
     """/a/b/c -> ['/a', '/a/b', '/a/b/c']"""
     parts = [p for p in path.split("/") if p]
     return ["/" + "/".join(parts[:i + 1]) for i in range(len(parts))]
+
+
+# Cowrie's own head/tail reject the `-5` shorthand real coreutils accept, so
+# `ls | head -5` printed "invalid option" -- an instant tell. Command position
+# only (line start or after | ; & ( ), so a quoted "head -5" is left alone.
+_OLD_COUNT = re.compile(r"(^|[|;&(])(\s*)(head|tail)(\s+)-(\d+)(?=[\s;|&)]|$)")
+
+
+def _cowrie_syntax(cmd: str) -> str:
+    return _OLD_COUNT.sub(r"\1\2\3\4-n \5", cmd)
 
 
 class CowrieLink:
@@ -114,6 +125,7 @@ class CowrieLink:
         argument and reading handle()'s `actual_cmd` from the enclosing scope --
         same result, but invisible.
         """
+        cmd = _cowrie_syntax(cmd)
         self.catch_up()                 # make Cowrie current before it runs
         try:
             gen = self.cowrie.generation
