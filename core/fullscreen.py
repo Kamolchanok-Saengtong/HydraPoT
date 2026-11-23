@@ -16,6 +16,9 @@ import asyncssh
 from shell import screen as screen_mod
 
 _SORT_KEYS = {"P": "cpu", "M": "mem", "N": "pid", "T": "time"}
+# keys that flip a display option, as in the real top: c = full command lines,
+# 1 = one line per CPU, i = hide idle tasks
+_TOGGLES = {"c": "cmdline", "1": "per_cpu", "i": "idle"}
 _MAX_TICKS = 400                    # a `watch` nobody stops ends on its own after a while
 
 
@@ -69,12 +72,14 @@ async def run(process, spec) -> None:
     chan.set_line_mode(False)
     chan.set_echo(False)
     process.stdout.write("\x1b[?1049h\x1b[?25l")
-    sort, tick, reader = "cpu", 0, None
+    sort, tick, reader = spec.get("sort", "cpu"), 0, None
+    opts = dict(spec.get("opts") or {})
     spec["begin"]()
     try:
         while tick < _MAX_TICKS:
             if spec["kind"] == "top":
-                text = await asyncio.to_thread(spec["frame"], tick, height, spec["delay"], sort)
+                text = await asyncio.to_thread(spec["frame"], tick, height, spec["delay"], sort,
+                                               opts, width, True)
             else:
                 text = await asyncio.to_thread(spec["frame"], tick, height, width, sort)
             lines = [l[:width] for l in text.split("\n")][:height]
@@ -104,8 +109,11 @@ async def run(process, spec) -> None:
             reader = None
             if not key or key in ("q", "Q", "\x03", "\x04"):
                 break
-            if key in _SORT_KEYS:
+            if key in _SORT_KEYS and spec["kind"] == "top":
                 sort = _SORT_KEYS[key]
+            elif key in _TOGGLES and spec["kind"] == "top":
+                opt = _TOGGLES[key]
+                opts[opt] = not opts.get(opt, opt == "idle")
     finally:
         if reader is not None and not reader.done():
             reader.cancel()

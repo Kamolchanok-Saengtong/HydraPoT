@@ -58,7 +58,7 @@ def _scaled(kb: int, base: int = 1024):
     return f"{value:.0f}", "Ti"
 
 
-def free(hw: dict, argv) -> str:
+def free(hw: dict, argv, drift: int = 0) -> str:
     """`free` with -k/-m/-g/-b/-h (procps 3.3.16 layout); None for anything else."""
     m = hw["memory_kb"]
     unit = "k"
@@ -67,9 +67,10 @@ def free(hw: dict, argv) -> str:
             unit = {"--human": "h"}.get(a, a[1])
         else:
             return None
-    buff_cache = m["buffers"] + m["cached"] + m["sreclaimable"]
-    used = m["total"] - m["free"] - buff_cache
-    cols = [m["total"], used, m["free"], m["shmem"], buff_cache, m["available"]]
+    buff_cache = m["buffers"] + m["cached"] + m["sreclaimable"] - drift
+    free_kb = m["free"] + drift
+    used = m["total"] - free_kb - buff_cache
+    cols = [m["total"], used, free_kb, m["shmem"], buff_cache, m["available"] + drift]
     swap = [m["swap_total"], m["swap_total"] - m["swap_free"], m["swap_free"]]
 
     def show(kb):

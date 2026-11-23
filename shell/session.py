@@ -1234,8 +1234,8 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
         opts = rulecore.top_options(argv)
         if not opts or opts["batch"]:
             return None
-        return {"kind": "top", "delay": opts["delay"], "count": opts["count"],
-                "begin": rulecore.begin_screen, "end": rulecore.end_screen,
+        return {"kind": "top", "delay": opts["delay"], "count": opts["count"], "opts": opts,
+                "sort": opts["sort"], "begin": rulecore.begin_screen, "end": rulecore.end_screen,
                 "frame": rulecore.top_frame, "hostname": config.honeypot.hostname}
     handle.screen = screen
     return handle

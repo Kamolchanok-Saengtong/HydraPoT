@@ -748,7 +748,7 @@ class RuleCore:
             return False, None
         if not self.hw:
             return False, None
-        out = hardware.free(self.hw, argv)
+        out = hardware.free(self.hw, argv, self._mem_drift())
         return (True, out) if out else (False, None)
 
     def _cmd_nproc(self, argv):
@@ -999,43 +999,80 @@ class RuleCore:
     # ── top ────────────────────────────────────────────────────────────────
 
     def top_options(self, argv):
-        """{batch, count, delay} for a `top` command line, or None for flags not modelled."""
-        opts, args, i = {"batch": False, "count": None, "delay": 3.0}, argv[1:], 0
+        """What a `top` command line asks for, or None for a flag top would refuse.
+
+        batch (-b), count (-n), delay (-d), cmdline (-c), user (-u/-U), pids (-p),
+        idle (-i turns it off), sort (-o). Flags that only change how top draws on a
+        terminal (-H -S -s -E -e -w) are accepted and have no effect here.
+        """
+        opts = {"batch": False, "count": None, "delay": 3.0, "cmdline": False,
+                "user": None, "pids": None, "idle": True, "sort": "cpu", "per_cpu": False}
+        takes_value = set("ndpuUoeEw")
+        args, i = argv[1:], 0
         while i < len(args):
             a = args[i]
-            if not re.fullmatch(r"-[bnd]\w*(\.\d+)?", a):
+            if not re.fullmatch(r"-[A-Za-z0-9,.%+]+", a):
                 return None
             letters, j = a[1:], 0
             while j < len(letters):
                 ch = letters[j]
-                if ch == "b":
-                    opts["batch"] = True
+                if ch not in takes_value:
+                    if ch == "b": opts["batch"] = True
+                    elif ch == "c": opts["cmdline"] = True
+                    elif ch == "i": opts["idle"] = False
+                    elif ch == "1": opts["per_cpu"] = True
+                    elif ch not in "HSsE":
+                        return None
                     j += 1
                     continue
                 rest = letters[j + 1:]
                 if not rest:
                     i += 1
                     rest = args[i] if i < len(args) else ""
-                try:
-                    value = float(rest)
-                except ValueError:
-                    return None
                 if ch == "n":
-                    opts["count"] = int(value)
-                else:
-                    opts["delay"] = max(value, 0.1)
+                    try: opts["count"] = int(float(rest))
+                    except ValueError: return None
+                elif ch == "d":
+                    try: opts["delay"] = max(float(rest), 0.1)
+                    except ValueError: return None
+                elif ch in "uU":
+                    opts["user"] = rest
+                elif ch == "p":
+                    try: opts["pids"] = {int(x) for x in rest.split(",") if x}
+                    except ValueError: return None
+                elif ch == "o":
+                    field = rest.lstrip("+-").upper()
+                    opts["sort"] = {"%CPU": "cpu", "%MEM": "mem", "PID": "pid", "TIME+": "time",
+                                    "TIME": "time"}.get(field, "cpu")
                 break
             i += 1
         return opts
 
-    def top_frame(self, tick, height, delay, sort="cpu"):
+    def _loads(self):
+        """The three load averages: fixed per session at heart, drifting slowly with the clock,
+        so `uptime` ten minutes apart does not print the same numbers."""
+        import math
+        t = self.reg.now_ns() / 1e9
+        out = []
+        for i, period in enumerate((90, 420, 1500)):
+            base = self.reg.prf(f"load{i}", "load", 0, 30) / 100
+            wave = 0.06 * math.sin(t / period + i) + 0.03 * math.sin(t / (period * 0.37))
+            out.append(max(round(base + wave * (1 if i == 0 else 0.6), 2), 0.0))
+        return out
+
+    def _mem_drift(self):
+        """kB that move between free memory and the page cache, changing every ten seconds."""
+        bucket = int(self.reg.now_ns() / 1e9 // 10)
+        return (self.reg.prf(f"memdrift{bucket}", "mem", 0, 6000) - 3000)
+
+    def top_frame(self, tick, height, delay, sort="cpu", opts=None, width=80, color=False):
         """One frame of `top`, from the same rows and memory `ps` and `free` use."""
         if not self.hw:
             return None
         return screen.render_top(
             self._rows("top"), self.hw, self._uptime_line(), tick,
             lambda name, lo, hi: self.reg.prf(name, "top", lo, hi), delay, height, sort,
-            user_fmt=_ps_user)
+            user_fmt=_ps_user, opts=opts, width=width, mem_drift=self._mem_drift(), color=color)
 
     def begin_screen(self):
         """A full-screen program starts: it keeps one PID for all its frames."""
@@ -1051,7 +1088,8 @@ class RuleCore:
         # no terminal to draw on (batch mode, a pipe, ssh without -t): frames are printed
         self.begin_screen()
         try:
-            frames = [self.top_frame(t, 0, opts["delay"]) for t in range(opts["count"] or 1)]
+            frames = [self.top_frame(t, 0, opts["delay"], opts["sort"], opts, width=80)
+                      for t in range(opts["count"] or 1)]
         finally:
             self.end_screen()
         return True, "\n".join(frames)
@@ -1063,7 +1101,7 @@ class RuleCore:
             idle = self.reg.prf("idle", "boot", 90, 99) / 100
             return hardware.uptime_file(up, self.hw["cpus"], idle).rstrip("\n")
         if path == "/proc/loadavg":
-            loads = [self.reg.prf(f"load{i}", "load", 0, 30) / 100 for i in range(3)]
+            loads = self._loads()
             top = max([p["PID"] for p in self.processes] + [self._shell_pid()])
             return hardware.loadavg(loads, len(self.processes) + 5,
                                     self._next_pid or top + 1).rstrip("\n")
@@ -1243,7 +1281,7 @@ class RuleCore:
         h, m = divmod(delta.seconds // 60, 60)
         up = (f"{delta.days} day{'s' if delta.days != 1 else ''}, {h:2d}:{m:02d}"
               if delta.days else f"{h:2d}:{m:02d}")
-        loads = [self.reg.prf(f"load{i}", "load", 0, 30) / 100 for i in range(3)]
+        loads = self._loads()
         users = 1 if self.reg.session("ip") is not None else 0
         return (f" {now:%H:%M:%S} up {up},  {users} user{'s' if users != 1 else ''},  "
                 f"load average: {loads[0]:.2f}, {loads[1]:.2f}, {loads[2]:.2f}")
