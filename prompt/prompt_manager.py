@@ -150,7 +150,9 @@ class PromptManager:
         # array its provider templates server-side), so the same rule covers
         # both; Cowrie builds no prompt and never arrives here.
         do_sanitize = getattr(g, "sanitize", False)
-        if defuse and do_isolate:
+        # Mechanical like sanitising: a forged marker in a file is forged whatever the detector
+        # scored for this command, so it never waits on a verdict.
+        if defuse and getattr(g, "isolate", False):
             for marker in self._SRI_MARKERS:
                 # Zero-width-ish break: still readable as the bytes the attacker
                 # wrote if a human reads the prompt, no longer the marker.
