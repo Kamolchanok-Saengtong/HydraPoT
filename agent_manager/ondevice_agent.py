@@ -61,7 +61,8 @@ def _is_gguf(model_id: str) -> bool:
 def _list_gguf_files(model_id: str) -> list[str]:
     """List every .gguf file cached for this HuggingFace repo (full paths)."""
     folder  = "models--" + model_id.replace("/", "--")
-    cache   = os.path.expanduser("~/.cache/huggingface/hub/")
+    from huggingface_hub.constants import HF_HUB_CACHE   # honours HF_HOME (Docker sets it)
+    cache   = HF_HUB_CACHE
     pattern = os.path.join(cache, folder, "**", "*.gguf")
     return glob.glob(pattern, recursive=True)
 

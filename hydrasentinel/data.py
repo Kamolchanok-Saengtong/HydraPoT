@@ -508,11 +508,12 @@ def agent_health():
 
     # Local LLM — enabled AND the weights are actually on disk
     try:
+        from huggingface_hub.constants import HF_HOME
         od = cfg.agents.on_device
         gguf = getattr(od, "gguf_file", "") or ""
         found = bool(gguf) and any(
             os.path.basename(p) == os.path.basename(gguf)
-            for p in glob.glob(os.path.expanduser("~/.cache/huggingface/**/*.gguf"), recursive=True)
+            for p in glob.glob(os.path.join(HF_HOME, "**", "*.gguf"), recursive=True)
         )
         rows.append(("Local LLM", bool(getattr(od, "enabled", False)) and found,
                      os.path.basename(gguf) or "no model"))

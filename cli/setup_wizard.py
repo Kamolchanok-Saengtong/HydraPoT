@@ -488,8 +488,9 @@ def ask_cowrie(existing: dict) -> dict:
 _INTERNAL_MODELS = {"roberta-large"}
 
 def _scan_cached_models() -> list[str]:
-    """Scan ~/.cache/huggingface/hub/ and return downloaded chat model IDs."""
-    cache = os.path.expanduser("~/.cache/huggingface/hub/")
+    """Scan the Hugging Face hub cache and return downloaded chat model IDs."""
+    from huggingface_hub.constants import HF_HUB_CACHE
+    cache = HF_HUB_CACHE
     models = []
     try:
         for folder in os.listdir(cache):
@@ -522,7 +523,8 @@ def _scan_cached_models() -> list[str]:
 def _is_cached(model_id: str) -> bool:
     """Check if a model is fully downloaded (no incomplete files)."""
     folder = "models--" + model_id.replace("/", "--")
-    cache  = os.path.expanduser("~/.cache/huggingface/hub/")
+    from huggingface_hub.constants import HF_HUB_CACHE
+    cache  = HF_HUB_CACHE
     folder_path = os.path.join(cache, folder)
 
     if not os.path.isdir(folder_path):
