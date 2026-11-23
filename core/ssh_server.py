@@ -362,7 +362,10 @@ async def _shell_session(process, handler_factory, hostname, os_banner):
                     # ── full-screen programs (top, watch) keep the terminal ──
                     if process.get_terminal_type():
                         spec = (getattr(command_handler, "screen", lambda c: None)(cmd)
-                                or fullscreen.watch_spec(cmd, command_handler, hostname))
+                                or fullscreen.watch_spec(cmd, command_handler, hostname)
+                                or fullscreen.stream_spec(cmd, command_handler,
+                                                          {"hostname": hostname,
+                                                           "local_ip": conn_info.get("local_ip")}))
                         if spec:
                             try:
                                 await fullscreen.run(process, spec)

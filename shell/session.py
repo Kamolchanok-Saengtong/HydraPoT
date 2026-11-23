@@ -58,6 +58,7 @@ from shell.state import StateTracker
 from shell.responders import Responders
 from shell.cowrie_link import CowrieLink
 from shell import git_clone
+from shell import netsim
 from shell.rulecore import _human
 from shell.telemetry import Telemetry
 from shell.routing import Routing
@@ -375,6 +376,60 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
         return output
 
     _READERS = ("cat", "head", "tail", "grep", "stat", "wc", "du", "ls", "less", "more")
+
+    def _netsim_answer(cmd_text: str, base: str, write):
+        """ping / traceroute / nmap as Linux prints them for this machine, or None to fall
+        back. Without a terminal there is no Ctrl-C, so a bare `ping` sends four."""
+        import time as _t
+        local_ip = register.session("local_ip")
+        if not local_ip:
+            return None
+        try:
+            argv = shlex.split(cmd_text)
+        except ValueError:
+            return None
+        host = config.honeypot.hostname
+        net = config.system_state.get("network") or {}
+        shown = []
+
+        def say(line, pause=0.0):
+            shown.append(line)
+            write(line + "\r\n")
+            if pause:
+                _t.sleep(pause)
+        if base == "ping":
+            cfg, err = netsim.parse_ping(argv, host)
+            if cfg is None:
+                if err is None:
+                    return None
+                say(err)
+                return "\n".join(shown)
+            ping, count = cfg["ping"], cfg["count"] or 4
+            say(ping.header())
+            for i in range(1, count + 1):
+                line = ping.reply(i)
+                if line:
+                    say(line, cfg["interval"] if i < count else 0)
+            say(ping.summary(int((count - 1) * cfg["interval"] * 1000 + 3)))
+        elif base == "traceroute":
+            lines, err = netsim.traceroute_lines(argv, host, local_ip, int(net.get("prefix", 24)))
+            for line in (lines if not err else [err]):
+                say(line, 0.35 if line[:1] == " " or line[:1].isdigit() else 0)
+        else:
+            ports = sorted({int(l["port"]) for l in net.get("listeners", [])
+                            if l.get("proto", "").startswith("tcp") and l.get("addr") in ("0.0.0.0", "::")})
+            lines, secs, err = netsim.nmap_lines(
+                argv, {"hostname": host, "local_ip": local_ip, "listeners": ports,
+                       "ssh_version": getattr(config.honeypot, "ssh_version", "") or "",
+                       "now": datetime.now(timezone.utc)})
+            if err:
+                say(err)
+            else:
+                say(lines[0])
+                _t.sleep(min(secs, 6.0))
+                for line in lines[1:]:
+                    say(line)
+        return "\n".join(shown)
 
     def _materialize(cmd_text: str) -> None:
         """Alg. 1 line 10: complete never-seen paths a read touches."""
@@ -963,6 +1018,12 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
         # classify() says. A canned answer pretends the tool exists, so the tool must
         # be in the notebook (stock, extra_tools, or apt-installed); editors answer
         # with their own "not found".
+        if actual_base in ("ping", "traceroute", "nmap") and sw.available(lookup_base):
+            sim = _netsim_answer(actual_cmd, actual_base, write_fn)
+            if sim is not None:
+                tracker.record(actual_cmd, sim)
+                link.sync_history(cmd)
+                return _finish(cmd, "cowrie", sim, fi_score, t_start, streamed=True)
         if is_static(actual_cmd) and (sw.available(lookup_base) or actual_base in EDITORS):
             # top is drawn from this host's own processes and memory, not a canned
             # frame with another machine's numbers; the canned one stays as fallback
