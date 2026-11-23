@@ -158,6 +158,76 @@ def _recreate_cowrie(port: int) -> None:
         print(f"[HydraPot] ⚠ compose started but nothing is listening on {port} yet")
 
 
+def _machine_fingerprint() -> str:
+    """What the fake machine is made of: the parts of config.yaml that describe it, plus the
+    files they point at. Changing anything else in config.yaml (routing, dashboard...) leaves
+    it alone, so a returning attacker's files are not wiped by an unrelated edit."""
+    import hashlib
+    import yaml
+    with open(os.path.join(_HERE, "config.yaml"), encoding="utf-8") as fh:
+        raw = yaml.safe_load(fh) or {}
+    keep = {"hostname": (raw.get("honeypot") or {}).get("hostname"),
+            "kernel": [(raw.get("honeypot") or {}).get(k) for k in ("kernel", "kernel_build", "arch")],
+            "system_state": raw.get("system_state"), "filesystem": raw.get("filesystem")}
+    h = hashlib.sha256(repr(sorted(keep.items(), key=lambda kv: kv[0])).encode())
+    plugins = os.path.join(_HERE, "plugins")
+    for base in ("decoys", os.path.join("cowrie", "processes.json"), "snapshot"):
+        target = os.path.join(plugins, base)
+        paths = [target] if os.path.isfile(target) else sorted(
+            os.path.join(d, f) for d, _, fs in os.walk(target) for f in fs)
+        for path in paths:
+            with open(path, "rb") as fh:
+                h.update(fh.read())
+    return h.hexdigest()
+
+
+def _rebuild_machine_if_changed() -> bool:
+    """Rebuild the Cowrie filesystem when the machine in config.yaml changed. True if it did.
+
+    So editing hardware, users, files or processes in config.yaml is all a user does: the
+    next `hp --run` regenerates what Cowrie shows and restarts it.
+    """
+    import subprocess
+    stamp = os.path.join(_HERE, "plugins", "cowrie", ".machine")
+    try:
+        now = _machine_fingerprint()
+    except Exception as exc:                     # a broken config is reported where it is read
+        print(f"[HydraPot] ⚠ could not check whether the machine changed: {exc}")
+        return False
+    try:
+        with open(stamp) as fh:
+            if fh.read().strip() == now and os.path.exists(os.path.join(_HERE, "plugins", "cowrie", "fs.pickle")):
+                return False
+    except OSError:
+        pass
+    print("[HydraPot] the machine in config.yaml changed — rebuilding what attackers see")
+    r = subprocess.run([sys.executable, os.path.join(_HERE, "plugins", "cowrie_fs.py")],
+                       capture_output=True, text=True, timeout=300)
+    if r.returncode != 0:
+        print("[HydraPot] ⚠ rebuild failed, keeping the previous machine:")
+        for line in (r.stderr or r.stdout).strip().splitlines()[-4:]:
+            print(f"    {line}")
+        return False
+    with open(stamp, "w") as fh:
+        fh.write(now)
+    return True
+
+
+def _restart_cowrie() -> None:
+    """Cowrie reads its filesystem at start. `down` then `up -d cowrie`: compose v1 cannot
+    recreate a container in place."""
+    import subprocess
+    cmd = _compose_cmd()
+    if cmd is None:
+        print("[HydraPot] docker compose not found — restart Cowrie yourself to show the new machine")
+        return
+    try:
+        subprocess.run(cmd + ["down"], cwd=_HERE, capture_output=True, timeout=120)
+        subprocess.run(cmd + ["up", "-d", "cowrie"], cwd=_HERE, capture_output=True, timeout=180)
+    except subprocess.TimeoutExpired:
+        print("[HydraPot] ⚠ compose timed out; restart Cowrie yourself")
+
+
 def _exit_port_in_use(host: str, port: int) -> None:
     """Name the taken port and how to move, instead of a bind traceback."""
     from cli.setup_wizard import sad_squid
@@ -259,6 +329,9 @@ def main():
         _moved = sync_compose_env(_port)
         if _moved:
             print(f"[HydraPot] .env COWRIE_PORT -> {_port}")
+        if _rebuild_machine_if_changed():
+            _restart_cowrie()
+            _moved = True
         if _moved or not _ssh_ready(config.agents.cowrie.host, _port):
             _recreate_cowrie(_port)
 

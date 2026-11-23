@@ -787,3 +787,20 @@ attack analysis capabilities.
 ## License
 
 MIT. See [license](./license).
+
+
+## Change the machine
+
+The machine attackers see is declared in `config.yaml` (`system_state.hardware`, `users`,
+`filesystem`, `extra_packages`) and `plugins/cowrie/processes.json`. This repo ships an
+8x NVIDIA H100 training node. Edit those, then run `hp --run`: it rebuilds the fake filesystem
+and restarts Cowrie when the machine changed (other settings, like routing, leave it alone).
+
+- Bait files: put the file in `plugins/decoys/` and list it under `filesystem.files` with
+  `source: decoys/<name>`. Write `@OPENAI_KEY@`, `@HF_TOKEN@`, `@WANDB_KEY@`, `@AWS_KEY_ID@`,
+  `@AWS_SECRET@`, `@ETH_WALLET@` or `@ETH_PRIVKEY@` for a generated fake secret (the same
+  secret appears in every file that names it; nothing key-shaped is stored in git).
+- GPUs: `hardware.gpus` drives `nvidia-smi`. A process whose command contains `train.py` takes
+  one GPU each, so killing it idles the card, as on a real machine.
+- Returning attackers find what they left (`honeypot.remember_attackers`), but a rebuilt machine
+  starts them fresh.

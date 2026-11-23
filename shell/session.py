@@ -524,8 +524,12 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
             return
         try:
             from core import storage
+            # A rebuilt machine (plugins/cowrie_fs.py) is a different machine: visits made
+            # before it describe files and hardware that no longer exist.
+            built = os.path.getmtime(os.path.join(_PROJECT_ROOT, "plugins", "cowrie", "fs.pickle"))
             visits = storage.prior_sessions(src_ip, INSTANCE, exclude=SESSION_ID,
-                                            days=getattr(config.honeypot, "remember_days", 30))
+                                            days=getattr(config.honeypot, "remember_days", 30),
+                                            after=datetime.fromtimestamp(built).strftime("%Y-%m-%d %H:%M:%S"))
             if not visits:
                 return
             ids = [v["session_id"] for v in visits]

@@ -106,3 +106,4 @@ console_test/
 
 # Local notes for Claude sessions
 note.md
+plugins/cowrie/.machine

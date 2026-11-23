@@ -267,7 +267,7 @@ def state_rows(session_id: str, instance: str = "default",
 
 
 def prior_sessions(src_ip: str, instance: str = "default", exclude: str = "", days: int = 30,
-                   limit: int = 200, path: str = DB_PATH) -> list:
+                   limit: int = 200, after: str = "", path: str = DB_PATH) -> list:
     """This address's earlier sessions, oldest first: [{session_id, first, last, commands}].
 
     Keyed by source address and nothing else, so one attacker's files are never another's."""
@@ -276,9 +276,9 @@ def prior_sessions(src_ip: str, instance: str = "default", exclude: str = "", da
             return [dict(r) for r in conn.execute(
                 "SELECT session_id, MIN(timestamp) AS first, MAX(timestamp) AS last, COUNT(*) AS commands "
                 "FROM sessions WHERE instance=? AND src_ip=? AND session_id != ? "
-                "AND timestamp >= datetime('now', 'localtime', ?) GROUP BY session_id "
+                "AND timestamp >= datetime('now', 'localtime', ?) AND timestamp >= ? GROUP BY session_id "
                 "ORDER BY MIN(timestamp) DESC LIMIT ?",
-                (instance, src_ip, str(exclude), f"-{int(days)} days", limit))][::-1]
+                (instance, src_ip, str(exclude), f"-{int(days)} days", after or "", limit))][::-1]
     except sqlite3.Error:
         return []
 
