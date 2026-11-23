@@ -143,7 +143,15 @@ plugins = [
     "rules/*.yml", "rules/*.yaml",
     "static/*.py",
     "cowrie/**/*",
+    # What the fake machine is built from, and what dpkg/apt/`ls /usr/bin` answer from.
+    # Without these a fresh install cannot rebuild the machine or list a package.
+    "decoys/*",
+    "snapshot/manifest.json", "snapshot/files/**/*", "snapshot/*.tsv",
+    "ubuntu_commands.txt", "ubuntu_packages.txt",
 ]
+# The Honey Router's code and its dated benchmark numbers. NOT honeyrouter/out: that is the
+# operator's own trained model, made by `hp --router` on their machine.
+honeyrouter = ["benchmarklist.seed.json"]
 
 # ─── Dependency drift check (deptry) ────────────────────────────────────────
 # `deptry .` fails when an import isn't declared above — how fastapi, uvicorn
