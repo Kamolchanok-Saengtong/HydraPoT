@@ -234,6 +234,21 @@ Cowrie.
 Re-run the same command after changing the honeypot's identity or declared
 files in `config.yaml`.
 
+### Keeping Cowrie away from your network
+
+Nothing an attacker types is ever run on your machine: the shell is emulated, and the
+container that holds Cowrie has no capabilities, cannot gain privileges and is capped on
+processes, memory and CPU (`docker-compose.yml`). Cowrie's own `wget` and `curl` already
+refuse private addresses. What the container could still reach, if something ever escaped
+it, is your LAN and this host. One command, run with `sudo`, blocks that and leaves the
+internet open:
+
+```bash
+sudo deploy/cowrie-egress.sh            # add the rules   (--check to see them, --remove to undo)
+```
+
+The rules do not survive a reboot; run it again afterwards.
+
 ## Configuration
 
 Configuration lives in `config.yaml` at the project root. Generate it

@@ -7,6 +7,14 @@ services:
     # a bare `docker-compose up -d` working on a fresh clone with no .env.
     ports:
       - "127.0.0.1:${COWRIE_PORT:-2222}:2222"
+    # Cowrie only emulates a shell, so it needs no privileges. Dropping them, and
+    # capping what a runaway or compromised container can use, costs nothing.
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 1g
+    cpus: 1.0
     environment:
       # Cowrie's wget allows 5 requests per host per window by default, which
       # caps a `git clone` at about 5 files. Raised so a clone can land its
