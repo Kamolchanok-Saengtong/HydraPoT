@@ -288,6 +288,15 @@
    "type": "file",
    "uid": 0
   },
+  "/var/lib/apt/extended_states": {
+   "gid": 0,
+   "mode": 420,
+   "mtime": 1795079780,
+   "size": 3899,
+   "target": null,
+   "type": "file",
+   "uid": 0
+  },
   "/var/spool/cron/crontabs": {
    "gid": 101,
    "mode": 984,

@@ -83,6 +83,24 @@ class Snapshot:
         return out
 
 
+    def packages(self) -> list:
+        """dpkg's table for the image: [{name, version, arch, summary, auto}], installed only."""
+        auto, name = set(), None
+        for line in (self.text("/var/lib/apt/extended_states") or "").splitlines():
+            if line.startswith("Package: "):
+                name = line[9:].strip()
+            elif line.startswith("Auto-Installed: 1") and name:
+                auto.add(name)
+        rows = []
+        for line in (self.text("/packages.tsv") or "").splitlines():
+            f = line.split("\t")
+            if len(f) >= 5 and f[0].startswith("ii"):
+                pkg = f[1]
+                rows.append({"name": pkg, "version": f[2], "arch": f[3], "summary": f[4],
+                             "auto": pkg in auto})
+        return rows
+
+
 def load(directory: str = DEFAULT_DIR):
     """The snapshot, or None when plugins/image_snapshot.py has not been run."""
     if directory not in _cache:

@@ -233,7 +233,8 @@ async def _shell_session(process, handler_factory, hostname, os_banner):
     term = process.get_terminal_type() if hasattr(process, "get_terminal_type") else None
     conn_info = {"port": src_port,
                  "local_ip": str(sock[0]).removeprefix("::ffff:") if sock else None,
-                 "term": term}
+                 "term": term,
+                 "cols": (process.get_terminal_size() or (80,))[0] if term else None}
     command_handler = await asyncio.to_thread(
         handler_factory, src_ip=src_ip, public_ip=public_ip, username=username,
         conn=conn_info)
@@ -420,8 +421,8 @@ async def _shell_session(process, handler_factory, hostname, os_banner):
                 process.stdout.write("^C\r\n" + prompt)
                 continue
 
-    except (SystemExit, asyncssh.ConnectionLost, BrokenPipeError):
-        pass                          # the client went away: not an error worth a traceback
+    except (SystemExit, asyncssh.ConnectionLost, ConnectionError):
+        pass                          # the client went away (reset, broken pipe): normal for scanners
     except Exception as e:
         import traceback
         print(f"[ssh_server] Session error from {peer_str}: {e!r}")

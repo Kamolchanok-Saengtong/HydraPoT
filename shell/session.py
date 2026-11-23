@@ -357,6 +357,7 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
                         network_spec=config.system_state.get("network"),
                         os_name=config.honeypot.os, image=_image,
                         machine_id=_ids[0], boot_id=_ids[1],
+                        extra_packages=config.system_state.get("extra_packages"),
                         materializer=materializer, tools=sw)
     materializer.live = rulecore.live_lines
 
@@ -1214,6 +1215,7 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
     handle.fi_manager = fi_manager
     handle.prompt_manager = prompt_manager
     handle.register = register
+    handle.rulecore = rulecore
     handle.gate = gate
     handle.forced = False
     # Production's own prompt assembly, so Part A's standalone arm can send the

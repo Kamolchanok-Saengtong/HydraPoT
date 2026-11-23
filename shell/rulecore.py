@@ -28,7 +28,7 @@ import tarfile
 from datetime import datetime, timezone
 
 from core import snapshot as image_snapshot
-from shell import hardware, network, pipeline, screen
+from shell import hardware, network, packages, pipeline, screen
 from shell.compound import failed as _printed_an_error
 from shell.world import Fact
 
@@ -104,7 +104,7 @@ class RuleCore:
                  username: str = "root", device: str = "801h/2049d",
                  processes=(), kernel: str = "5.15.0-generic", materializer=None, tools=None,
                  hardware_spec=None, network_spec=None, os_name: str = "", groups=None,
-                 image=None, machine_id: str = "", boot_id: str = ""):
+                 image=None, machine_id: str = "", boot_id: str = "", extra_packages=()):
         self.reg = register
         self.fs = fs
         self.hostname = hostname
@@ -132,6 +132,8 @@ class RuleCore:
         self.os_name = os_name
         self.image = image            # core.snapshot.Snapshot: the image's lsb-release
         self.machine_id, self.boot_id = machine_id, boot_id
+        self.extra_packages = list(extra_packages or [])
+        self._quiet = False
         self.groups = groups or (lambda: {})
         # Cowrie-safe commands that reproduce the last answer's change in Cowrie's own
         # filesystem: absolute quoted paths, no -p or ~ (Cowrie's mkdir lacks both)
@@ -169,6 +171,7 @@ class RuleCore:
         stderr = re.search(r"\s+2>\s*/dev/null\s*$", text)
         if stderr:                       # the shell discards stderr: errors never print
             text, quiet = text[:stderr.start()], True
+        self._quiet = quiet
         redirect = self._redirect(text)
         if redirect is not None:
             return redirect
@@ -210,7 +213,7 @@ class RuleCore:
                                "grep", "head", "tail", "wc", "stat", "du", "echo", "pwd",
                                "printenv", "env", "md5sum", "sha1sum", "sha256sum", "id",
                                "netstat", "ss", "ifconfig", "ip", "free", "df", "hostname",
-                               "lsb_release", "hostnamectl", "nproc", "groups", "top", "history"})
+                               "lsb_release", "hostnamectl", "nproc", "groups", "top", "history", "dpkg", "apt"})
 
     def _pipeline(self, stages):
         """`source | filter | ...`: the register answers the source, the filters run exactly.
@@ -771,6 +774,30 @@ class RuleCore:
         out = hardware.df(disks, argv, mounted_on, self.hw["memory_kb"]["total"])
         return (True, out) if out else (False, None)
 
+    # ── packages ───────────────────────────────────────────────────────────
+
+    def _package_rows(self):
+        image_rows = self.image.packages() if self.image else []
+        if not image_rows:
+            return None
+        facts = {n: self.inst.get("pkg", n) for n in self.inst.keys("pkg")}
+        return packages.table(image_rows, self.extra_packages, facts)
+
+    def _cmd_dpkg(self, argv):
+        rows = self._package_rows()
+        if rows is None or not self._has("dpkg"):
+            return False, None
+        cols = 80 if self._peers else int(self.reg.session("cols", 80))
+        out = packages.dpkg_list(rows, argv, cols)
+        return (True, out) if out is not None else (False, None)
+
+    def _cmd_apt(self, argv):
+        rows = self._package_rows()
+        if rows is None or not self._has("apt"):
+            return False, None
+        out = packages.apt_list(rows, argv, piped=bool(self._peers), quiet=self._quiet)
+        return (True, out) if out is not None else (False, None)
+
     # ── history ────────────────────────────────────────────────────────────
 
     def note(self, line: str) -> None:
@@ -1060,6 +1087,8 @@ class RuleCore:
         if real is None or self._kind(real) != "file" or not self._owned(real):
             return False, None
         data = self.inst.get("content", real)
+        if data is None and self.inst.get("psize", real) == 0:
+            data = b""            # an empty file is empty, whoever else has written to the real one
         if data is None:          # size known, bytes not: let Cowrie answer
             return False, None
         if b"\x00" in data:
@@ -1113,6 +1142,8 @@ class RuleCore:
         if real is None or self._kind(real) != "file" or not self._owned(real):
             return False, None, None
         data = self.inst.get("content", real)
+        if data is None and self.inst.get("psize", real) == 0:
+            data = b""
         if data is None:          # size known, bytes not: let Cowrie answer
             return False, None, None
         if b"\x00" in data:

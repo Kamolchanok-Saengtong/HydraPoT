@@ -319,7 +319,7 @@ class Register:
         conn = conn or {}
         if conn.get("port"):
             facts["port"] = int(conn["port"])
-        for key in ("local_ip", "term"):
+        for key in ("local_ip", "term", "cols"):
             if conn.get(key):
                 facts[key] = conn[key]
         self.commit({Fact("session", k, v) for k, v in facts.items()}, why="login")

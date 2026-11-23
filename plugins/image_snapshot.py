@@ -39,7 +39,8 @@ TREE = ["/etc/os-release", "/usr/lib/os-release", "/etc/lsb-release", "/etc/issu
         "/etc/debian_version", "/etc/shells", "/etc/crontab", "/etc/passwd", "/etc/group",
         "/etc/shadow", "/etc/skel", "/root/.bashrc", "/root/.profile", "/etc/cron.d",
         "/etc/cron.daily", "/etc/cron.hourly", "/etc/cron.weekly", "/etc/cron.monthly",
-        "/var/spool/cron/crontabs", "/etc/environment", "/etc/default/locale"]
+        "/var/spool/cron/crontabs", "/etc/environment", "/etc/default/locale",
+        "/var/lib/apt/extended_states"]
 
 
 def _run(image, script, text=True, timeout=300):
@@ -72,6 +73,12 @@ def snapshot(image: str, out_dir: str = OUT) -> dict:
                 os.makedirs(os.path.dirname(dest), exist_ok=True)
                 with open(dest, "wb") as fh:
                     fh.write(tar.extractfile(m).read())
+
+    # dpkg's own table: what `dpkg -l` and `apt list --installed` print
+    table = _run(image, "dpkg-query -W -f='${db:Status-Abbrev}\\t${Package}\\t${Version}\\t"
+                        "${Architecture}\\t${binary:Summary}\\n'", text=False)
+    with open(os.path.join(files_dir, "packages.tsv"), "wb") as fh:
+        fh.write(table)
 
     manifest = {"image": image, "taken": str(datetime.date.today()), "files": meta}
     with open(os.path.join(out_dir, "manifest.json"), "w", encoding="utf-8") as fh:
