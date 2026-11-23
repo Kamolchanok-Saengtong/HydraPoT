@@ -9,6 +9,8 @@ import glob
 import os
 import threading
 import requests    # only used by the optional remote (external-GPU) mode
+
+from agent_manager import ollama_support
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
 from core.config_loader import ONDEVICE_KEY_ENV
@@ -107,12 +109,25 @@ class OnDeviceAgent:
         self.do_sample   = do_sample
         self.is_gguf     = _is_gguf(model)
         self.gguf_file   = gguf_file
-        self.remote      = (mode or "local").lower() == "remote"
+        self.mode        = (mode or "local").lower()
+        self.remote      = self.mode in ("remote", "ollama")
 
         # Optional remote (external-GPU) mode: the model runs on a separate host
         # as an OpenAI-compatible server (see agent_manager/serve_ondevice.py).
         # We load nothing locally and just call the endpoint -- everything else
         # (routing, FI, logging) is unchanged. Local mode below is untouched.
+        if self.mode == "ollama":
+            # Ollama is an OpenAI-compatible server that also manages the model files.
+            server = ollama_support.host(base_url)
+            problem = ollama_support.check(server, model)
+            if problem:
+                raise RuntimeError(problem)
+            self._base_url = server + "/v1"
+            self._api_key  = ""
+            self.llm = self.model = self.tokenizer = None
+            self.n_params = None
+            print(f"[on_device] OLLAMA — {server} (model '{model}')")
+            return
         if self.remote:
             if not base_url:
                 raise ValueError(
