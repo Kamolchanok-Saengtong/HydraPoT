@@ -264,9 +264,10 @@ def _ensure_operator_account():
 def _dashboard(debug, foreground):
     """Start the analytics dashboard, HTTPS only.
 
-    The app listens on loopback; the Caddy this starts is the only way in, so
-    the login never crosses a network in clear. Neither the scheme nor the bind
-    address can be changed (cli/dashboard_tls.py).
+    The app listens on loopback; the Caddy this starts is the only way in, and it
+    serves HTTPS on every interface so others on the network can use the
+    dashboard. The login never crosses a network in clear: the scheme cannot be
+    changed (cli/dashboard_tls.py).
     """
     from cli import dashboard_tls as tls
 
@@ -294,7 +295,8 @@ def _dashboard(debug, foreground):
     url = f"https://localhost:{cfg.https_port}"
     try:
         # Validates cert/key and starts Caddy now, so a bad setting fails here
-        tls.start(_HP_DIR, caddy, cfg.https_port, cfg.tls_cert, cfg.tls_key)
+        tls.start(_HP_DIR, caddy, cfg.https_port, cfg.tls_cert, cfg.tls_key,
+                  getattr(cfg, "tls_names", ()))
     except (ValueError, RuntimeError) as exc:
         click.echo(f"❌ {exc}", err=True)
         sys.exit(1)

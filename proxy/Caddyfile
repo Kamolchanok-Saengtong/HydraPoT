@@ -9,20 +9,28 @@
 # You should NOT need to edit this file. Point it at your own certificate from
 # .env instead:
 #
-#   TLS_SITE=:443                 # or honeypot.myorg.internal
+#   TLS_SITE=honeypot.myorg.internal   # default: localhost
 #   TLS_CERT=/certs/org.crt       # your cert  (mounted from ./certs)
 #   TLS_KEY=/certs/org.key        # your key
 #
 # Or leave the defaults to use Caddy's own internal CA (no cert files, no
 # external calls — ideal for LAN):
 #
-#   TLS_SITE=:443
+#   TLS_SITE=localhost
 #   TLS_CERT=internal
 #   TLS_KEY=
 # ─────────────────────────────────────────────────────────────────────────────
 
 # {$VAR:default} = read the env var, or use the default if it is unset.
-{$TLS_SITE::443} {
+# A bare ":443" site has no hostname to get a certificate for, so the handshake
+# fails. The named site owns the cert; default_sni/fallback_sni hand it to clients
+# that send no name (an IP) or an unknown one, and ":443" lets any Host through.
+{
+	default_sni {$TLS_SITE:localhost}
+	fallback_sni {$TLS_SITE:localhost}
+}
+
+{$TLS_SITE:localhost}, :443 {
 	# tls internal          -> Caddy's own local CA (when TLS_CERT=internal)
 	# tls /path/crt /path/key -> your organisation's certificate
 	tls {$TLS_CERT:internal} {$TLS_KEY:}

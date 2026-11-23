@@ -17,12 +17,12 @@ HydraPoT.
 
 ## The reference layer (Caddy, internal CA)
 
-Ships as `proxy/Caddyfile` + `docker-compose.tls.yml`. Caddy issues the cert from
+Ships as `proxy/Caddyfile` + the `caddy` service in `docker-compose.yml`. Caddy issues the cert from
 its **own local CA** — no external calls, nothing leaves the machine. Good for a
 LAN / VPN-only deployment.
 
 ```bash
-docker-compose -f docker-compose.yml -f docker-compose.tls.yml up
+docker-compose up
 # dashboard now at  https://<sensor-ip>/   (:443)
 ```
 
@@ -65,7 +65,7 @@ server {
 }
 ```
 
-Copy `docker-compose.tls.yml`, swap the `caddy` service for an `nginx` service
+Edit `docker-compose.yml`, swap the `caddy` service for an `nginx` service
 mounting this config + your cert. Done — same contract, your TLS.
 
 ---
@@ -76,5 +76,5 @@ mounting this config + your cert. Done — same contract, your TLS.
   differs per org; baking one choice into the app would force everyone into it.
 - **Matches real deployments.** Production services sit behind a proxy / ingress
   that owns TLS — the app speaks HTTP internally. HydraPoT does the same.
-- **Safer default.** The dashboard binds loopback only; it is never on the LAN
-  in clear. Exposure (and its encryption) is always a deliberate added layer.
+- **Safer default.** The dashboard container publishes no port of its own; it is
+  never on the LAN in clear. Exposure (and its encryption) is always the proxy in front.

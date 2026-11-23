@@ -2,10 +2,12 @@
 cli/dashboard_tls.py -- the HTTPS front for the dashboard, run by `hp`.
 
 The dashboard login and its SQL console must never cross a network in clear,
-so plain HTTP is not something an operator can pick. The app listens on
-loopback only and the Caddy that `hp --dashboard` starts is the only way in.
-Scheme and bind address are not settings; the port and an organisation's own
-certificate are (config.yaml: dashboard.https_port / tls_cert / tls_key).
+so plain HTTP is not something an operator can pick. The app itself listens on
+loopback only; the Caddy that `hp --dashboard` starts is the only way in, and it
+serves HTTPS on every interface so others on the network can use the dashboard.
+The scheme is not a setting; the port, an organisation's own certificate and
+extra DNS names are (config.yaml: dashboard.https_port / tls_cert / tls_key /
+tls_names).
 """
 import os
 import re
@@ -42,7 +44,29 @@ def _paths(hp_dir: str) -> dict:
             "file": os.path.join(data, "caddy", "Caddyfile")}
 
 
-def caddyfile(https_port: int, cert: str = "", key: str = "") -> str:
+def server_names(extra=()) -> list:
+    """The names a client may use to reach this machine, for the certificate:
+    localhost, loopback, this host's name, every interface address, plus `extra`.
+
+    Listed rather than answered on demand, so a stranger cannot make Caddy issue
+    a certificate for a name nobody configured."""
+    import psutil
+    names = ["localhost", "127.0.0.1", socket.gethostname()]
+    try:
+        names.append(socket.getfqdn())
+    except OSError:
+        pass
+    for addrs in psutil.net_if_addrs().values():
+        names += [a.address for a in addrs if a.family == socket.AF_INET]
+    names += [str(n) for n in (extra or [])]
+    out = []
+    for n in names:
+        if n and not _UNSAFE.search(n) and n not in out:
+            out.append(n)
+    return out
+
+
+def caddyfile(https_port: int, cert: str = "", key: str = "", names=()) -> str:
     if bool(cert) != bool(key):
         raise ValueError("dashboard.tls_cert and dashboard.tls_key go together")
     if not 1 <= int(https_port) <= 65535:
@@ -55,14 +79,14 @@ def caddyfile(https_port: int, cert: str = "", key: str = "") -> str:
     else:
         tls = "tls internal"          # Caddy's own local CA, no outside calls
     port = int(https_port)
+    sites = ", ".join(f"https://{n}:{port}" for n in (names or ["localhost", INTERNAL_HOST]))
     return f"""{{
 	admin off
 	skip_install_trust
 	auto_https disable_redirects
 }}
 
-https://localhost:{port}, https://{INTERNAL_HOST}:{port} {{
-	bind {INTERNAL_HOST}
+{sites} {{
 	{tls}
 	reverse_proxy {INTERNAL_HOST}:{INTERNAL_PORT}
 	encode gzip
@@ -84,7 +108,8 @@ def running_pid(hp_dir: str):
     return None
 
 
-def start(hp_dir: str, caddy: str, https_port: int, cert: str = "", key: str = "") -> int:
+def start(hp_dir: str, caddy: str, https_port: int, cert: str = "", key: str = "",
+          extra_names=()) -> int:
     """Start Caddy in front of the dashboard; return its pid, raise on failure."""
     existing = running_pid(hp_dir)
     if existing:
@@ -92,7 +117,7 @@ def start(hp_dir: str, caddy: str, https_port: int, cert: str = "", key: str = "
     p = _paths(hp_dir)
     os.makedirs(p["dir"], exist_ok=True)
     with open(p["file"], "w") as fh:
-        fh.write(caddyfile(https_port, cert, key))
+        fh.write(caddyfile(https_port, cert, key, server_names(extra_names)))
     # Keep Caddy's CA and state inside the project, not in the user's home
     env = dict(os.environ, XDG_DATA_HOME=os.path.join(p["dir"], "data"),
                XDG_CONFIG_HOME=os.path.join(p["dir"], "config"))

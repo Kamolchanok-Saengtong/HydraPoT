@@ -331,7 +331,10 @@ whether or not the honeypot is currently running.
 
 The dashboard is **HTTPS-only**. `hp --dashboard` starts Caddy for you and
 prints `https://localhost:8443`. The app itself listens on loopback behind it,
-and neither the scheme nor the bind address can be changed.
+while Caddy serves HTTPS on every interface so others on the network can open
+`https://<this-machine>:8443`. The scheme cannot be changed; use
+`dashboard.tls_cert` / `tls_key` for your own certificate and `tls_names` for
+extra DNS names.
 
 | Flag | Default | Purpose |
 |---|---|---|
