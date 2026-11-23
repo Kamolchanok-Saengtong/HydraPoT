@@ -380,13 +380,41 @@ class DashboardCfg:
     describes the fake machine an attacker sees; this one describes the real
     operator-facing surface."""
     # HTTPS only. The app itself listens on loopback behind the Caddy that
-    # `hp --dashboard` manages (cli/dashboard_tls.py); scheme and bind address
-    # are not settings.
+    # `hp --dashboard` manages (cli/dashboard_tls.py), which serves every
+    # interface so others on the network can use it; the scheme is not a setting.
     https_port: int = 8443
     # Your organisation's certificate. Both empty = Caddy's own local CA.
     tls_cert: str = ""
     tls_key: str = ""
+    # DNS names clients use besides this host's own name and addresses
+    tls_names: list = field(default_factory=list)
+    # Private/loopback source IPs are treated as experiment traffic and hidden.
+    # True for a LAN or lab sensor, where private addresses ARE the attackers.
+    show_private_sources: bool = False
     auth: DashboardAuthCfg = field(default_factory=DashboardAuthCfg)
+
+
+@dataclass
+class GitCloneCfg:
+    """`git clone` of a public repo, built from the hosting site's real file list.
+
+    Cowrie has no git, so without this the cloud model invents the repo. Only
+    hosts listed here are ever contacted, so an attacker cannot aim the sensor
+    at an arbitrary server.
+    """
+    enabled: bool = True
+    max_files: int = 16            # files fetched per clone; each takes ~2s on Cowrie
+    max_file_bytes: int = 262144   # larger files are left out
+    max_seconds: int = 60          # stop fetching after this long
+    max_dirs: int = 200            # folders created, shallowest first
+    file_timeout: float = 1.0      # seconds to wait for one attempt to land
+    file_attempts: int = 6         # Cowrie's wget fails often here; ask again
+    token_env: str = "GITHUB_TOKEN"   # optional; lifts the API rate limit
+    hosts: dict = field(default_factory=lambda: {
+        "github.com": {
+            "tree": "https://api.github.com/repos/{owner}/{repo}/git/trees/HEAD?recursive=1",
+            "raw":  "https://raw.githubusercontent.com/{owner}/{repo}/HEAD/{path}",
+        }})
 
 
 @dataclass
@@ -398,6 +426,7 @@ class Config:
     routing: RoutingCfg = field(default_factory=RoutingCfg)
     guardrail: GuardrailCfg = field(default_factory=GuardrailCfg)
     dashboard: DashboardCfg = field(default_factory=DashboardCfg)
+    git_clone: GitCloneCfg = field(default_factory=GitCloneCfg)
     logging: LoggingCfg = field(default_factory=LoggingCfg)
     static_commands: list = field(default_factory=lambda: [...])
     # MEA/PEA residential tariff (ประเภท 1.2) — plain dict like system_state
@@ -468,12 +497,11 @@ class Config:
     # relative to plugins/). The world-state reads the same file Cowrie serves.
     filesystem: dict = field(default_factory=lambda: {"out": "cowrie/fs.pickle"})
     system_state: dict = field(default_factory=lambda: {
-        "pre_installed": [
-            "coreutils", "bash", "ssh", "apt", "apt-get", "dpkg",
-            "grep", "sed", "awk", "tar", "gzip", "net-tools",
-            "procps", "util-linux", "cron", "sudo", "passwd",
-            "wget", "curl",
-        ],
+        # Beyond-stock only: the stock commands and packages come from the snapshot
+        # of the real image (plugins/ubuntu_commands.py).
+        "extra_tools": [],
+        "extra_packages": [],
+        "missing_tools": [],
         "starting_files": {
             "/etc/passwd": {"perms": "-rw-r--r--", "size": "2.1K"},
             "/etc/shadow": {"perms": "-rw-r-----", "size": "1.4K"},
@@ -654,7 +682,7 @@ def load_config(path: str = CONFIG_PATH) -> Config:
     # system_state: merge PER-KEY with the defaults rather than replacing the
     # whole dict. Previously any config.yaml that defined system_state at all
     # replaced the default wholesale, so a key it happened to omit silently
-    # became absent — this is exactly how "pre_installed" went missing and the
+    # became absent — this is exactly how a key like "extra_packages" went missing and the
     # LLM started reporting "wget: command not found". Merging keeps this
     # loader's documented promise ("missing fields, defaults fill in") true for
     # nested keys too, while anything the user DOES specify still wins.

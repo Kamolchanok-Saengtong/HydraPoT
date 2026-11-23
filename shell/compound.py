@@ -18,6 +18,30 @@ _KEYWORDS = re.compile(r"(^|[;&|(]\s*|\{\s+)"
                        r"(if|then|else|elif|fi|for|while|until|do|done|case|esac|function)\b")
 
 
+def strip_comment(text: str) -> str:
+    """The line without a trailing `# comment`, as bash reads it.
+
+    A `#` starts a comment only at the start of a word, outside quotes: `a#b`,
+    `"x # y"` and `$#` are not comments.
+    """
+    quote, i, n = None, 0, len(text)
+    while i < n:
+        c = text[i]
+        if quote:
+            if c == "\\" and quote == '"' and i + 1 < n:
+                i += 1
+            elif c == quote:
+                quote = None
+        elif c == "\\" and i + 1 < n:
+            i += 1
+        elif c in "'\"":
+            quote = c
+        elif c == "#" and (i == 0 or text[i - 1] in " \t;&|("):
+            return text[:i].rstrip()
+        i += 1
+    return text
+
+
 def split(text: str):
     """[(command, operator before it)] or None when the line is a single command.
 

@@ -30,7 +30,7 @@ _RECORD_RELS = ("content", "size", "raw", "size_text", "backend", "source")
 _ECHO_NO_NEWLINE = re.compile(r"^-[a-zA-Z]*n[a-zA-Z]*\s")
 _TIMES = ("mtime", "atime", "ctime")
 # Relations not keyed by a path
-_NON_PATH = frozenset({"user", "uid", "gid", "home", "shell", "env", "proc", "cwd"})
+_NON_PATH = frozenset({"user", "uid", "gid", "home", "shell", "env", "proc", "cwd", "pkg"})
 
 
 def perms_to_mode(perms: str):
@@ -431,13 +431,63 @@ class FilesView(MutableMapping):
         return repr(self.copy())
 
 
+class InstalledView(MutableMapping):
+    """The old SYSTEM_STATE["installed"] dict, backed by the register.
+
+    package -> {"version", "version_str"}. Installing or removing one is a fact
+    change like any other: logged, replayable and checked against Sigma.
+    """
+
+    def __init__(self, reg: Register):
+        self._reg = reg
+
+    def __getitem__(self, name):
+        rec = self._reg.inst.get("pkg", name)
+        if rec is None:
+            raise KeyError(name)
+        return {"version": rec[0], "version_str": rec[1]}
+
+    def __setitem__(self, name, rec):
+        version = str(rec.get("version", "1.0.0"))
+        text = rec.get("version_str") or f"{name} version {version}"
+        cur = self._reg.inst.get("pkg", name)
+        self._reg.commit({Fact("pkg", name, (version, text))},
+                         {Fact("pkg", name, cur)} if cur is not None else set(),
+                         why=f"install {name}")
+
+    def __delitem__(self, name):
+        cur = self._reg.inst.get("pkg", name)
+        if cur is None:
+            raise KeyError(name)
+        self._reg.commit(set(), {Fact("pkg", name, cur)}, why=f"remove {name}")
+
+    def __contains__(self, name):
+        return self._reg.inst.get("pkg", name) is not None
+
+    def __iter__(self):
+        return iter(sorted(self._reg.inst.keys("pkg")))
+
+    def __len__(self):
+        return len(self._reg.inst.keys("pkg"))
+
+    def copy(self):
+        return {name: dict(rec) for name, rec in self.items()}
+
+    def __repr__(self):
+        return repr(self.copy())
+
+
 class SystemState(dict):
-    """SYSTEM_STATE: `files` and `cwd` live in the register, the rest is plain."""
+    """SYSTEM_STATE: `files`, `installed` and `cwd` live in the register, the rest is plain."""
 
     def __init__(self, register: Register, **rest):
+        first = rest.pop("installed", None) or {}
         super().__init__(**rest)
         self.register = register
         dict.__setitem__(self, "files", FilesView(register))
+        dict.__setitem__(self, "installed", InstalledView(register))
+        for name, rec in first.items():
+            self["installed"][name] = rec
 
     def __getitem__(self, key):
         if key == "cwd":
@@ -464,7 +514,8 @@ class SystemState(dict):
         # A plain-dict snapshot: StateTracker diffs before/after with it
         import copy
         snap = {k: copy.deepcopy(v, memo) for k, v in dict.items(self)
-                if k != "files"}
+                if k not in ("files", "installed")}
         snap["files"] = self["files"].copy()
+        snap["installed"] = self["installed"].copy()
         snap["cwd"] = self.register.cwd()
         return snap

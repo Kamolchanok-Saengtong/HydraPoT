@@ -6,21 +6,10 @@
 honeypot:
   hostname: psu
   instance_name: default
-  # Declared to match the development host, measured on it, so ground truth
-  # collected in Docker can be checked by hand in a terminal on that same
-  # host. The version is not cosmetic: the ground-truth image is built FROM
-  # ubuntu:<this>, and 20.04 ships bash 5.0 while 22.04 ships 5.1, which
-  # report command-not-found differently ("bash: php: ..." vs
-  # "bash: line 1: php: ..."). Declaring 22.04 here while checking against a
-  # 20.04 host made every diagnostic in the dataset look wrong.
   os: Ubuntu 20.04.6 LTS
   kernel: 5.15.0-139-generic
   kernel_build: '#149~20.04.1-Ubuntu SMP Wed Apr 16 08:29:56 UTC 2025'
   arch: x86_64
-  # The SSH banner. Keep in step with `os` above -- 8.2p1 Ubuntu-4ubuntu0.13
-  # is this host's (`ssh -V`). Left unset, asyncssh advertises
-  # "AsyncSSH_2.22.0", which nmap reports as `AsyncSSH sshd` and gives the
-  # honeypot away at the handshake.
   ssh_version: OpenSSH_8.2p1 Ubuntu-4ubuntu0.13
   host: 0.0.0.0
   port: 2223
@@ -46,6 +35,25 @@ agents:
     temperature: 0.0
     max_tokens: 2048
     base_url: https://ai.psu.blue/v1
+# `git clone` of a public repo: the real file list is read from the host's API
+# and Cowrie fetches each file, so ls/cat show real content instead of an
+# invented repo. Only hosts listed here are ever contacted. Cowrie's own wget
+# rate limit (5 requests per host per minute by default) caps how many files
+# land; raise [shell] wget_rate_limit_requests in Cowrie's config to fetch more.
+git_clone:
+  enabled: true
+  max_files: 16
+  max_file_bytes: 262144
+  max_seconds: 60
+  max_dirs: 200
+  file_timeout: 1.0
+  file_attempts: 6
+  token_env: GITHUB_TOKEN
+  hosts:
+    github.com:
+      tree: https://api.github.com/repos/{owner}/{repo}/git/trees/HEAD?recursive=1
+      raw: https://raw.githubusercontent.com/{owner}/{repo}/HEAD/{path}
+
 routing:
   fallback: cowrie
   fi_routing:
@@ -54,35 +62,17 @@ routing:
     2: on_device
     3: cloud
     4: cloud
-static_commands:
-- nmap
-- ping
-- traceroute
-- tracepath
-- top
-- htop
-- watch
-- tail
-- vim
-- vi
-- nano
-- emacs
-- less
-- more
 # ── HydraSentinel (the dashboard YOU look at) ─────────────────────────────
-# Not the fake machine: that is `honeypot` above. This surface shows captured
-# credentials and runs a read-only SQL console, so it requires a login. Create
-# the account with `hp --dashboard-passwd`; the dashboard refuses to serve
-# until one exists.
 dashboard:
-  # HTTPS only: `hp --dashboard` starts Caddy and serves the dashboard on
-  # https://localhost:<https_port>. The app itself listens on loopback behind
-  # it. The scheme and bind address are not settings.
   https_port: 8443
   # Your organisation's certificate (absolute paths, both or neither). Empty =
   # Caddy's own local CA; trust its root once per browser (see proxy/README.md).
   tls_cert: ''
   tls_key: ''
+  tls_names: []
+  # Hide private/loopback source IPs as experiment traffic (default). Set true
+  # on a LAN or lab sensor, where private addresses are the real attackers.
+  show_private_sources: false
   auth:
     # operator accounts AND their sessions live in this one SQLite file
     session_db: data/users.db
@@ -94,10 +84,6 @@ dashboard:
     scrypt_n: 16384
     scrypt_r: 8
     scrypt_p: 1
-    # Regexes, matched against the whole request path. /api is exempt from the
-    # SESSION gate only -- v1 has its own X-API-Key gate so a SIEM never needs
-    # a browser cookie, and the rest of /api is the 404/410 that tells a client
-    # where an endpoint went.
     open_paths:
     - ^/_hp/(?:login|logout)$
     - ^/assets/
@@ -116,49 +102,17 @@ logging:
   retention_vacuum: true
   retention_on_start: false
 system_state:
-  pre_installed:
-  - coreutils
-  - bash
-  - ssh
-  - apt
-  - apt-get
-  - dpkg
-  - grep
-  - sed
-  - awk
-  - tar
-  - gzip
-  - net-tools
-  - procps
-  - util-linux
-  - cron
-  - sudo
-  - passwd
-  - wget
-  - curl
-  base_tools:
-  - ls, cat, cp, mv, rm, mkdir, rmdir, touch, echo, pwd, head, tail, sort, uniq
-  - wc, cut, tr, tee, dd, df, du, chmod, chown, chgrp, ln, basename, dirname
-  - readlink, stat, truncate, nproc, id, whoami, who, users, groups, env, printenv
-  - date, sleep, seq, yes, test, expr, base64, md5sum, sha1sum, sha256sum, sha512sum
-  - cksum, comm, fold, nl, od, paste, split, tac, mktemp, realpath, timeout, install
-  - mkfifo, nice, nohup, printf, tty, uname, vdir, dir, arch, logname, shred, sync
-  - mount, umount, fdisk, lsblk, blkid, dmesg, more, kill, mountpoint, hexdump
-  - getopt, flock, renice, taskset, lscpu, lsmem, findmnt, rev, column, whereis
-  - cal, last, su, login, fsck, mkswap, swapon, swapoff, uuidgen, namei, ionice
-  - ps, top, free, pkill, pgrep, pmap, pwdx, sysctl, tload, uptime, vmstat, w, watch
-  - ifconfig, netstat, route, arp, ip, ss, bridge, tc, nstat, ping, arping, tracepath
-  - grep, egrep, fgrep, sed, awk, gawk, tar, gzip, gunzip, zcat, bzip2, bunzip2
-  - xz, unxz, find, xargs, diff, cmp, file, less, nano, vi, hostname, which, logger
-  - passwd, useradd, userdel, usermod, groupadd, gpasswd, chage, crontab, adduser
-  - apt, apt-get, apt-cache, dpkg, dpkg-query, update-alternatives
-  - systemctl, journalctl, loginctl, timedatectl, hostnamectl, sudo, sudoedit, service
-  - bash, sh, ssh, scp, sftp, ssh-keygen, perl, python3, gpg, curl, wget, openssl
-  - dig, nslookup, host, xxd, at, finger, ltrace, strace,busybox
-  - iostat, pcre2-config, hciconfig, pidstat, tempfile, ibus, networkctl, getconf
-  - lspci, lsusb, hashcat, getent, gsettings, listres, traceroute, lnstat, getfacl
-  - getcap, kmod, linux-version, lshw, lsipc, p11-kit, pactl, routel, rpcinfo
-  - lastlog, time, b2sum, cupsctl, gpgconf, iwconfig, laptop-detect
+  # Packages this host has BEYOND the stock image (the stock ones are read from
+  # plugins/ubuntu_packages.txt, so wget, curl, sudo... are already there).
+  extra_packages: []
+  # What this host ships is read from the real image (plugins/ubuntu_commands.py);
+  # only the difference from a stock install is written here.
+  stock_image: hp-real:20.04
+  stock_commands: plugins/ubuntu_commands.txt
+  stock_packages: plugins/ubuntu_packages.txt
+  extra_tools:
+  - busybox, g++, gcc, gdb, htop, journalctl, less, ltrace, make, nmap, ping, strace, systemctl, tracepath, traceroute
+  missing_tools: []             # stock commands this host does NOT have
   users:
     root:
       uid: 0
@@ -171,13 +125,6 @@ system_state:
       home: /home/cocadmin
       shell: /bin/bash
       gecos: COC Admin
-    # uid/gid/home/shell as this Ubuntu 20.04 host really has them (getent
-    # passwd). These accounts already exist in the base image, so the
-    # generated Dockerfile skips creating them and the container keeps the
-    # base image's values -- declaring anything else here only makes the
-    # honeypot's /etc/passwd disagree with its own ground truth. The shells
-    # were /bin/sh and are /usr/sbin/nologin; sshd was uid 101, which is
-    # 22.04's, while 20.04 puts systemd-resolve there and sshd at 126.
     daemon:
       uid: 1
       gid: 1
@@ -205,24 +152,6 @@ system_state:
       shell: /usr/sbin/nologin
   shadow:
     root: $6$4aOmWdpJ$/kyPOik9rR0kSLyABIYNXgg/UqlWX3c1eIaovOLWphShTGXmuUAMq6iu9DrcQqlVUw3Pirizns4u27w3Ugvb6.
-  # Measured on the development host (Ubuntu 20.04.6) so a ground-truth
-  # answer can be checked by hand in a terminal there. Three layers have to
-  # agree for a tool: this block (what the honeypot answers), the image's
-  # ground_truth.packages (what the container really runs), and the host
-  # (what you can verify). They did not: the block declared 22.04 versions
-  # for gcc/php/mysql while the image installs none of those, so the honeypot
-  # answered "gcc ... 11.4.0" against a ground truth of
-  # "bash: gcc: command not found".
-  #
-  # Tools the host does not have (php, nginx, tmux, emacs, mysql) are gone
-  # from the list: with no entry the honeypot reports command-not-found,
-  # which is what the host and the container both do.
-  #
-  # Three entries CANNOT match a plain ubuntu:20.04 container, because this
-  # host carries newer builds than 20.04 ships -- python3 3.10.13 (a venv,
-  # 20.04 ships 3.8.10), git 2.50.1 (20.04 ships 2.25.1) and node v20.20.2
-  # (20.04 ships none). They are declared as the host has them; pin those
-  # versions in the image, or expect those three to disagree.
   versions:
     nmap: Nmap version 7.80 ( https://nmap.org )
     python3: Python 3.10.13
@@ -434,21 +363,12 @@ guardrail:
   enabled: true
   sanitize: true
   isolate: true
-  # OUTPUT side, off for now: the guardrail overhead experiment measures the
-  # PROMPT side on its own (detector score, fence, sanitise). validate re-reads
-  # every answer and retry_on_break re-asks the model a second time, which is a
-  # whole extra LLM call -- a separate experiment, not a term inside this one.
-  # Turn both back on for deployment, and when measuring the output side.
   validate: false
   retry_on_break: false
-  # Fence only what the detector flags. False fences EVERY prompt, which costs
-  # prompt space on commands nothing is wrong with -- and makes guard-on send
-  # the model different text than guard-off, so a measured "overhead" is the
-  # model answering a rewritten prompt rather than the detector's own cost.
   fence_on_detect: true
   detector:
     enabled: true
-    provider: llama
+    provider: nemo
     model: meta-llama/Llama-Prompt-Guard-2-86M
     device: cpu
     threshold: 0.5

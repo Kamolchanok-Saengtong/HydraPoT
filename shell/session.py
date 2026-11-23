@@ -49,11 +49,14 @@ from threat_intel.mitre_mapper import tag as mitre_tag
 from core.router import classify
 
 from shell.fakefs import FakeFS
-from shell.software import Software
+from shell.software import (COMMAND_WORD, Software, bash_words, stock_command_paths,
+                            stock_commands, stock_packages)
 from shell import state as state_mod
 from shell.state import StateTracker
 from shell.responders import Responders
 from shell.cowrie_link import CowrieLink
+from shell import git_clone
+from shell.rulecore import _human
 from shell.telemetry import Telemetry
 from shell.routing import Routing
 from shell.execution import Executor
@@ -142,7 +145,7 @@ def parse_command(cmd: str):
     (rule 3). Without the flag the rewrite erased the only evidence of how the
     command was invoked.
     """
-    text = cmd.strip()
+    text = compound.strip_comment(cmd.strip()).strip()
     # `sudo -l` / `sudo -u x cmd` keep their prefix: stripping it left "-l" as the command
     actual_cmd = (text[5:].strip() if text.startswith("sudo ")
                   and not text[5:].lstrip().startswith("-") else text)
@@ -232,10 +235,15 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
     # One per session -- see shell/software.py. Registers what the box ships
     # with, so `wget --version` works before the attacker installs anything.
     sw = Software(SYSTEM_STATE,
+                  stock=stock_commands(config.system_state.get("stock_commands")),
+                  stock_paths=stock_command_paths(config.system_state.get("stock_commands")),
+                  stock_pkgs=stock_packages(config.system_state.get("stock_packages")),
+                  extra_tools=config.system_state.get("extra_tools", []),
+                  missing_tools=config.system_state.get("missing_tools", []),
                   base_tools=config.system_state.get("base_tools", []),
                   tool_packages=config.system_state.get("tool_packages", {}),
                   default_versions=config.system_state.get("versions", {}),
-                  pre_installed=config.system_state.get("pre_installed", []))
+                  pre_installed=config.system_state.get("extra_packages", []))
     sw.seed_pre_installed()
 
     prompt_manager = PromptManager(
@@ -325,7 +333,7 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
                         users=lambda: SYSTEM_STATE["users"],
                         variables=SYSTEM_STATE["vars"], username=username,
                         processes=processes, kernel=config.honeypot.kernel,
-                        materializer=materializer)
+                        materializer=materializer, tools=sw)
     materializer.live = rulecore.live_lines
 
     def _gated_llm(agent_obj, system_prompt, user_prompt, cmd, source):
@@ -426,25 +434,24 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
     link.tracker = tracker          # lets link.catch_up() read state + deltas
 
     # ── shortcut: log + return ────────────────────────────────────────────
-    def _reaches_a_model(agent, needs_llm, base, lookup_base, cmd) -> bool:
-        """Should this command be allowed to build a prompt at all?
+    def _reaches_a_model(needs_llm, base, lookup_base, cmd) -> bool:
+        """Is the first word a real command? If not, no model is ever asked.
 
-        The cheapest defence there is, and the only one that cannot fail: a
-        command that never reaches a model has no prompt to inject into. Only
-        ~15% of a session's traffic gets past here.
+        Checked BEFORE the answer is routed, so it holds whichever router picked
+        the agent (FI table or learned policy) and whatever the FI band said.
+        Only ~15% of a session's traffic gets past here.
 
         False -> the caller answers "command not found" and stops.
 
-        The exceptions are shell builtins and package verbs, which are real
-        even though no binary backs them, and ./script, which Cowrie owns.
+        Real here means: provided by the box (base, pre-installed or installed),
+        a bash builtin or keyword, a path, or not a command word at all (syntax,
+        flags), which this check leaves to the shell handling below.
         """
-        if agent != "cowrie" or needs_llm or sw.available(lookup_base):
-            return True                       # a real tool, or already routed away
-        if not base or base in ("echo", "cd", "exit", "logout", "clear"):
-            return True                       # shell builtins
-        if cmd.startswith(("./", "apt", "dpkg")):
-            return True                       # Cowrie owns these
-        return False
+        if needs_llm or sw.available(lookup_base):
+            return True
+        if not base or base in bash_words() or not COMMAND_WORD.match(base):
+            return True
+        return cmd.startswith(("./", "apt", "dpkg"))      # Cowrie owns these
 
     def _llm_send(agent_obj, system_prompt, user_prompt, record_usage=True,
                   cmd=None):
@@ -680,6 +687,9 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
         # _finish() is a SIBLING closure, not nested in handle(), so it cannot
         # see this local. Published the way handle.last_usage already is.
         handle.fi_method = fi_method
+        # A line that is only a comment (or empty) prints nothing in bash: no agent needed
+        if force_agent is None and not actual_cmd:
+            return _finish(cmd, "cowrie", "", fi_score, t_start)
 
         # ── shell SYNTAX that produces no output — handle like real bash ──────
         #    A real bash (and Cowrie's real container) treats these as silent;
@@ -834,6 +844,27 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
                     time.sleep(random.uniform(0.1, 0.4))
                 return _finish(cmd, "cowrie", output, fi_score, t_start, streamed=True)
 
+        # ── git clone — real tree, fetched by Cowrie ──────────────────────
+        # Cowrie has no git, so this used to reach the cloud model, which
+        # invented a repo. See shell/git_clone.py; anything it cannot serve
+        # returns None and falls through to the old path.
+        gc = getattr(config, "git_clone", None)
+        if actual_base == "git" and gc is not None and gc.enabled:
+            def _register(target, url, size):
+                SYSTEM_STATE["files"][fs.resolve(target)] = {
+                    "content": f"[downloaded from {url}]", "source": url,
+                    "perms": "-rw-r--r--", "size": _human(-(-size // 1024)),
+                    "backend": "cowrie"}
+            text = git_clone.clone(
+                actual_cmd, gc,
+                run=lambda c: _cowrie_send(c)[0],
+                write=write_fn or (lambda _t: None),
+                mkdir=lambda c: tracker.record(c, "", on_cowrie=True),
+                register=_register)
+            if text is not None:
+                return _finish(cmd, "cowrie", text, fi_score, t_start,
+                               streamed=write_fn is not None)
+
         # ── wget/curl — REAL download via Cowrie, streamed ───────────────
         # This used to call responders.download_output(): a synthetic transcript
         # that logged as agent "cowrie" without ever contacting Cowrie. It
@@ -902,14 +933,12 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
                 return _finish(cmd, "on_device", "", fi_score, t_start)
 
         # ── static commands — guaranteed dispatch, independent of FI/agent ──
-        # nmap/ping/traceroute/tracepath/top/htop/watch/tail-f/vim-nano-emacs/
-        # less-more must ALWAYS produce their dedicated safe fake output
-        # (static_handler.py exists specifically because these hang or behave
-        # badly in real Cowrie) — this can't depend on what FI band or
-        # classify() decides, so it's checked unconditionally here, after the
-        # more specific overrides above (apt/wget-curl/editor-available/etc.)
-        # have had their turn but before routing even runs.
-        if is_static(actual_cmd):
+        # nmap/ping/traceroute/top/htop/watch/tail-f/editors/pagers hang or misbehave in
+        # real Cowrie, so static_handler.py answers them -- whatever the FI band or
+        # classify() says. A canned answer pretends the tool exists, so the tool must
+        # be in the notebook (stock, extra_tools, or apt-installed); editors answer
+        # with their own "not found".
+        if is_static(actual_cmd) and (sw.available(lookup_base) or actual_base in EDITORS):
             output = dispatch_static(actual_cmd, write_fn)
             tracker.record(actual_cmd, output)
             return _finish(cmd, "cowrie", output, fi_score, t_start, streamed=True)
@@ -986,7 +1015,7 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
         # command. Everything downstream -- sanitise, isolate, validate --
         # only guards what gets PAST here: injection smuggled inside a command
         # that really exists.
-        if not _reaches_a_model(agent, needs_llm, actual_base, lookup_base,
+        if not _reaches_a_model(needs_llm, actual_base, lookup_base,
                                 actual_cmd):
             output = (f"{actual_base}: applet not found" if from_busybox
                       else f"bash: {actual_base}: command not found")
@@ -1128,7 +1157,7 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
         """One line can hold several commands (`a && b ; c`): run them in order.
 
         Forced experiment arms keep measuring one raw command."""
-        parts = compound.split(cmd) if force_agent is None else None
+        parts = compound.split(compound.strip_comment(cmd)) if force_agent is None else None
         if parts is None:
             return _handle_one(cmd, write_fn, read_fn, force_agent)
         outputs, ok = [], True

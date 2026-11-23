@@ -42,6 +42,8 @@ FUNCTIONAL = frozenset({
     "raw", "size_text",
     # Size the filesystem design records while the bytes are still unknown
     "psize",
+    # A package this session installed: pkg(name) = (version, version string)
+    "pkg",
 })
 # sealed(dir): closed-world; the procedural generator invents no children
 # listed(path): shown in the old SYSTEM_STATE["files"] view

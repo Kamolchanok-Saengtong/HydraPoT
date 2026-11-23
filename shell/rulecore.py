@@ -93,7 +93,7 @@ class RuleCore:
 
     def __init__(self, register, fs, hostname: str, users=None, variables=None,
                  username: str = "root", device: str = "801h/2049d",
-                 processes=(), kernel: str = "5.15.0-generic", materializer=None):
+                 processes=(), kernel: str = "5.15.0-generic", materializer=None, tools=None):
         self.reg = register
         self.fs = fs
         self.hostname = hostname
@@ -111,6 +111,7 @@ class RuleCore:
         self.processes = sorted(processes, key=lambda p: p["PID"])
         self.kernel = kernel
         self.materializer = materializer
+        self.tools = tools            # what is installed: path_of(name), kind(name)
         # Cowrie-safe commands that reproduce the last answer's change in Cowrie's own
         # filesystem: absolute quoted paths, no -p or ~ (Cowrie's mkdir lacks both)
         self.sync_cmds = []
@@ -229,8 +230,14 @@ class RuleCore:
             only_dirs = arg.endswith("/")
             head, pattern = posixpath.split(arg.rstrip("/"))
             if any(c in head for c in "*?["):
-                return None
-            directory = self._resolve(head) if head else self.reg.cwd()
+                hits = self._glob_path(arg.rstrip("/"))
+                if hits is None:
+                    return None
+                if only_dirs:
+                    hits = [h for h in hits if self._kind(self._resolve(h)) == "dir"]
+                out += [h + ("/" if only_dirs else "") for h in hits] or [arg]
+                continue
+            directory = self._resolve(head if head else self.reg.cwd())
             if self._kind(directory) != "dir" or not self._closed(directory):
                 return None
             names = [n for n in self._children(directory)
@@ -243,6 +250,33 @@ class RuleCore:
             # an unmatched pattern stays literal, as in bash
             out += [posixpath.join(head, n) + suffix if head else n + suffix for n in hits] or [arg]
         return out
+
+    def _glob_path(self, arg):
+        """Expand a pattern whose directory part holds a glob too, one path
+        component at a time. None when a directory on the way is not fully known."""
+        absolute = arg.startswith("/")
+        cur = [("/" if absolute else self.reg.cwd(), "/" if absolute else "")]
+        comps = [c for c in arg.split("/") if c]
+        for i, comp in enumerate(comps):
+            last = i == len(comps) - 1
+            nxt = []
+            for directory, shown in cur:
+                if not any(c in comp for c in "*?["):
+                    path = posixpath.join(directory, comp)
+                    if self._kind(path) is not None and (last or self._kind(path) == "dir"):
+                        nxt.append((path, shown + comp + ("" if last else "/")))
+                    continue
+                directory = self._resolve(directory)      # load it from the design first
+                if self._kind(directory) != "dir" or not self._closed(directory):
+                    return None
+                names = [n for n in self._children(directory)
+                         if comp.startswith(".") or not n.startswith(".")]
+                for n in sorted(fnmatch.filter(names, comp), key=lambda n: n.lower().lstrip(".")):
+                    path = posixpath.join(directory, n)
+                    if last or self._kind(path) == "dir":
+                        nxt.append((path, shown + n + ("" if last else "/")))
+            cur = nxt
+        return [shown for _, shown in cur]
 
     _BIN_DIRS = ("/bin", "/sbin", "/usr/bin", "/usr/sbin", "/usr/local/bin")
 
@@ -1031,6 +1065,45 @@ class RuleCore:
                 errors.append(f"chattr: No such file or directory while trying to stat {arg}")
         self.status = 1 if errors else 0
         return True, "\n".join(errors)
+
+    def _cmd_which(self, argv):
+        names = [a for a in argv[1:] if a != "--"]
+        if not self.tools or any(a.startswith("-") for a in names):
+            return False, None                    # -a and friends: not modelled
+        found = [self.tools.path_of(n) for n in names]
+        self.status = 0 if names and all(found) else 1
+        return True, "\n".join(p for p in found if p)
+
+    def _cmd_command(self, argv):
+        if not self.tools or len(argv) < 3 or argv[1] != "-v":
+            return False, None
+        out, ok = [], True
+        for name in argv[2:]:
+            kind = self.tools.kind(name)
+            if kind in ("keyword", "builtin"):
+                out.append(name)
+            elif kind == "file":
+                out.append(self.tools.path_of(name))
+            else:
+                ok = False
+        self.status = 0 if ok else 1
+        return True, "\n".join(out)
+
+    def _cmd_type(self, argv):
+        if not self.tools or len(argv) < 2 or any(a.startswith("-") for a in argv[1:]):
+            return False, None
+        lines, ok = [], True
+        for name in argv[1:]:
+            kind = self.tools.kind(name)
+            if kind == "file":
+                lines.append(f"{name} is {self.tools.path_of(name)}")
+            elif kind:
+                lines.append(f"{name} is a shell {kind}")
+            else:
+                lines.append(f"bash: type: {name}: not found")
+                ok = False
+        self.status = 0 if ok else 1
+        return True, "\n".join(lines)
 
     def _cmd_true(self, argv):
         return True, ""
