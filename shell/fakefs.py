@@ -18,11 +18,26 @@ PER-SESSION. FakeFS holds one session's state dict, so two SSH sessions can
 never see each other's files. That is why this is a class and not a module of
 functions reading a global.
 """
+import calendar
 import posixpath
+import time
 
 # A real filesystem is case- and spelling-agnostic: `foo`, `./foo` and
 # `/root/foo` are one file. Every path entering state["files"] goes through
 # resolve() so the dict has ONE key per real file.
+
+
+def shadow_days(changed) -> int:
+    """Days since 1970-01-01 for /etc/shadow's "last changed" field.
+
+    `changed` is config.yaml system_state.shadow_changed (YYYY-MM-DD): when the
+    accounts were set up. It has to fall after the OS release, or `cat /etc/shadow`
+    shows passwords older than the distribution.
+    """
+    try:
+        return calendar.timegm(time.strptime(str(changed), "%Y-%m-%d")) // 86400
+    except ValueError:
+        return calendar.timegm((2024, 6, 12, 0, 0, 0)) // 86400
 
 
 def mode_to_perms(mode: str) -> str:
@@ -216,6 +231,12 @@ class FakeFS:
                          f"{u.get('home', f'/home/{name}')}:{u.get('shell', '/bin/sh')}")
         return "\n".join(lines)
 
+    def group(self) -> str:
+        """/etc/group from the configured groups, in the order config.yaml lists them."""
+        return "\n".join(
+            f"{name}:x:{g.get('gid', 0)}:{','.join(g.get('members') or [])}"
+            for name, g in self.state.get("groups", {}).items())
+
     def shadow(self) -> str:
         """/etc/shadow generated from the configured persona.
 
@@ -224,12 +245,13 @@ class FakeFS:
         reach a prompt or an export.
         """
         return "\n".join(
-            f"{name}:{self.state.get('shadow', {}).get(name, '*')}:15800:0:99999:7:::"
+            f"{name}:{self.state.get('shadow', {}).get(name, '*')}:"
+            f"{shadow_days(self.state.get('shadow_changed'))}:0:99999:7:::"
             for name in self.state.get("users", {}))
 
     # Generated on read rather than stored, so editing config.yaml's users is
     # immediately reflected and the two files can never drift apart.
-    VIRTUAL_PATHS = ("/etc/passwd", "/etc/shadow")
+    VIRTUAL_PATHS = ("/etc/passwd", "/etc/shadow", "/etc/group")
 
     def is_virtual(self, path: str) -> bool:
         return path in self.VIRTUAL_PATHS
@@ -241,5 +263,7 @@ class FakeFS:
             return self.passwd()
         if path == "/etc/shadow":
             return self.shadow()
+        if path == "/etc/group":
+            return self.group()
         rec = self.state.get("files", {}).get(self.resolve(path), {})
         return rec.get("content") if rec else None
