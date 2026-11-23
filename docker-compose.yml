@@ -1,17 +1,27 @@
 services:
   cowrie:
+    restart: unless-stopped
     image: cowrie/cowrie
     # COWRIE_PORT comes from .env, which hp writes from config.yaml's
     # agents.cowrie.port -- config.yaml is the single source. The default keeps
     # a bare `docker-compose up -d` working on a fresh clone with no .env.
     ports:
       - "127.0.0.1:${COWRIE_PORT:-2222}:2222"
+    environment:
+      # Cowrie's wget allows 5 requests per host per window by default, which
+      # caps a `git clone` at about 5 files. Raised so a clone can land its
+      # files; still a per-host cap, so the honeypot cannot be used to fetch
+      # without limit. Lower it in .env to tighten.
+      COWRIE_SHELL_WGET_RATE_LIMIT_REQUESTS: ${COWRIE_WGET_RATE_LIMIT_REQUESTS:-30}
 
   # ── HydraPoT SSH honeypot (the attacker-facing front end) ──────────────────
   hydrapot:
+    restart: unless-stopped
     build:
       context: .
       dockerfile: docker/Dockerfile
+      args:
+        WITH_LOCAL_MODEL: ${WITH_LOCAL_MODEL:-0}
     image: hydrapot:latest
     environment:
       SERVICE: honeypot
@@ -34,24 +44,47 @@ services:
 
   # ── Dashboard (same image, different role via SERVICE) ─────────────────────
   dashboard:
+    restart: unless-stopped
     build:
       context: .
       dockerfile: docker/Dockerfile
+      args:
+        WITH_LOCAL_MODEL: ${WITH_LOCAL_MODEL:-0}
     image: hydrapot:latest
     environment:
       SERVICE: dashboard
-    ports:
-      # Loopback ONLY by default: reach it via an SSH tunnel, or let the TLS
-      # layer (docker-compose.tls.yml) / your own proxy front it. It is never
-      # on the LAN in clear -- TLS is a deliberate add-on, not a default.
-      - "127.0.0.1:${DASHBOARD_PORT:-8050}:8050"
+    # No host port: the dashboard is reachable ONLY through the HTTPS proxy below.
+    expose:
+      - "8050"
     volumes:
       - ./config.yaml:/app/config.yaml:ro
       - ./data:/app/data                   # reads the same SQLite the honeypot writes
     depends_on:
       - hydrapot
 
+  # ── HTTPS front door for the dashboard (the only way in) ───────────────────
+  # Swap this service for your org's proxy; the contract is "terminate TLS,
+  # forward to dashboard:8050". Cert settings come from .env (see proxy/README.md).
+  caddy:
+    restart: unless-stopped
+    image: caddy:2
+    ports:
+      - "${HTTPS_PORT:-443}:443"
+    environment:
+      TLS_SITE: ${TLS_SITE:-localhost}
+      TLS_CERT: ${TLS_CERT:-internal}
+      TLS_KEY:  ${TLS_KEY:-}
+    volumes:
+      - ./proxy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./certs:/certs:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - dashboard
+
 volumes:
+  caddy-data:
+  caddy-config:
   hf-cache:        # named volume: survives restarts, keeps model downloads
 
 # Stock Cowrie, with its own built-in filesystem. Nothing here depends on a

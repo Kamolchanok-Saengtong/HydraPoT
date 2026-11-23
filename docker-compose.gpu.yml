@@ -1,0 +1,19 @@
+# GPU overlay: the same stack, with the honeypot on the CUDA image and the GPU
+# passed through. Needs an NVIDIA GPU and the NVIDIA Container Toolkit on the host.
+#
+#   docker-compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
+#
+# Set agents.on_device.enabled: true in config.yaml. Only the honeypot needs the
+# GPU; the dashboard keeps the CPU image.
+services:
+  hydrapot:
+    build:
+      dockerfile: docker/Dockerfile.gpu
+    image: hydrapot:gpu
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

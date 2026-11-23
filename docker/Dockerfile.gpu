@@ -1,36 +1,30 @@
-# ─────────────────────────────────────────────────────────────────────────────
-# HydraPoT — GPU image (the full research variant: on-device LLM arm ON)
-#
-# Same source code as docker/Dockerfile — the ONLY differences are a CUDA base
-# image and that the on-device model can load. Build this when you have an
-# NVIDIA GPU and want all three arms (Cowrie + on-device + Cloud).
-#
-#   docker build -f docker/Dockerfile.gpu -t hydrapot:gpu .
-#   # run with the GPU exposed (needs the NVIDIA Container Toolkit):
-#   docker run --gpus all ... hydrapot:gpu
-#
-# NOTE: this is the Step-7 variant. Get the CPU image (docker/Dockerfile)
-# working and tested first; this reuses everything it establishes.
-# ─────────────────────────────────────────────────────────────────────────────
-FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
+# GPU variant: the CPU image plus a CUDA build of llama-cpp-python, so the
+# on-device model runs on the GPU (the agent sets n_gpu_layers=-1).
+# devel, not runtime: compiling llama-cpp-python with CUDA needs nvcc.
+FROM nvidia/cuda:12.4.1-devel-ubuntu22.04
 
 WORKDIR /app
 
-# Python + build tools on the CUDA base (it ships no Python by default).
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        python3.11 python3-pip git build-essential \
-    && ln -sf /usr/bin/python3.11 /usr/bin/python \
+        python3 python3-pip git build-essential cmake \
+    && ln -sf /usr/bin/python3 /usr/bin/python \
     && rm -rf /var/lib/apt/lists/*
 
-# Dependency layer first (cache-friendly), then source + install — identical to
-# the CPU image. bitsandbytes / torch resolve to their CUDA wheels here.
+# Dependencies first, in layers that depend only on pyproject.toml.
 COPY pyproject.toml README.md ./
-RUN pip install --no-cache-dir --upgrade pip
+RUN pip install --no-cache-dir --upgrade pip tomli
+RUN python -c "import tomli; print('\n'.join(tomli.load(open('pyproject.toml','rb'))['project']['dependencies']))" > /tmp/requirements.txt \
+    && pip install --no-cache-dir -r /tmp/requirements.txt
+
+# No wheels exist, so this compiles. The stubs let it link without a driver
+# present at build time; the real libcuda comes from the host at run time.
+RUN CMAKE_ARGS="-DGGML_CUDA=on" LIBRARY_PATH=/usr/local/cuda/lib64/stubs \
+    pip install --no-cache-dir llama-cpp-python
+
+# Editable, like the CPU image: config.yaml, data/ and the account DB must
+# resolve under /app where compose mounts them, not inside site-packages.
 COPY . .
-RUN pip install --no-cache-dir .
+RUN pip install --no-cache-dir -e . --no-deps
 
 ENV HF_HOME=/app/data/hf-cache
-# The on-device arm is enabled through config.yaml (agents.on_device.enabled),
-# not here — config stays the single source of truth for both images.
-
 ENTRYPOINT ["bash", "docker/entrypoint.sh"]

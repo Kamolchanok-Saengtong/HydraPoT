@@ -21,18 +21,27 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         git build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy the dependency manifest FIRST and install, before the source. Docker
-# caches this layer, so editing code later rebuilds in seconds instead of
-# re-installing every dependency.
-COPY pyproject.toml ./
-COPY README.md ./
-# A minimal tree so `pip install .` can resolve the package metadata; the full
-# source is copied in the next step. (setuptools reads pyproject at this point.)
+# Dependencies first, in layers that depend only on pyproject.toml, so editing
+# code later rebuilds in seconds instead of re-downloading everything.
+COPY pyproject.toml README.md ./
 RUN pip install --no-cache-dir --upgrade pip
+# CPU-only torch: the CPU image cannot use CUDA, and the CUDA wheel adds several GB.
+# Installed first, so the next step sees torch as already satisfied.
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+RUN python -c "import tomllib; print('\n'.join(tomllib.load(open('pyproject.toml','rb'))['project']['dependencies']))" > /tmp/requirements.txt \
+    && pip install --no-cache-dir -r /tmp/requirements.txt
 
-# Now the full source, then the editable-equivalent install of the package.
+# Opt-in: the on-device model needs llama-cpp-python, which has no wheels and
+# compiles from source (several minutes). Off by default so the image stays lean.
+ARG WITH_LOCAL_MODEL=0
+RUN if [ "$WITH_LOCAL_MODEL" = "1" ]; then pip install --no-cache-dir llama-cpp-python; fi
+
+# Now the full source, installed EDITABLE like the native door. Paths in the code
+# (config.yaml, data/, the account DB) resolve relative to the source tree, so
+# they must land in /app where compose mounts them -- a normal install would
+# resolve them inside site-packages and miss the mounted volume.
 COPY . .
-RUN pip install --no-cache-dir .
+RUN pip install --no-cache-dir -e . --no-deps
 
 # HF model cache lives on a mounted volume (see docker-compose.yml) so weights
 # download once, never into the image.

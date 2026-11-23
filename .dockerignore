@@ -1,0 +1,14 @@
+# Keep the build context small: none of this is needed to run HydraPoT.
+.git
+honeypot_new
+experiment_data
+dataset
+finetuning
+archive_code
+tests
+data
+certs
+.env
+**/__pycache__
+**/*.pyc
+*.pdf
