@@ -153,3 +153,49 @@ def df(disks, argv, mounted_on, total_kb: int = 0) -> str:
         else:
             rows.append(f"{d['device']:<14} {size:>9} {used:>7} {avail:>9} {pct:>4} {d['mount']}")
     return "\n".join(rows)
+
+
+_CGROUPS = ("cpu,cpuacct", "freezer", "pids", "rdma", "net_cls,net_prio", "cpuset", "memory",
+            "blkio", "devices", "perf_event", "hugetlb")
+
+
+def mount_lines(disks, total_kb: int, uid: int = 0) -> str:
+    """`mount` the way Ubuntu 20.04 lists it: the kernel's pseudo-filesystems around the
+    declared disks, with RAM-sized mounts following the machine's memory."""
+    sized = {d["mount"]: _sized(d, total_kb) for d in disks}
+    size = lambda mount: sized[mount]["size_kb"] if mount in sized else total_kb // 2
+    out = ["sysfs on /sys type sysfs (rw,nosuid,nodev,noexec,relatime)",
+           "proc on /proc type proc (rw,nosuid,nodev,noexec,relatime)",
+           f"udev on /dev type devtmpfs (rw,nosuid,relatime,size={size('/dev')}k,nr_inodes={size('/dev') // 4},mode=755)",
+           "devpts on /dev/pts type devpts (rw,nosuid,noexec,relatime,gid=5,mode=620,ptmxmode=000)",
+           f"tmpfs on /run type tmpfs (rw,nosuid,noexec,relatime,size={size('/run')}k,mode=755)"]
+    for d in disks:
+        if d["device"].startswith("/dev/sd") or d["device"].startswith("/dev/vd") or d["device"].startswith("/dev/nvme"):
+            if d["mount"] == "/":
+                out.append(f"{d['device']} on / type ext4 (rw,relatime)")
+    out += ["securityfs on /sys/kernel/security type securityfs (rw,nosuid,nodev,noexec,relatime)",
+            "tmpfs on /dev/shm type tmpfs (rw,nosuid,nodev)",
+            f"tmpfs on /run/lock type tmpfs (rw,nosuid,nodev,noexec,relatime,size={size('/run/lock')}k)",
+            "tmpfs on /sys/fs/cgroup type tmpfs (ro,nosuid,nodev,noexec,mode=755)",
+            "cgroup2 on /sys/fs/cgroup/unified type cgroup2 (rw,nosuid,nodev,noexec,relatime,nsdelegate)",
+            "cgroup on /sys/fs/cgroup/systemd type cgroup (rw,nosuid,nodev,noexec,relatime,xattr,name=systemd)",
+            "pstore on /sys/fs/pstore type pstore (rw,nosuid,nodev,noexec,relatime)",
+            "none on /sys/fs/bpf type bpf (rw,nosuid,nodev,noexec,relatime,mode=700)"]
+    out += [f"cgroup on /sys/fs/cgroup/{c} type cgroup (rw,nosuid,nodev,noexec,relatime,{c})" for c in _CGROUPS]
+    out += ["systemd-1 on /proc/sys/fs/binfmt_misc type autofs (rw,relatime,fd=28,pgrp=1,timeout=0,minproto=5,maxproto=5,direct,pipe_ino=18226)",
+            "hugetlbfs on /dev/hugepages type hugetlbfs (rw,relatime,pagesize=2M)",
+            "mqueue on /dev/mqueue type mqueue (rw,relatime)",
+            "debugfs on /sys/kernel/debug type debugfs (rw,relatime)",
+            "tracefs on /sys/kernel/tracing type tracefs (rw,relatime)",
+            "configfs on /sys/kernel/config type configfs (rw,relatime)",
+            "fusectl on /sys/fs/fuse/connections type fusectl (rw,relatime)"]
+    for d in disks:
+        if d["device"].startswith("/dev/loop"):
+            out.append(f"{d['device']} on {d['mount']} type squashfs (ro,nodev,relatime)")
+    for d in disks:
+        if d["mount"] == "/boot/efi":
+            out.append(f"{d['device']} on /boot/efi type vfat (rw,relatime,fmask=0077,dmask=0077,codepage=437,"
+                       "iocharset=iso8859-1,shortname=mixed,errors=remount-ro)")
+    owner = f",uid={uid},gid={uid}" if uid else ""
+    out.append(f"tmpfs on /run/user/{uid} type tmpfs (rw,nosuid,nodev,relatime,size={size('/run') - 4}k,mode=700{owner})")
+    return "\n".join(out)

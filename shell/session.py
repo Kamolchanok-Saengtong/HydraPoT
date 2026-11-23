@@ -1277,6 +1277,24 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
     handle.prompt_manager = prompt_manager
     handle.register = register
     handle.rulecore = rulecore
+
+    # `su`, `sudo -u` and `exit` change who the commands run as; the SSH layer owns the prompt
+    def _switch_user(name, login):
+        """None on success, else the line `su` prints. Commands answer as `name` from now on."""
+        user = SYSTEM_STATE["users"].get(name)
+        if user is None:
+            return f"su: user {name} does not exist"
+        if user.get("shell", "").endswith(("nologin", "false")):
+            return "This account is currently not available."
+        rulecore.username = name
+        fs.username = name
+        if login:
+            SYSTEM_STATE["cwd"] = user["home"]
+        return None
+    handle.switch_user = _switch_user
+    handle.user_info = lambda name: SYSTEM_STATE["users"].get(name)
+    handle.is_sudoer = lambda name: name == "root" or name in (
+        SYSTEM_STATE["groups"].get("sudo") or {}).get("members", [])
     handle.gate = gate
     handle.forced = False
     # Production's own prompt assembly, so Part A's standalone arm can send the

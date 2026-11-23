@@ -199,6 +199,10 @@ class RuleCore:
             return False, None
         if "/" in argv[0]:
             return self._run_path(argv)
+        if self.username != "root":
+            denied = self._permission_denied(argv)
+            if denied:
+                return True, denied
         handler = getattr(self, f"_cmd_{argv[0]}", None)
         if not handler:
             return False, None
@@ -213,7 +217,7 @@ class RuleCore:
                                "grep", "head", "tail", "wc", "stat", "du", "echo", "pwd",
                                "printenv", "env", "md5sum", "sha1sum", "sha256sum", "id",
                                "netstat", "ss", "ifconfig", "ip", "free", "df", "hostname",
-                               "lsb_release", "hostnamectl", "nproc", "groups", "top", "history", "dpkg", "apt"})
+                               "lsb_release", "hostnamectl", "nproc", "groups", "top", "history", "dpkg", "apt", "whoami", "mount"})
 
     def _pipeline(self, stages):
         """`source | filter | ...`: the register answers the source, the filters run exactly.
@@ -797,6 +801,71 @@ class RuleCore:
             return False, None
         out = packages.apt_list(rows, argv, piped=bool(self._peers), quiet=self._quiet)
         return (True, out) if out is not None else (False, None)
+
+    # ── who may do what: a user other than root ─────────────────────────────
+
+    _ROOT_ONLY_FILES = ("/etc/shadow", "/etc/gshadow", "/etc/sudoers", "/etc/shadow-")
+    _READERS = frozenset({"cat", "grep", "wc", "sort", "uniq", "md5sum", "sha1sum", "sha256sum",
+                          "stat", "strings", "file", "less", "more", "cut", "awk", "sed"})
+
+    def _protected_dir(self, path):
+        """The 0700 directory (root's home, another user's home) this path is inside, or None."""
+        if path == "/root" or path.startswith("/root/"):
+            return "/root"
+        for name, u in self.users().items():
+            home = u.get("home", "")
+            if (u.get("uid", 0) >= 1000 and name != self.username and home.startswith("/home/")
+                    and (path == home or path.startswith(home + "/"))):
+                return home
+        return None
+
+    def _denied_read(self, path) -> bool:
+        return (self.username != "root"
+                and (path in self._ROOT_ONLY_FILES or path.startswith("/etc/ssh/ssh_host_")
+                     and not path.endswith(".pub") or self._protected_dir(path) is not None))
+
+    def _may_write(self, path) -> bool:
+        if self.username == "root":
+            return True
+        home = (self.users().get(self.username) or {}).get("home", "/nonexistent")
+        return (path == "/dev/null" or any(path == d or path.startswith(d + "/")
+                                           for d in (home, "/tmp", "/var/tmp", "/dev/shm")))
+
+    def _permission_denied(self, argv):
+        """What Linux says when this user may not touch a path, or None."""
+        cmd = argv[0]
+        args = [a for a in argv[1:] if not a.startswith("-")]
+        if cmd == "grep":
+            args = args[1:]
+        for a in args:
+            path = self._resolve(a)
+            if cmd in ("head", "tail") and self._denied_read(path):
+                return f"{cmd}: cannot open '{a}' for reading: Permission denied"
+            if cmd in self._READERS and self._denied_read(path):
+                return f"{cmd}: {a}: Permission denied"
+            if cmd == "ls" and self._denied_read(path):
+                inside = self._protected_dir(path)
+                return (f"ls: cannot open directory '{a}': Permission denied" if inside == path
+                        else f"ls: cannot access '{a}': Permission denied")
+            if cmd == "cd" and self._protected_dir(path) is not None:
+                return f"bash: cd: {a}: Permission denied"
+            if cmd in ("touch", "mkdir", "rm", "rmdir", "cp", "mv", "ln", "chmod", "chown", "tee") \
+                    and not self._may_write(path):
+                verb = {"touch": "cannot touch", "mkdir": "cannot create directory", "rm": "cannot remove",
+                        "rmdir": "failed to remove", "chmod": "changing permissions of",
+                        "chown": "changing ownership of"}.get(cmd, "cannot create regular file")
+                tail = "Operation not permitted" if cmd in ("chmod", "chown") else "Permission denied"
+                return f"{cmd}: {verb} '{a}': {tail}"
+        return None
+
+    def _cmd_whoami(self, argv):
+        return (True, self.username) if len(argv) == 1 else (False, None)
+
+    def _cmd_mount(self, argv):
+        if len(argv) != 1 or not self.hw or not self._has("mount"):
+            return False, None
+        uid = (self.users().get(self.username) or {}).get("uid", 0)
+        return True, hardware.mount_lines(self.hw["disks"], self.hw["memory_kb"]["total"], uid)
 
     # ── history ────────────────────────────────────────────────────────────
 
@@ -1997,15 +2066,26 @@ class RuleCore:
             tokens = shlex.split(text)
         except ValueError:
             return None
-        if len(tokens) < 3 or tokens[0] != "echo" or tokens[-2] not in (">", ">>"):
+        if len(tokens) < 3 or tokens[0] not in ("echo", "cat") or tokens[-2] not in (">", ">>"):
             return None
         op, arg, words = tokens[-2], tokens[-1], tokens[1:-2]
-        if ">" in "".join(words) or any(w.startswith("-") and w != "-n" for w in words[:1]):
-            return None
-        newline = not (words and words[0] == "-n")
-        data = (" ".join(words[1:] if not newline else words) + ("\n" if newline else "")).encode()
+        newline = True
+        if tokens[0] == "cat":               # `cat src > dst` is a copy of what the register holds
+            if len(words) != 1 or words[0].startswith("-"):
+                return None
+            ok, text = self._cmd_cat(["cat", words[0]])
+            if not ok or text.startswith("cat: "):
+                return None
+            data = text.encode() + (b"\n" if text else b"")
+        else:
+            if ">" in "".join(words) or any(w.startswith("-") and w != "-n" for w in words[:1]):
+                return None
+            newline = not (words and words[0] == "-n")
+            data = (" ".join(words[1:] if not newline else words) + ("\n" if newline else "")).encode()
         piece = data                         # what this command writes, before any append
         path = self._resolve(arg)
+        if self.username != "root" and not self._may_write(path):
+            return True, f"bash: {arg}: Permission denied"
         if path == "/dev/null":
             return True, ""                  # the kernel throws the bytes away
         if self._virtual(path):

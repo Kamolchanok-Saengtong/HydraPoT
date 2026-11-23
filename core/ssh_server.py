@@ -12,6 +12,7 @@ import os
 import queue
 import json
 import asyncssh
+import shlex
 
 from core import fullscreen
 from datetime import datetime
@@ -25,13 +26,52 @@ AUTH_LOG_PATH = _cfg.logging.auth_log
 INSTANCE_NAME = _cfg.honeypot.instance_name
 
 async def _read_hidden(process, prompt_text: str) -> str:
-    """Read password input — accepts one line then returns."""
+    """Read a password: nothing is echoed, and the Enter the user typed is answered with a newline."""
+    chan = process.channel
     process.stdout.write(prompt_text)
     try:
+        chan.set_echo(False)
+    except Exception:
+        pass
+    try:
         line = await asyncio.wait_for(process.stdin.readline(), timeout=30.0)
+        process.stdout.write("\r\n")
         return line.rstrip("\r\n")
     except asyncio.TimeoutError:
         return ""
+    finally:
+        try:
+            chan.set_echo(True)
+        except Exception:
+            pass
+
+
+def _parse_su(cmd: str):
+    """(target user, login shell?, via sudo?) for the commands that switch user, else None."""
+    try:
+        a = shlex.split(cmd)
+    except ValueError:
+        return None
+    sudo = a[:1] == ["sudo"]
+    if sudo:
+        a = a[1:]
+    shells = ([], ["-i"], ["-s"], ["bash"], ["sh"], ["/bin/bash"], ["/bin/sh"], ["-i", "bash"])
+    if a[:1] == ["su"]:
+        login, user = False, "root"
+        for x in a[1:]:
+            if x in ("-", "-l", "--login", "-i"):
+                login = True
+            elif not x.startswith("-"):
+                user = x
+            else:
+                return None
+        return user, login, sudo
+    if sudo and a in (["-i"], ["-s"]):
+        return "root", a == ["-i"], True
+    if sudo and len(a) >= 2 and a[0] == "-u" and a[2:] in shells:
+        return a[1], "-i" in a[2:], True
+    return None
+
 
 def _append_json(path, entry):
     """Record one auth event. `path` is kept in the signature for the callers
@@ -223,6 +263,7 @@ async def _shell_session(process, handler_factory, hostname, os_banner):
 
     prompt = make_prompt()
     swallow = {"lines": 0}
+    identity_stack = []                # who we were before each `su` / `sudo -u`
     # handler_factory() connects to the Cowrie backend (main.py's
     # _make_cowrie()), a blocking socket call now bounded by
     # CowrieAgent.CONNECT_TIMEOUT but still slow. asyncssh runs every session
@@ -297,6 +338,15 @@ async def _shell_session(process, handler_factory, hostname, os_banner):
                         process.stdout.write(prompt)
                         continue
 
+                    if cmd in ("exit", "logout") and identity_stack:
+                        prev = identity_stack.pop()
+                        command_handler.switch_user(prev["username"], False)
+                        username, home, prompt_char, cwd = (prev["username"], prev["home"],
+                                                            prev["char"], prev["cwd"])
+                        prompt = make_prompt()
+                        process.stdout.write("exit\r\n" + prompt)
+                        continue
+
                     if cmd in ("exit", "logout", "quit"):
                         process.stdout.write("logout\r\n")
                         print(f"[ssh_server] {peer_str} clean exit via '{cmd}'")
@@ -344,6 +394,35 @@ async def _shell_session(process, handler_factory, hostname, os_banner):
                         prompt = make_prompt()
                         # no `continue` — fall through to the agent so it can
                         # update its own cwd and report a real cd error
+                    switch = _parse_su(cmd) if hasattr(command_handler, "switch_user") else None
+                    if switch:
+                        target, login, via_sudo = switch
+                        info = command_handler.user_info(target)
+                        if via_sudo and username != "root" and not command_handler.is_sudoer(username):
+                            await _read_hidden(process, f"[sudo] password for {username}: ")
+                            process.stdout.write(f"{username} is not in the sudoers file.  "
+                                                 f"This incident will be reported.\r\n" + prompt)
+                            continue
+                        if info is not None and username != "root":      # root needs no password
+                            who = f"[sudo] password for {username}: " if via_sudo else "Password: "
+                            if not await _read_hidden(process, who):
+                                process.stdout.write(("sudo: no password was provided\r\nsudo: 1 incorrect "
+                                                      "password attempt" if via_sudo else "su: Authentication failure")
+                                                     + "\r\n" + prompt)
+                                continue
+                        problem = command_handler.switch_user(target, login)
+                        if problem:
+                            process.stdout.write(problem + "\r\n" + prompt)
+                            continue
+                        identity_stack.append({"username": username, "home": home,
+                                               "char": prompt_char, "cwd": cwd})
+                        username, home = target, info["home"]
+                        prompt_char = "#" if target == "root" else "$"
+                        if login:
+                            cwd = home
+                        prompt = make_prompt()
+                        process.stdout.write(prompt)
+                        continue
                     actual = cmd.strip()[5:].strip() if cmd.strip().startswith("sudo ") else cmd.strip()
                     if actual.split()[0] == "passwd":
                         try:
@@ -351,9 +430,9 @@ async def _shell_session(process, handler_factory, hostname, os_banner):
                                 _read_hidden(process, "New password: "), timeout=30.0
                             )
                             pw2 = await asyncio.wait_for(
-                                _read_hidden(process, "\r\nRetype new password: "), timeout=30.0
+                                _read_hidden(process, "Retype new password: "), timeout=30.0
                             )
-                            process.stdout.write("\r\npasswd: password updated successfully\r\n")
+                            process.stdout.write("passwd: password updated successfully\r\n")
                         except asyncio.TimeoutError:
                             process.stdout.write("\r\npasswd: Authentication token manipulation error\r\n")
                         process.stdout.write(prompt)
