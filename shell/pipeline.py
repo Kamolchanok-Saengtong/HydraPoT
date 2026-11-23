@@ -39,6 +39,10 @@ def split_pipes(text: str):
                 return None
             stages.append("".join(cur))
             cur = []
+        elif c == ">" and text[:i].endswith("2") and re.match(r">\s*/dev/null(?![\w/.-])", text[i:]):
+            m = re.match(r">\s*/dev/null", text[i:])        # `2>/dev/null`: stderr thrown away
+            cur.append(m.group(0))
+            i += len(m.group(0)) - 1
         elif c in ";&<>`\n" or text.startswith("$(", i):
             return None
         else:
@@ -319,6 +323,7 @@ _FILTERS = {"head": _head, "tail": _tail, "wc": _wc, "sort": _sort, "uniq": _uni
 
 def run_filter(stage: str, data: str):
     """(output, exit status) for one filter reading `data`, or None."""
+    stage = re.sub(r"\s+2>\s*/dev/null\s*$", "", stage)          # a filter's own stderr is not output
     try:
         argv = shlex.split(stage)
     except ValueError:
