@@ -174,34 +174,35 @@ class OnDeviceAgent:
             sys.exit(1)
 
         print(f"[on_device] GGUF file: {os.path.basename(gguf_path)}")
-        try:
-            self.llm = Llama(
-                model_path=gguf_path,
-                n_gpu_layers=-1,
-                n_ctx=8192,      # ← increase this, still fits in 8GB VRAM
-                verbose=False,
-                seed=0,          # fixed seed for reproducibility — removes
-                                 # one source of run-to-run variation, but
-                                 # NOT sufficient alone at temperature=0
-                                 # (greedy decoding doesn't sample, so seed
-                                 # doesn't touch the real cause: GPU
-                                 # floating-point reduction order isn't
-                                 # bit-exact across runs). True determinism
-                                 # would need n_gpu_layers=0 (CPU-only),
-                                 # which trades away most of the speed this
-                                 # agent exists for.
-            )
-            self.model     = None
-            self.tokenizer = None
-            # read directly from the loaded model's own metadata — works for
-            # whatever GGUF is actually loaded, not tied to one architecture
+        # The GPU first; when it is full (another job holds it) the same model runs on the
+        # CPU, slower but working, instead of the honeypot starting without it.
+        err = None
+        for layers in (-1, 0):
             try:
-                self.n_params = llama_cpp.llama_model_n_params(self.llm._model.model)
-            except Exception:
-                self.n_params = None
-        except Exception as e:
-            print(f"\n[on_device] ✗ Failed to load GGUF model: {e}")
+                self.llm = Llama(
+                    model_path=gguf_path,
+                    n_gpu_layers=layers,
+                    n_ctx=8192,
+                    verbose=False,
+                    seed=0,          # fixed seed; greedy decoding on a GPU is still not bit-exact,
+                                     # only n_gpu_layers=0 (CPU) is fully repeatable
+                )
+                break
+            except Exception as e:
+                err = e
+                if layers == -1:
+                    print(f"[on_device] GPU load failed ({e}); trying the CPU")
+        else:
+            print(f"\n[on_device] ✗ Failed to load GGUF model: {err}")
+            print("  The GPU may be full and the CPU out of memory: free one, or pick a smaller model.")
             sys.exit(1)
+        self.model     = None
+        self.tokenizer = None
+        # read directly from the loaded model's own metadata: works for any GGUF
+        try:
+            self.n_params = llama_cpp.llama_model_n_params(self.llm._model.model)
+        except Exception:
+            self.n_params = None
 
     def _load_transformers(self, model: str, quantization: str):
         """Load a standard HuggingFace model using transformers."""
