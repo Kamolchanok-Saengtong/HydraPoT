@@ -166,7 +166,7 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
                          src_ip: str = "?", public_ip: str = "?",
                          plugins=None, sri_max_events: int = 10, sync_state: bool = True,
                          capture_cost: bool = False, username: str = "root",
-                         store: str = "sqlite", store_dir: str = ""):
+                         store: str = "sqlite", store_dir: str = "", conn: dict = None):
 
     EDITORS     = {"vim", "vi", "nano", "emacs"}
     SLOW        = ("masscan",)
@@ -212,6 +212,8 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
         services={},
         users={u: dict(v) for u, v in config.system_state.get("users", {}).items()},
         shadow=dict(config.system_state.get("shadow", {})),
+        shadow_changed=config.system_state.get("shadow_changed"),
+        groups={g: dict(v) for g, v in config.system_state.get("groups", {}).items()},
         # Shell variables the attacker set. Written by StateTracker._assign,
         # read by the agent prompt -- see that method for why.
         vars={},
@@ -220,7 +222,8 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
                           config.system_state.get("known_dirs", []))
     processes = _load_processes(config)
     register.start_session(src_ip, username,
-                           pid_floor=max([p["PID"] for p in processes] or [1000]))
+                           pid_floor=max([p["PID"] for p in processes] or [1000]),
+                           conn=conn)
     SYSTEM_STATE["cwd"] = "/root"
 
     # Unknown login → conventional /home/<user> so `cd ~` and `pwd` look real.
@@ -331,8 +334,12 @@ def make_command_handler(cowrie: CowrieAgent, config, ondevice=None, cloud=None,
                                           SYSTEM_STATE["users"].items()}})
     rulecore = RuleCore(register, fs, hostname=config.honeypot.hostname,
                         users=lambda: SYSTEM_STATE["users"],
+                        groups=lambda: SYSTEM_STATE["groups"],
                         variables=SYSTEM_STATE["vars"], username=username,
                         processes=processes, kernel=config.honeypot.kernel,
+                        hardware_spec=config.system_state.get("hardware"),
+                        network_spec=config.system_state.get("network"),
+                        os_name=config.honeypot.os,
                         materializer=materializer, tools=sw)
     materializer.live = rulecore.live_lines
 

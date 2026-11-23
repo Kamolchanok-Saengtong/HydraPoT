@@ -27,9 +27,12 @@ import shlex
 import tarfile
 from datetime import datetime, timezone
 
+from shell import hardware, identity, network, pipeline
 from shell.compound import failed as _printed_an_error
 from shell.world import Fact
 
+# The port the fake sshd listens on, as `ss -tlnp` shows it; SSH_CONNECTION names it
+_SSH_PORT = 22
 _SPECIAL = set("|;<>`")
 # Facts that describe the world rather than one path
 _NON_PATH_RELS = frozenset({"session", "event", "env", "proc", "cwd", "user", "uid", "gid", "home", "shell"})
@@ -80,6 +83,11 @@ def _apply_mode(spec: str, mode: int, is_dir: bool):
     return mode
 
 
+def _ps_user(name: str) -> str:
+    """procps shows a user name wider than 8 as its first 7 characters and `+`."""
+    return name if len(name) <= 8 else name[:7] + "+"
+
+
 def _hms(seconds: int) -> str:
     return f"{seconds // 3600:02d}:{seconds % 3600 // 60:02d}:{seconds % 60:02d}"
 
@@ -93,7 +101,8 @@ class RuleCore:
 
     def __init__(self, register, fs, hostname: str, users=None, variables=None,
                  username: str = "root", device: str = "801h/2049d",
-                 processes=(), kernel: str = "5.15.0-generic", materializer=None, tools=None):
+                 processes=(), kernel: str = "5.15.0-generic", materializer=None, tools=None,
+                 hardware_spec=None, network_spec=None, os_name: str = "", groups=None):
         self.reg = register
         self.fs = fs
         self.hostname = hostname
@@ -102,6 +111,7 @@ class RuleCore:
         self.username = username
         self.device = device
         self.changed = False          # the last answer changed the state
+        self._peers = []              # later stages of the pipe being answered
         self._jobs = 0
         self._job_table = {}          # job number -> (pid, command), for `jobs` and `kill %N`
         self._ended = []              # jobs killed since `jobs` last ran, reported once
@@ -112,6 +122,10 @@ class RuleCore:
         self.kernel = kernel
         self.materializer = materializer
         self.tools = tools            # what is installed: path_of(name), kind(name)
+        self.hw = hardware_spec       # system_state.hardware: free, df, nproc, /proc
+        self.net = network_spec       # system_state.network: ifconfig, ip, netstat, ss
+        self.os_name = os_name
+        self.groups = groups or (lambda: {})
         # Cowrie-safe commands that reproduce the last answer's change in Cowrie's own
         # filesystem: absolute quoted paths, no -p or ~ (Cowrie's mkdir lacks both)
         self.sync_cmds = []
@@ -151,6 +165,9 @@ class RuleCore:
         redirect = self._redirect(text)
         if redirect is not None:
             return redirect
+        stages = pipeline.split_pipes(text)
+        if stages:
+            return self._pipeline(stages)
         # operators only count outside quotes: `bash -c 'a && b'` is one command
         bare = re.sub(r"""'[^']*'|"(?:[^"\\]|\\.)*\"""", "", text)
         if not text or _SPECIAL & set(bare) or "$(" in text or "&&" in bare:
@@ -179,6 +196,47 @@ class RuleCore:
         if handled and quiet and out:
             out = "\n".join(l for l in out.split("\n") if not l.startswith(f"{argv[0]}: "))
         return handled, out
+
+    # First commands whose answer is read from the register and changes nothing,
+    # so running one as the head of a pipe leaves no side effect to undo.
+    _PIPE_SOURCES = frozenset({"ps", "cat", "ls", "who", "w", "last", "uptime", "find",
+                               "grep", "head", "tail", "wc", "stat", "du", "echo", "pwd",
+                               "printenv", "env", "md5sum", "sha1sum", "sha256sum", "id",
+                               "netstat", "ss", "ifconfig", "ip", "free", "df", "hostname",
+                               "lsb_release", "hostnamectl", "nproc", "groups"})
+
+    def _pipeline(self, stages):
+        """`source | filter | ...`: the register answers the source, the filters run exactly.
+
+        Declines (None) unless every stage is modelled, so anything else keeps its old path.
+        """
+        try:
+            head = shlex.split(stages[0])
+        except ValueError:
+            return False, None
+        if head[:1] == ["sudo"]:
+            head = head[1:]
+        if not head or head[0] not in self._PIPE_SOURCES:
+            return False, None
+        first = stages[0]
+        if head[0] == "ls" and not any(a.startswith("-") and set(a[1:]) & set("l1C") for a in head[1:]):
+            # into a pipe, ls prints one name per line, as `ls -1`
+            first = re.sub(r"\bls\b", "ls -1", first, count=1)
+        self._peers = stages[1:]          # `ps` lists the filters running beside it
+        try:
+            handled, data = self._answer(first)
+        finally:
+            self._peers = []
+        if not handled or data is None or _printed_an_error(data):
+            return False, None            # stderr is not piped: let the old path show it
+        status = 0
+        for stage in stages[1:]:
+            done = pipeline.run_filter(stage, data)
+            if done is None:
+                return False, None
+            data, status = done
+        self.status = status
+        return True, data
 
     def patch(self, cmd: str, output: str) -> str:
         """Repair an answer Cowrie or a model gave so it agrees with the register."""
@@ -673,11 +731,199 @@ class RuleCore:
         return [path] + [p for p in self.inst.keys("kind")
                          if p.startswith(prefix) and self._kind(p) == "dir"]
 
+    # ── the machine: free, df, nproc, and the /proc files that change ──────
+
+    def _cmd_free(self, argv):
+        if not self.hw:
+            return False, None
+        out = hardware.free(self.hw, argv)
+        return (True, out) if out else (False, None)
+
+    def _cmd_nproc(self, argv):
+        return (True, str(self.hw["cpus"])) if self.hw and len(argv) == 1 else (False, None)
+
+    def _cmd_df(self, argv):
+        disks = (self.hw or {}).get("disks")
+        if not disks:
+            return False, None
+
+        def mounted_on(arg):
+            path, best = self._resolve(arg), None
+            for d in disks:
+                m = d["mount"]
+                if path == m or path.startswith(m.rstrip("/") + "/") or m == "/":
+                    if best is None or len(m) > len(best):
+                        best = m
+            return best if self._kind(path) is not None or path == "/" else None
+        out = hardware.df(disks, argv, mounted_on)
+        return (True, out) if out else (False, None)
+
+    # ── who is who: id and groups ──────────────────────────────────────────
+
+    def _account(self, name):
+        """(uid, gid, [(gid, group)...]) for a user, primary group first; None if unknown."""
+        user = self.users().get(name)
+        if user is None:
+            return None
+        groups = self.groups()
+        by_gid = {g.get("gid"): n for n, g in groups.items()}
+        gid = user.get("gid", user.get("uid", 0))
+        listed = [(gid, by_gid.get(gid, name))]
+        listed += [(g["gid"], n) for n, g in groups.items()
+                   if name in (g.get("members") or []) and g["gid"] != gid]
+        return user.get("uid", 0), gid, listed
+
+    def _cmd_id(self, argv):
+        flags, names = set(), []
+        for a in argv[1:]:
+            if re.fullmatch(r"-[ugGn]+", a):
+                flags |= set(a[1:])
+            elif a.startswith("-"):
+                return False, None
+            else:
+                names.append(a)
+        if len(names) > 1 or len(flags & set("ugG")) > 1 or (flags and not flags & set("ugG")):
+            return False, None
+        who = names[0] if names else self.username
+        acct = self._account(who)
+        if acct is None:
+            return True, f"id: \u2018{who}\u2019: no such user"
+        uid, gid, listed = acct
+        if "u" in flags:
+            return True, who if "n" in flags else str(uid)
+        if "g" in flags:
+            return True, listed[0][1] if "n" in flags else str(gid)
+        if "G" in flags:
+            return True, " ".join(n if "n" in flags else str(g) for g, n in listed)
+        groups = ",".join(f"{g}({n})" for g, n in listed)
+        return True, f"uid={uid}({who}) gid={gid}({listed[0][1]}) groups={groups}"
+
+    def _cmd_groups(self, argv):
+        names = argv[1:]
+        if any(n.startswith("-") for n in names):
+            return False, None
+        lines = []
+        for who in names or [self.username]:
+            acct = self._account(who)
+            if acct is None:
+                lines.append(f"groups: \u2018{who}\u2019: no such user")
+                continue
+            text = " ".join(n for _, n in acct[2])
+            lines.append(f"{who} : {text}" if names else text)
+        return True, "\n".join(lines)
+
+    # ── the network ────────────────────────────────────────────────────────
+
+    def _local_ip(self):
+        return self.reg.session("local_ip") if self.net else None
+
+    def _counters(self):
+        pk = lambda k, lo, hi: self.reg.prf(k, "net", lo, hi)
+        rx, tx = pk("rx", 6_000_000, 60_000_000), pk("tx", 4_000_000, 40_000_000)
+        return {"rx_packets": rx, "rx_bytes": rx * pk("rxs", 780, 1150),
+                "tx_packets": tx, "tx_bytes": tx * pk("txs", 520, 900),
+                "lo": pk("lo", 150_000, 900_000)}
+
+    def _cmd_ifconfig(self, argv):
+        ip = self._local_ip()
+        out = network.ifconfig(self.net, ip, self._counters(), argv) if ip else None
+        return (True, out) if out else (False, None)
+
+    def _cmd_ip(self, argv):
+        ip = self._local_ip()
+        out = network.ip_command(self.net, ip, argv) if ip else None
+        return (True, out) if out is not None else (False, None)
+
+    def _cmd_hostname(self, argv):
+        ip = self._local_ip() or ""
+        out = network.hostname_command(self.hostname, ip, argv)
+        if out is None or (argv[1:] == ["-I"] and not ip):
+            return False, None
+        return True, out
+
+    def _sockets(self):
+        pids = {}
+        for l in self.net["listeners"]:
+            hit = next((p["PID"] for p in self.processes if l["process"] in p["COMMAND"]), None)
+            if hit is not None:
+                pids[l["process"]] = hit
+        sshd = self.reg.session("sshd_pid")
+        conn = ({"pid": sshd, "peer": f"{self.reg.session('ip')}:{self.reg.session('port')}"}
+                if sshd is not None else None)
+        return pids, conn
+
+    def _cmd_netstat(self, argv):
+        ip = self._local_ip()
+        if not ip:
+            return False, None
+        pids, conn = self._sockets()
+        out = network.netstat(self.net, ip, pids, conn, argv)
+        return (True, out) if out else (False, None)
+
+    def _cmd_ss(self, argv):
+        ip = self._local_ip()
+        if not ip:
+            return False, None
+        pids, conn = self._sockets()
+        out = network.ss(self.net, ip, pids, conn, argv)
+        return (True, out) if out else (False, None)
+
+    def _cmd_lsb_release(self, argv):
+        info = identity.lsb(self.os_name)
+        if not info:
+            return False, None
+        fields = {"i": ("Distributor ID", info["id"]), "d": ("Description", info["description"]),
+                  "r": ("Release", info["release"]), "c": ("Codename", info["codename"])}
+        short, picks = False, []
+        for a in argv[1:]:
+            if not re.fullmatch(r"-[aidrcs]+", a):
+                return False, None
+            for ch in a[1:]:
+                if ch == "s":
+                    short = True
+                elif ch == "a":
+                    picks += ["i", "d", "r", "c"]
+                else:
+                    picks.append(ch)
+        if not picks:
+            return True, "No LSB modules are available."
+        lines = [v if short else f"{k}:\t{v}" for k, v in (fields[p] for p in picks)]
+        if "-a" in argv or any(a.startswith("-") and "a" in a for a in argv[1:]):
+            lines.insert(0, "No LSB modules are available.")
+        return True, "\n".join(lines)
+
+    def _cmd_hostnamectl(self, argv):
+        info, mid = identity.lsb(self.os_name), (self.net or {}).get("machine_id")
+        if len(argv) > 2 or (len(argv) == 2 and argv[1] not in ("status",)) or not info or not mid:
+            return False, None
+        boot = "".join(f"{self.reg.prf(f'bootid{i}', 'boot', 0, 15):x}" for i in range(32))
+        rows = [("Static hostname", self.hostname), ("Icon name", "computer-vm"),
+                ("Chassis", "vm"), ("Machine ID", mid), ("Boot ID", boot),
+                ("Virtualization", "kvm"), ("Operating System", info["description"]),
+                ("Kernel", f"Linux {self.kernel}"), ("Architecture", "x86-64")]
+        return True, "\n".join(f"{k:>18}: {v}" for k, v in rows)
+
+    def _proc_text(self, path):
+        """/proc files whose value moves with time or load, else None."""
+        if path == "/proc/uptime" and self.hw:
+            up = (self.reg.now_ns() - self._boot_ns()) / 1e9
+            idle = self.reg.prf("idle", "boot", 90, 99) / 100
+            return hardware.uptime_file(up, self.hw["cpus"], idle).rstrip("\n")
+        if path == "/proc/loadavg":
+            loads = [self.reg.prf(f"load{i}", "load", 0, 30) / 100 for i in range(3)]
+            top = max([p["PID"] for p in self.processes] + [self._shell_pid()])
+            return hardware.loadavg(loads, len(self.processes) + 5,
+                                    self._next_pid or top + 1).rstrip("\n")
+        return None
+
     def _cmd_cat(self, argv):
         args = [a for a in argv[1:] if not a.startswith("-")]
         if len(args) != 1 or len(argv) != 2:
             return False, None
         arg, path = args[0], self._resolve(args[0])
+        live = self._proc_text(path)
+        if live is not None:
+            return True, live
         if self._missing(path):
             return True, f"cat: {arg}: No such file or directory"
         if self._kind(path) == "dir" and self._closed(path):
@@ -1667,17 +1913,65 @@ class RuleCore:
         self.changed = True
         return True, ""
 
+    def _login_env(self, tool: str = "env"):
+        """The environment sshd and pam_systemd hand a login shell on Ubuntu 20.04, or
+        None when the SSH layer did not tell us the connection (then Cowrie answers)."""
+        reg = self.reg
+        ip, port, local = reg.session("ip"), reg.session("port"), reg.session("local_ip")
+        if ip is None or local is None:
+            return None
+        user = self.users().get(self.username) or {}
+        uid, term = user.get("uid", 0), reg.session("term")
+        runtime = f"/run/user/{uid}"
+        env = [("SHELL", user.get("shell", "/bin/bash")), ("PWD", reg.cwd()),
+               ("LOGNAME", self.username)]
+        if term:
+            env += [("XDG_SESSION_TYPE", "tty"), ("MOTD_SHOWN", "pam")]
+        env += [("HOME", user.get("home", "/root")), ("LANG", "en_US.UTF-8"),
+                ("SSH_CONNECTION", f"{ip} {port} {local} {_SSH_PORT}"),
+                ("XDG_SESSION_CLASS", "user")]
+        if term:
+            env.append(("TERM", term))
+        env += [("USER", self.username), ("SHLVL", "1"),
+                ("XDG_SESSION_ID", str(reg.session("logind_session"))),
+                ("XDG_RUNTIME_DIR", runtime), ("SSH_CLIENT", f"{ip} {port} {_SSH_PORT}"),
+                ("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin"),
+                ("DBUS_SESSION_BUS_ADDRESS", f"unix:path={runtime}/bus")]
+        if term:
+            env.append(("SSH_TTY", f"/dev/{reg.session('tty', 'pts/0')}"))
+        exported = {k: self.inst.get("env", k) for k in self.inst.keys("env")}
+        env = [(k, exported.pop(k, v)) for k, v in env] + sorted(exported.items())
+        return env + [("_", f"/usr/bin/{tool}")]
+
+    def _cmd_env(self, argv):
+        return self._print_environ(argv, "env")
+
+    def _print_environ(self, argv, tool):
+        if len(argv) != 1:
+            return False, None
+        env = self._login_env(tool)
+        if env is None:
+            return False, None
+        return True, "\n".join(f"{k}={v}" for k, v in env)
+
     def _value(self, name):
         if self.inst.get("env", name) is not None:
             return self.inst.get("env", name)
         if name in self.variables:
             return self.variables[name]
+        login = self._login_env()
+        if login is not None and name != "_":
+            found = dict(login).get(name)
+            if found is not None:
+                return found
         home = (self.users().get(self.username) or {}).get("home", "/root")
         return {"HOME": home, "USER": self.username, "LOGNAME": self.username,
                 "PWD": self.reg.cwd(), "SHELL": "/bin/bash",
                 "HOSTNAME": self.hostname}.get(name)
 
     def _cmd_printenv(self, argv):
+        if len(argv) == 1:
+            return self._print_environ(argv, "printenv")
         if len(argv) != 2:
             return False, None
         value = self._value(argv[1])
@@ -1732,8 +2026,9 @@ class RuleCore:
         rows = []
         for p in self.processes:
             minutes = float(p.get("TIME") or 0)
-            rows.append({"user": p["USER"], "pid": p["PID"], "ppid": 2 if
-                         p["COMMAND"].startswith("[") else 1,
+            # init and kthreadd have no parent; kernel threads hang off kthreadd
+            ppid = 0 if p["PID"] in (1, 2) else 2 if p["COMMAND"].startswith("[") else 1
+            rows.append({"user": p["USER"], "pid": p["PID"], "ppid": ppid,
                          "cpu": float(p.get("CPU") or 0), "mem": float(p.get("MEM") or 0),
                          "vsz": int(p.get("VSZ") or 0) // 1024,
                          "rss": int(p.get("RSS") or 0) // 1024, "tty": p["TTY"],
@@ -1762,6 +2057,16 @@ class RuleCore:
                      "cpu": 0.0, "mem": 0.0, "vsz": 5900, "rss": 2828, "tty": "pts/0",
                      "stat": "R+", "start": hhmm(self.reg.now_ns()), "time": 0,
                      "cmd": me})
+        # the other stages of `ps aux | grep x` are running too, as the shell forks them
+        for stage in self._peers:
+            try:
+                shown = " ".join(shlex.split(stage))
+            except ValueError:
+                shown = stage
+            rows.append({"user": self.username, "pid": self._new_pid(), "ppid": shell,
+                         "cpu": 0.0, "mem": 0.0, "vsz": 6432, "rss": 892, "tty": "pts/0",
+                         "stat": "S+", "start": hhmm(self.reg.now_ns()), "time": 0,
+                         "cmd": shown})
         return rows
 
     def _cmd_ps(self, argv):
@@ -1776,10 +2081,10 @@ class RuleCore:
                 for r in mine])
         if style in ("-ef", "-e", "-A"):
             return True, "\n".join(["UID          PID    PPID  C STIME TTY          TIME CMD"] + [
-                f"{r['user']:<8} {r['pid']:>7} {r['ppid']:>7} {0:>2} {r['start']:>5} "
+                f"{_ps_user(r['user']):<8} {r['pid']:>7} {r['ppid']:>7} {0:>2} {r['start']:>5} "
                 f"{r['tty']:<8} {_hms(r['time'])} {r['cmd']}" for r in rows])
         return True, "\n".join(["USER         PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND"] + [
-            f"{r['user'][:8]:<8} {r['pid']:>7} {r['cpu']:>4.1f} {r['mem']:>4.1f} "
+            f"{_ps_user(r['user']):<8} {r['pid']:>7} {r['cpu']:>4.1f} {r['mem']:>4.1f} "
             f"{r['vsz']:>6} {r['rss']:>5} {r['tty']:<8} {r['stat']:<4} {r['start']:>5} "
             f"{r['time'] // 60:>3}:{r['time'] % 60:02d} {r['cmd']}" for r in rows])
 
