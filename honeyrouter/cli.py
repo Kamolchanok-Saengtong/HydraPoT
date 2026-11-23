@@ -397,11 +397,32 @@ def print_review(which: str = "rl", points: int = 9) -> list:
     return rows
 
 
+def _use_in_config() -> None:
+    """Switch config.yaml to routing.mode: smart_router (line edit, keeps comments)."""
+    import re
+    path = os.path.join(_ROOT, "config.yaml")
+    try:
+        text = open(path, encoding="utf-8").read()
+        new = re.sub(r"(?m)^(\s+mode:\s*)user_control\b", r"\1smart_router", text, count=1)
+        if new != text:
+            open(path, "w", encoding="utf-8").write(new)
+    except OSError:
+        pass
+
+
 def approve(which: str, omega: float) -> str:
     """Record the choice. Writes a file, changes nothing else."""
     state = _read_state()
     state["approved"] = {"at": time.strftime("%Y-%m-%d %H:%M:%S"),
                          "policy": which, "omega": float(omega)}
+    # The live router needs each agent's mean cost; keep it with the approval
+    # so production does not need the training data.
+    d = _load_data()
+    if d is not None:
+        from honeyrouter.action import AGENTS
+        m = d["cost_norm"].mean(0)
+        state["approved"]["cost_norm"] = {a: float(m[k]) for k, a in enumerate(AGENTS)}
+    _use_in_config()
     state.setdefault("trained_on", data_fingerprint())
     _write_state(state)
     return STATE_PATH

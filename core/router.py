@@ -25,12 +25,16 @@ try:
     _FI_ROUTING = {int(k): v for k, v in dict(_config.routing.fi_routing).items()}
     _FALLBACK   = _config.routing.fallback
     _FI_FALLBACK = int(_config.routing.fi_fallback)
+    _MODE       = _config.routing.mode
 except Exception:
     # config.yaml not found yet (e.g. router.py imported before `hp --init`) —
     # fall back to today's 3-agent default so nothing breaks at import time
     _AGENTS_ENABLED = {"cowrie": True, "on_device": True, "cloud": True}
     _FI_ROUTING = {0: "cowrie", 1: "cowrie", 2: "on_device", 3: "on_device", 4: "on_device"}
     _FI_FALLBACK = 3
+    _MODE = "user_control"
+
+_WARNED = []   # the fallback notice prints once
 
 # Single shared scorer — FIScorer.score() is a pure function of the command
 # text (hardcoded regex bands, no session state), so one module-level
@@ -205,6 +209,19 @@ def classify(cmd: str, session_history: list) -> str:
     # agent each band maps to, fully hand-editable). Falls back to the
     # strongest enabled agent if the configured target isn't actually
     # available (e.g. hand-edited to an agent that got disabled since).
+    # smart_router: the network trained by `hp --router` picks instead of the
+    # table. Untrained/unapproved or broken -> the table below, so the honeypot
+    # never goes without a router.
+    if _MODE == "smart_router":
+        from honeyrouter import live
+        picked = live.pick(_deobfuscate(cmd))
+        if picked is None and not _WARNED:
+            _WARNED.append(1)
+            print(f"[router] smart_router unavailable, using fi_routing: {live.last_error()}",
+                  file=sys.stderr)
+        if picked is not None:
+            return picked if picked in enabled else _strongest(enabled)
+
     fi, _ = _scorer.score(_deobfuscate(cmd))
     target = _FI_ROUTING.get(fi, _FALLBACK)
     return target if target in enabled else _strongest(enabled)
