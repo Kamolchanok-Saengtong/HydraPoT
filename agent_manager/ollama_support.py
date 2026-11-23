@@ -37,7 +37,7 @@ def models(server: str, timeout: float = 5.0):
     try:
         r = requests.get(f"{server}/api/tags", timeout=timeout)
         r.raise_for_status()
-        return [m["name"] for m in r.json().get("models", [])]
+        return [m.get("name") or m["model"] for m in r.json().get("models", [])]
     except (requests.RequestException, ValueError, KeyError):
         return None
 
@@ -62,7 +62,7 @@ def check(server: str, model: str):
 def pull(server: str, model: str, on_progress=None) -> bool:
     """`ollama pull`, streamed. on_progress(status, done_bytes, total_bytes). True on success."""
     try:
-        with requests.post(f"{server}/api/pull", json={"name": model, "stream": True},
+        with requests.post(f"{server}/api/pull", json={"model": model, "name": model, "stream": True},
                            stream=True, timeout=(10, None)) as r:
             r.raise_for_status()
             for line in r.iter_lines():

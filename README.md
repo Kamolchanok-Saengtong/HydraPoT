@@ -293,6 +293,16 @@ Commands that imply little interaction go to the static responder; commands
 that imply the most go to the cloud model. Changing this mapping changes the
 cost and the realism of the honeypot together.
 
+### Getting the on-device model
+
+Ollama is optional. The default is a model downloaded from Hugging Face, and `hp --run`
+checks it is there and tells you how to fetch it if not:
+
+```bash
+hp --init                                        # pick the model; say yes to the download
+huggingface-cli download unsloth/Qwen3.5-9B-GGUF Qwen3.5-9B-Q5_K_M.gguf   # or by hand
+```
+
 ### Using Ollama for the on-device model
 
 Install [Ollama](https://ollama.com), then run `hp --init` and pick **Ollama** at the

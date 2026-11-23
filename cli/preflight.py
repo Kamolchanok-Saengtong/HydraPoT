@@ -39,8 +39,31 @@ def ollama_problem(config):
     return ol.check(ol.host(getattr(od, "base_url", None)), od.model)
 
 
+def local_model_problem(config):
+    """The default on-device path: a model downloaded from Hugging Face into its cache."""
+    od = config.agents.on_device
+    if not od.enabled or (getattr(od, "mode", "local") or "local").lower() != "local":
+        return None
+    from agent_manager.ondevice_agent import _find_gguf_file, _is_gguf
+    from cli.setup_wizard import _is_cached
+    if _is_gguf(od.model):
+        ok = _find_gguf_file(od.model, getattr(od, "gguf_file", "") or "") is not None
+    else:
+        ok = _is_cached(od.model)
+    if ok:
+        return None
+    name = getattr(od, "gguf_file", "") or ""
+    cli_fetch = (f"huggingface-cli download {od.model}" + (f" {name}" if name else ""))
+    return (f"The on-device model '{od.model}' is not downloaded yet.\n"
+            f"  Download it with:\n"
+            f"      hp --init            (pick it and say yes to the download)\n"
+            f"  or:\n"
+            f"      {cli_fetch}\n"
+            f"  or switch to Ollama (`hp --init`), or turn the on-device model off.")
+
+
 def problems(config) -> list:
-    return [p for p in (router_problem(config), ollama_problem(config)) if p]
+    return [p for p in (router_problem(config), ollama_problem(config), local_model_problem(config)) if p]
 
 
 def require(config) -> None:
