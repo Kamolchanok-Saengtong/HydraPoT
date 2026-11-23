@@ -227,8 +227,14 @@ async def _shell_session(process, handler_factory, hostname, os_banner):
     # on one event loop, so calling this inline used to freeze every other
     # connected attacker's I/O for the duration — off-loaded the same way
     # per-command dispatch already is below.
+    sock = process.get_extra_info("sockname")
+    term = process.get_terminal_type() if hasattr(process, "get_terminal_type") else None
+    conn_info = {"port": src_port,
+                 "local_ip": str(sock[0]).removeprefix("::ffff:") if sock else None,
+                 "term": term}
     command_handler = await asyncio.to_thread(
-        handler_factory, src_ip=src_ip, public_ip=public_ip, username=username)
+        handler_factory, src_ip=src_ip, public_ip=public_ip, username=username,
+        conn=conn_info)
 
     try:
         if process.command is None:

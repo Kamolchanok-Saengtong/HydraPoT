@@ -301,8 +301,12 @@ class Register:
         return self.commit({Fact("cwd", "session", path)}, remove, why=f"cd {path}")
 
     def start_session(self, ip: str, user: str, tty: str = "pts/0",
-                      pid_floor: int = 1000) -> None:
-        """Record this login once; logs, ps, who and last all read it."""
+                      pid_floor: int = 1000, conn: dict = None) -> None:
+        """Record this login once; logs, ps, who and last all read it.
+
+        `conn` is what the SSH layer saw: the client's real port, the local address
+        it connected to and the terminal type. Without it the port is a seeded one
+        and `env` has no SSH_* variables to show."""
         sshd = pid_floor + self.prf("sshd_pid", "session", 20, 400)
         facts = {
             "ip": ip, "user": user, "tty": tty, "login_ns": self.epoch_ns,
@@ -310,6 +314,12 @@ class Register:
             "sshd_pid": sshd, "shell_pid": sshd + self.prf("shell_pid", "session", 2, 9),
             "logind_session": self.prf("logind", "session", 2, 60),
         }
+        conn = conn or {}
+        if conn.get("port"):
+            facts["port"] = int(conn["port"])
+        for key in ("local_ip", "term"):
+            if conn.get(key):
+                facts[key] = conn[key]
         self.commit({Fact("session", k, v) for k, v in facts.items()}, why="login")
 
     def session(self, key, default=None):

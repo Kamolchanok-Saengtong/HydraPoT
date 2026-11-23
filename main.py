@@ -315,9 +315,9 @@ def main():
 
     try:
         start_server(
-            handler_factory = lambda src_ip="?", public_ip="?", username="root": make_command_handler(
+            handler_factory = lambda src_ip="?", public_ip="?", username="root", conn=None: make_command_handler(
                 _make_cowrie(), src_ip=src_ip, public_ip=public_ip,
-                plugins=plugins, username=username
+                plugins=plugins, username=username, conn=conn
             ),
             host            = config.honeypot.host,
             port            = config.honeypot.port,
