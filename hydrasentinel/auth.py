@@ -70,8 +70,23 @@ ENV_SESSION_DB = "HYDRAPOT_DASHBOARD_SESSION_DB"
 def cfg():
     """The dashboard.auth section. Read per call, not captured at import, so
     rotating the credential path or a timeout takes effect on the next request
-    rather than at the next restart."""
-    return load_config(_CONFIG_PATH).dashboard.auth
+    rather than at the next restart.
+
+    Parsed again only when the file changes: the YAML parse costs ~58 ms and one
+    request calls this several times, which made every page and asset slow."""
+    try:
+        stamp = (_CONFIG_PATH, os.stat(_CONFIG_PATH).st_mtime_ns)
+    except OSError:
+        return load_config(_CONFIG_PATH).dashboard.auth
+    hit = _CFG_CACHE.get("v")
+    if hit and hit[0] == stamp:
+        return hit[1]
+    value = load_config(_CONFIG_PATH).dashboard.auth
+    _CFG_CACHE["v"] = (stamp, value)
+    return value
+
+
+_CFG_CACHE = {}
 
 
 def _abs(path: str) -> str:
