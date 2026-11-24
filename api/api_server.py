@@ -408,6 +408,64 @@ async def login_submit(request: Request,
     return response
 
 
+@api.get(dash_auth.INVITE_PATH + "{token}", include_in_schema=False)
+async def invite_form(request: Request, token: str):
+    ip = _client_ip(request)
+    if dash_auth.locked_out(ip):
+        return HTMLResponse(login_page.locked(int(dash_auth.cfg().lockout_minutes)),
+                            status_code=429)
+    row = dash_auth.get_invite(token)
+    if not row:
+        dash_auth.record_failure(ip)      # guessing links counts like guessing passwords
+        return HTMLResponse(login_page.invite_invalid(), status_code=404)
+    csrf = dash_auth.new_form_token()
+    response = HTMLResponse(login_page.invite(csrf, token, row["username"]))
+    response.set_cookie(dash_auth.CSRF_COOKIE, csrf, httponly=True, samesite="lax",
+                        secure=_secure_cookies(request), max_age=900, path="/")
+    return response
+
+
+@api.post(dash_auth.INVITE_PATH + "{token}", include_in_schema=False)
+async def invite_submit(request: Request, token: str,
+                        password: str = Form(""), again: str = Form(""),
+                        csrf_token: str = Form("")):
+    ip = _client_ip(request)
+    if dash_auth.locked_out(ip):
+        return HTMLResponse(login_page.locked(int(dash_auth.cfg().lockout_minutes)),
+                            status_code=429)
+    row = dash_auth.get_invite(token)
+    if not row:
+        dash_auth.record_failure(ip)
+        return HTMLResponse(login_page.invite_invalid(), status_code=404)
+    if not dash_auth.form_token_ok(request.cookies.get(dash_auth.CSRF_COOKIE, ""),
+                                   csrf_token):
+        return HTMLResponse(login_page.invite(
+            dash_auth.new_form_token(), token, row["username"],
+            error="This form expired. Please try again."), status_code=400)
+
+    def again_page(message):
+        new = dash_auth.new_form_token()
+        resp = HTMLResponse(login_page.invite(new, token, row["username"],
+                                              error=message), status_code=400)
+        resp.set_cookie(dash_auth.CSRF_COOKIE, new, httponly=True, samesite="lax",
+                        secure=_secure_cookies(request), max_age=900, path="/")
+        return resp
+
+    if password != again:
+        return again_page("The two passwords do not match.")
+    try:
+        username = dash_auth.redeem_invite(token, password)
+    except ValueError as exc:
+        return again_page(str(exc).capitalize() + ".")
+    except LookupError:
+        return HTMLResponse(login_page.invite_invalid(), status_code=404)
+    cookie = dash_auth.open_session(username, ip)
+    response = RedirectResponse("/", status_code=302)
+    _set_session_cookie(response, cookie, request)
+    response.delete_cookie(dash_auth.CSRF_COOKIE, path="/")
+    return response
+
+
 @api.get(dash_auth.LOGOUT_PATH, include_in_schema=False)
 async def logout_confirm(request: Request):
     """GET only confirms. The actual revocation is the POST below, so that a

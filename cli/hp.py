@@ -234,6 +234,48 @@ def _dashboard_passwd():
     click.echo(f"\n  Start the dashboard with: hp --dashboard\n")
 
 
+def _invite_host(cfg) -> str:
+    """The name to put in an invite link: the first `tls_names` entry if the
+    operator set one, else this machine's LAN address."""
+    names = list(getattr(cfg, "tls_names", None) or [])
+    if names:
+        return str(names[0])
+    import socket
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("192.0.2.1", 9))      # no packet is sent; picks the LAN interface
+            return s.getsockname()[0]
+    except OSError:
+        return socket.gethostname()
+
+
+def _dashboard_invite(name, hours):
+    """Print a one-time link that lets `name` choose their own password.
+
+    Only this command can make a link, so account creation stays something you
+    need shell access to do; the web page can only redeem one.
+    """
+    from hydrasentinel import auth
+    from core.config_loader import load_config
+    try:
+        token = auth.create_invite(name, hours)
+    except (ValueError, FileExistsError) as exc:
+        click.echo(click.style(f"\n  {exc}\n", fg="red"))
+        raise SystemExit(1)
+    cfg = load_config(os.path.join(_HP_DIR, "config.yaml")).dashboard
+    url = f"https://{_invite_host(cfg)}:{cfg.https_port}{auth.INVITE_PATH}{token}"
+    click.echo(click.style(f"\n  ✓ Invite for '{name}' (valid {hours:g} h, works once)\n",
+                           fg="green", bold=True))
+    click.echo(f"    {url}\n")
+    click.echo("  Send it over a private channel: whoever opens it first becomes "
+               f"'{name}'.")
+    if not cfg.tls_cert:
+        click.echo("  No organisation certificate is set, so their browser will warn "
+                   "until it trusts the\n  dashboard's root certificate (see "
+                   "`hp --dashboard`).")
+    click.echo("  Make a new link for the same name to cancel this one.\n")
+
+
 def _ensure_operator_account():
     """Make sure an account exists before the dashboard starts.
 
@@ -501,6 +543,10 @@ def _config():
               help="Stop the background dashboard")
 @click.option("--dashboard-passwd", "do_dashboard_passwd", is_flag=True,
               help="Create or rotate the dashboard's operator account")
+@click.option("--dashboard-invite", "invite_name", default=None, metavar="NAME",
+              help="Make a one-time link that lets NAME set their own dashboard password")
+@click.option("--invite-hours", default=24.0, type=float, show_default=True,
+              help="--dashboard-invite: how long the link stays valid")
 @click.option("--router", "do_router", is_flag=True,
               help="Train and review Honey Router V2 (interactive menu)")
 @click.option("--config", "do_config", is_flag=True,
@@ -517,7 +563,7 @@ def _config():
               help="--dashboard: run in this terminal (blocking) instead of the background")
 @click.pass_context
 def main(ctx, do_init, do_run, do_dashboard, do_dashboard_stop,
-         do_dashboard_passwd, do_router, do_config, do_version, host, port, debug,
+         do_dashboard_passwd, invite_name, invite_hours, do_router, do_config, do_version, host, port, debug,
          foreground):
     """HydraPoT: Multi Agent Honeypot System
 
@@ -529,6 +575,7 @@ def main(ctx, do_init, do_run, do_dashboard, do_dashboard_stop,
         ("--dashboard", do_dashboard),
         ("--dashboard-stop", do_dashboard_stop),
         ("--dashboard-passwd", do_dashboard_passwd),
+        ("--dashboard-invite", invite_name is not None),
         ("--router", do_router),
         ("--config", do_config),
         ("--version", do_version),
@@ -561,6 +608,8 @@ def main(ctx, do_init, do_run, do_dashboard, do_dashboard_stop,
         _dashboard_stop()
     elif action == "--dashboard-passwd":
         _dashboard_passwd()
+    elif action == "--dashboard-invite":
+        _dashboard_invite(invite_name, invite_hours)
     elif action == "--router":
         _router()
     elif action == "--config":

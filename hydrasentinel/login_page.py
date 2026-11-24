@@ -374,3 +374,37 @@ def signed_out() -> str:
         <button type=submit>Sign in again</button>
       </form>
     """)
+
+
+def invite(csrf: str, token: str, username: str, *, error: str = "") -> str:
+    """The page a colleague lands on from an invite link: the name is fixed by
+    the invite, they choose only their own password."""
+    err = f"<div class=err>{escape(str(error))}</div>" if error else ""
+    return _page("Accept invite", f"""
+      {_BRAND}
+      <p class=sub>You have been invited to the operator console</p>
+      {err}
+      <form method=post action='/_hp/invite/{_attr(token)}' autocomplete=off>
+        <input type=hidden name=csrf_token value='{_attr(csrf)}'>
+        <label for=username>Operator</label>
+        <input id=username type=text value='{_attr(username)}' readonly>
+        <label for=password>Choose a password</label>
+        <input id=password name=password type=password
+               autocomplete=new-password autofocus required>
+        <label for=again>Password again</label>
+        <input id=again name=again type=password
+               autocomplete=new-password required>
+        <button type=submit>Create my account</button>
+      </form>
+    """)
+
+
+def invite_invalid() -> str:
+    """Unknown, used and expired links all read the same."""
+    return _page("Invite not valid", f"""
+      {_BRAND}
+      <p class=sub>Operator console</p>
+      <div class=err>This invite link is not valid.</div>
+      <div class=note>It may have been used already or have expired. Ask whoever
+      runs this sensor for a new one.</div>
+    """)

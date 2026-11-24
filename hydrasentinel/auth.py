@@ -254,6 +254,78 @@ def _signing_secret() -> bytes:
     return secret.encode("utf-8")
 
 
+# ─── Invites ─────────────────────────────────────────────────────────────────
+# A one-time link the operator creates from the CLI and hands to a colleague,
+# who then sets their own password. It exists so the operator never has to
+# choose or send anyone's password, and it keeps the rule that only someone
+# with shell access can create an account: the link is made by `hp`, the web
+# page can only REDEEM one. Only a SHA-256 of the token is stored, so a copy of
+# the database cannot be used to redeem anything.
+
+USERNAME_RE = re.compile(r"^[A-Za-z0-9._-]{3,32}$")
+INVITE_PATH = "/_hp/invite/"
+
+
+def create_invite(username: str, hours: float = 24.0) -> str:
+    """Make a one-time invite for `username` and return its token (shown once).
+
+    Refuses an invalid name or one that already has an account. A second invite
+    for the same name replaces the first, so only the newest link works.
+    """
+    if not USERNAME_RE.match(username or ""):
+        raise ValueError("username must be 3-32 characters: letters, digits, . _ -")
+    if user_exists(username):
+        raise FileExistsError(f"operator '{username}' already exists")
+    token = secrets.token_urlsafe(32)
+    now = time.time()
+    with _store() as conn:
+        conn.execute("DELETE FROM invites WHERE username=? OR expires<?",
+                     (username, now))
+        conn.execute("INSERT INTO invites (token_hash, username, created, expires) "
+                     "VALUES (?,?,?,?)",
+                     (_token_hash(token), username, now, now + float(hours) * 3600))
+    return token
+
+
+def get_invite(token: str) -> dict:
+    """The invite row if the token is real, unused and unexpired, else {}.
+    Unknown, used and expired are indistinguishable to the caller."""
+    if not token:
+        return {}
+    with _store() as conn:
+        row = conn.execute(
+            "SELECT * FROM invites WHERE token_hash=? AND used_at IS NULL "
+            "AND expires>?", (_token_hash(token), time.time())).fetchone()
+    return dict(row) if row else {}
+
+
+def redeem_invite(token: str, password: str) -> str:
+    """Spend the invite and create the account. Returns the username.
+
+    The invite is claimed with one conditional UPDATE, so two people opening
+    the same link cannot both succeed. Raises LookupError for a bad link and
+    ValueError for a password that is too short.
+    """
+    minimum = int(cfg().min_password_length)
+    if len(password or "") < minimum:
+        raise ValueError(f"password must be at least {minimum} characters")
+    th = _token_hash(token or "")
+    now = time.time()
+    with _store() as conn:
+        cur = conn.execute(
+            "UPDATE invites SET used_at=? WHERE token_hash=? AND used_at IS NULL "
+            "AND expires>?", (now, th, now))
+        if cur.rowcount != 1:
+            raise LookupError("invite is not valid")
+        username = conn.execute("SELECT username FROM invites WHERE token_hash=?",
+                                (th,)).fetchone()[0]
+    try:
+        write_credential(username, password)
+    except FileExistsError:
+        raise LookupError("invite is not valid")
+    return username
+
+
 # ─── Session + throttle store ────────────────────────────────────────────────
 
 _SCHEMA = """
@@ -273,6 +345,13 @@ CREATE TABLE IF NOT EXISTS operator_sessions (
     created    REAL NOT NULL,
     last_seen  REAL NOT NULL,
     src_ip     TEXT
+);
+CREATE TABLE IF NOT EXISTS invites (
+    token_hash TEXT PRIMARY KEY,
+    username   TEXT NOT NULL,
+    created    REAL NOT NULL,
+    expires    REAL NOT NULL,
+    used_at    REAL
 );
 CREATE TABLE IF NOT EXISTS login_attempts (
     id     INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -510,6 +589,9 @@ def _open_patterns():
     return [re.compile(p) for p in cfg().open_paths]
 
 
+_INVITE_RE = re.compile(r"^" + re.escape(INVITE_PATH) + r"[A-Za-z0-9_-]+$")
+
+
 def is_open_path(path: str) -> bool:
     """True for paths served without a session cookie.
 
@@ -517,4 +599,9 @@ def is_open_path(path: str) -> bool:
     stay open so the login page can load the logo, and a prefix test would
     silently open anything that happened to share a prefix with it.
     """
+    # An invite link is open in code, not in config: it cannot work behind the
+    # login it exists to get past, the token in it is the credential, and a
+    # config.yaml written before invites existed must not silently break them.
+    if _INVITE_RE.match(path or ""):
+        return True
     return any(p.search(path or "") for p in _open_patterns())
