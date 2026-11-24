@@ -261,6 +261,10 @@ def main():
     ap.add_argument("--irt-omega", type=float, default=0.5,
                      help="preference weight on -cost the policy is "
                           "conditioned on at inference (default 0.5)")
+    ap.add_argument("--irt-identity-file", type=str, default=None,
+                     help="for --arms irt_router: JSON {slot, vector} from "
+                          "onboard_live.py; that slot's identity is replaced by "
+                          "the fitted vector (a newly onboarded model)")
     ap.add_argument("--tag",      type=str, default=None,
                      help="human-readable label for the output folder, e.g. "
                           "--tag cloud_new -> results/partC/fidelity_cloud_new/ "
@@ -340,7 +344,8 @@ def main():
                 "config_<hash>/ folder whose policy should pick the agent")
         from irt_router_live import IrtRouter
         irt_router = IrtRouter(args.irt_config_dir, which=args.irt_policy,
-                               omega=args.irt_omega)
+                               omega=args.irt_omega,
+                               identity_file=args.irt_identity_file)
         log(f"[partC] irt_router: {args.irt_policy} policy from "
             f"{args.irt_config_dir}, omega={args.irt_omega}")
 

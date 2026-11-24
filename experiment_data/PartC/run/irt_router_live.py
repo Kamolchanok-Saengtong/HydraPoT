@@ -38,7 +38,7 @@ class IrtRouter:
     """
 
     def __init__(self, config_dir: str, which: str = "rl", omega: float = 0.5,
-                 cost_norm: dict | None = None):
+                 cost_norm: dict | None = None, identity_file: str | None = None):
         config_dir = os.path.abspath(config_dir)
         # Set before importing any honeyrouter stage: predictor.py,
         # routing_policy.py and reinforcement.py each resolve their own
@@ -52,7 +52,17 @@ class IrtRouter:
         import torch
         self._torch = torch
         self.model, _ = P.load()                 # frozen Stage-1 IRT
-        self.I = self.model.mu.detach()          # (K, id) arm identities
+        self.I = self.model.mu.detach().clone()  # (K, id) arm identities
+        if identity_file:
+            # Onboarding: a new model takes over one slot with its fitted vector.
+            # The network and the policy stay frozen.
+            import json
+            spec = json.load(open(identity_file, encoding="utf-8"))
+            vec = torch.tensor(spec["vector"], dtype=torch.float32)
+            if vec.shape != self.I[0].shape:
+                raise SystemExit(f"{identity_file}: vector has {tuple(vec.shape)}, "
+                                 f"the network's identities are {tuple(self.I[0].shape)}")
+            self.I[AGENTS.index(spec["slot"])] = vec
         self.pol = HR._policy(which)
         if self.pol is None:
                 raise SystemExit(
