@@ -108,13 +108,20 @@ def _panel(title, note, body, extra_class=""):
     ])
 
 
-def _bars(rows):
-    """Ranked list with an inline bar. rows: [(label, sublabel, count)], already ordered."""
+def _bars(rows, limit=None):
+    """Ranked list with an inline bar. rows: [(label, sublabel, count)], already ordered.
+
+    The first row is emphasised so the eye lands on the leader; limit keeps the
+    list short enough to read at a glance."""
     if not rows:
         return html.Div("Nothing in this period.", className="empty-state")
+    total = len(rows)
+    rows = rows[:limit] if limit else rows
     top = max(c for *_, c in rows) or 1
+    more = (html.Div(f"Top {len(rows)} of {total}", className="mx-bar-more")
+            if total > len(rows) else None)
     return html.Div(className="mx-bars", children=[
-        html.Div(className="mx-bar-row", children=[
+        html.Div(className="mx-bar-row" + (" mx-first" if i == 0 else ""), children=[
             html.Div(className="mx-bar-label", children=[
                 html.Span(sub, className="mx-bar-sub") if sub else None,
                 html.Span(label, className="mx-bar-name", title=label),
@@ -122,7 +129,34 @@ def _bars(rows):
             html.Div(className="mx-bar-track", children=[
                 html.Div(className="mx-bar-fill", style={"width": f"{max(c / top * 100, 2):.1f}%"})]),
             html.Div(f"{c:,}", className="mx-bar-val"),
-        ]) for label, sub, c in rows
+        ]) for i, (label, sub, c) in enumerate(rows)
+    ] + ([more] if more else []))
+
+
+def _hero(n_mapped, n_all, by_tactic, top_tech, top_ip, days):
+    """One sentence that says what this page found, before any chart does.
+
+    Counts only: what the data shows, never how serious it is (that belongs to
+    the detection layer)."""
+    window = "all time" if not days else f"the last {days} days"
+    facts = []
+    if by_tactic:
+        t, _, c = by_tactic[0]
+        facts.append(html.Span(["Most activity: ", html.Strong(t), f" ({c:,})"]))
+    if top_tech:
+        name, tid, c = top_tech[0]
+        facts.append(html.Span(["Top technique: ", html.Strong(f"{tid} {name}"), f" ({c:,})"]))
+    if top_ip:
+        ip, _, c = top_ip[0]
+        facts.append(html.Span(["Busiest source: ", html.Strong(ip), f" ({c:,})"]))
+    return html.Div(className="mx-hero", children=[
+        html.Div(className="mx-hero-line", children=[
+            html.Span(f"{n_mapped:,}", className="mx-hero-num"),
+            f" command{'s' if n_mapped != 1 else ''} mapped to ATT&CK",
+        ]),
+        html.Div(f"{n_mapped / max(n_all, 1) * 100:.0f}% of {n_all:,} commands in {window}",
+                 className="mx-hero-sub"),
+        html.Div(facts, className="mx-hero-facts"),
     ])
 
 
@@ -148,9 +182,7 @@ def build_mitre_body(days):
     by_tactic = [(t, "", int(n)) for t, n in
                  tagged.groupby("tactic").size().sort_values(ascending=False).items()]
 
-    kpis = html.Div(className="mx-kpis", children=[
-        _kpi("Mapped commands", f"{len(tagged):,}",
-             f"{len(tagged) / max(len(cur), 1) * 100:.0f}% of {len(cur):,} commands"),
+    kpis = html.Div(className="mx-kpis mx-kpis-tight", children=[
         _kpi("Techniques", f"{tagged['technique_id'].nunique():,}",
              _fmt_delta(tagged["technique_id"].nunique(), ptagged["technique_id"].nunique())),
         _kpi("Tactics", f"{tagged['tactic'].nunique():,}", f"of {len(TACTIC_ORDER)} in ATT&CK"),
@@ -159,13 +191,14 @@ def build_mitre_body(days):
     ])
 
     return html.Div(className="mx", children=[
+        _hero(len(tagged), len(cur), by_tactic, top_tech, top_ip, days),
         kpis,
         _panel("ATT&CK matrix", "Tactics left to right in kill-chain order. Darker = more events. "
                "Select a technique for its events.", _killchain_flow(days), "mx-wide"),
         html.Div(className="mx-grid3", children=[
             _panel("Activity by tactic", f"{len(by_tactic)} observed", _bars(by_tactic)),
-            _panel("Top techniques", "by commands", _bars(top_tech)),
-            _panel("Top attacker sources", "by mapped commands", _bars(top_ip)),
+            _panel("Top techniques", "by commands", _bars(top_tech, limit=5)),
+            _panel("Top attacker sources", "by mapped commands", _bars(top_ip, limit=5)),
         ]),
         *_attack_chain_section(days),
     ])

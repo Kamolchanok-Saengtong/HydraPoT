@@ -472,6 +472,23 @@ app.index_string = """
     .mx-kpis-tight .mx-kpi-v { font-size:1.3rem; }
     .mx .dash-table-container, .kc-sheet .dash-table-container { border:1px solid var(--line-strong) !important; border-radius:8px !important; }
     .mx-bar-name { white-space:normal; overflow:visible; text-overflow:clip; }
+    /* Hero: the one sentence the page is about. Big, with the facts under it. */
+    .mx-hero { background:#fff; border:1px solid var(--line-strong); border-left:5px solid var(--y-400);
+               border-radius:10px; padding:18px 22px; }
+    .mx-hero-line { font-size:1.55rem; font-weight:700; color:var(--ink); line-height:1.25; }
+    .mx-hero-num { font-size:2.4rem; margin-right:6px; font-variant-numeric:tabular-nums; }
+    .mx-hero-sub { font-size:0.85rem; color:var(--ink-3); margin-top:2px; }
+    .mx-hero-facts { display:flex; flex-wrap:wrap; gap:6px 26px; margin-top:12px; font-size:0.95rem; color:var(--ink-2); }
+    .mx-hero-facts strong { color:var(--ink); font-weight:700; }
+    /* Ranked lists: the leader stands out, the rest recede. */
+    .mx-bar-row .mx-bar-name { color:var(--ink-2); }
+    .mx-bar-row .mx-bar-fill { opacity:0.55; }
+    .mx-bar-row.mx-first .mx-bar-name { color:var(--ink); font-weight:700; font-size:0.92rem; }
+    .mx-bar-row.mx-first .mx-bar-fill { opacity:1; }
+    .mx-bar-row.mx-first .mx-bar-val { color:var(--ink); font-size:0.95rem; font-weight:700; }
+    .mx-bar-more { font-size:0.72rem; color:var(--ink-3); margin-top:2px; }
+    .mx-kpis-tight .mx-kpi { padding:10px 14px; }
+    .mx-kpis-tight .mx-kpi-l { text-transform:uppercase; letter-spacing:0.05em; font-size:0.66rem; }
     .stage-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
                   gap:14px; align-items:start; min-width:0; }
     .stage-grid > * { min-width:0; }
