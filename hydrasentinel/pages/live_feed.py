@@ -127,24 +127,16 @@ def build_live_page(sensor_filter="all"):
 
 
 @app.callback(Output("live-feed-wrap", "children"),
-              Input("interval", "n_intervals"),
               Input("ws-feed-store", "data"),
               State("page-store", "data"),
               State("sensor-filter-store", "data"),
               prevent_initial_call=True)
-def _refresh_live_feed(_n, _ws_tick, page, sensor_filter):
-    # Two triggers, one body: the 1s interval is a fallback net (in case the
-    # WebSocket is down) -- ws-feed-store fires the moment api_server.py's
-    # /ws/events actually sees a new row, which is the real push path. Either
-    # way this re-fetches through build_live_feed(), so there is no second
-    # rendering path to keep in sync.
+def _refresh_live_feed(_ws_tick, page, sensor_filter):
+    # Pushed by api_server.py's /ws/events the moment a new row lands; no timer.
+    # The browser reconnects every 2 s if the socket drops (clientside.py).
     if page not in FEED_PAGES:
         raise PreventUpdate
-    if ctx.triggered_id == "ws-feed-store":
-        # load_feed_rows() has its own 4s TTL (FEED_TTL) so a plain interval
-        # tick can reuse a slightly-stale cache without anyone noticing. A
-        # WebSocket tick means a NEW row genuinely just landed -- serving a
-        # cached snapshot from before that row existed would silently defeat
-        # the whole point of pushing instead of polling.
-        _drop_feed_cache(sensor_filter)
+    # A WebSocket tick means a NEW row genuinely just landed, so a cached
+    # snapshot from before that row existed would defeat the push.
+    _drop_feed_cache(sensor_filter)
     return build_live_feed(sensor_filter or "all", big=(page == "Live"))

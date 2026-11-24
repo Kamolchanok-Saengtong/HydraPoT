@@ -110,6 +110,50 @@ async def hydrapot_docs():
 # process is serving, not just this one client.
 POLL_INTERVAL_S = 1.0
 POLL_BATCH = 50   # generous vs. how many commands land in one poll interval
+STATUS_EVERY = 5  # polls between component-health checks
+
+# ONE poller for every connected browser. A poll per socket meant N tabs ran N
+# identical queries a second. The same socket also carries {"type": "status"}
+# when a component goes online/offline, so the dashboard no longer has to ask
+# for the sidebar status on a timer.
+_clients: set = set()
+_hub_task = None
+
+
+async def _broadcast(msg):
+    for ws in list(_clients):
+        try:
+            await ws.send_json(msg)
+        except Exception:
+            _clients.discard(ws)
+
+
+def _health_sig():
+    from hydrasentinel.data import agent_health
+    return tuple((name, ok) for name, ok, _ in agent_health())
+
+
+async def _hub():
+    global _hub_task
+    last_id, last_sig, n = None, None, 0
+    try:
+        while _clients:
+            rows = await asyncio.to_thread(storage.query_recent, POLL_BATCH)
+            rows = list(reversed(rows))   # query_recent is newest-first; send oldest-first
+            if last_id is not None:
+                for r in [r for r in rows if r.get("id", 0) > last_id]:
+                    await _broadcast({"type": "event", **r})
+            if rows:
+                last_id = rows[-1].get("id", last_id)
+            if n % STATUS_EVERY == 0:
+                sig = await asyncio.to_thread(_health_sig)
+                if sig != last_sig:
+                    last_sig = sig
+                    await _broadcast({"type": "status"})
+            n += 1
+            await asyncio.sleep(POLL_INTERVAL_S)
+    finally:
+        _hub_task = None
 
 
 @api.websocket("/ws/events")
@@ -119,24 +163,21 @@ async def ws_events(websocket: WebSocket):
     # protected from the outside while streaming every command to anyone who
     # opened a socket. Closed before accept(), so an unauthenticated client
     # gets a handshake failure and never a single frame.
+    global _hub_task
     if not dash_auth.read_session(websocket.cookies.get(dash_auth.COOKIE, "")):
         await websocket.close(code=1008)      # 1008 = policy violation
         return
     await websocket.accept()
-    last_id = None
+    _clients.add(websocket)
+    if _hub_task is None:
+        _hub_task = asyncio.create_task(_hub())
     try:
         while True:
-            rows = await asyncio.to_thread(storage.query_recent, POLL_BATCH)
-            rows = list(reversed(rows))   # query_recent is newest-first; send oldest-first
-            if last_id is not None:
-                rows = [r for r in rows if r.get("id", 0) > last_id]
-            for r in rows:
-                await websocket.send_json(r)
-            if rows:
-                last_id = rows[-1].get("id", last_id)
-            await asyncio.sleep(POLL_INTERVAL_S)
+            await websocket.receive_text()    # only to notice the client leaving
     except WebSocketDisconnect:
         pass
+    finally:
+        _clients.discard(websocket)
 
 
 # ── REST API v1 ──────────────────────────────────────────────────────────

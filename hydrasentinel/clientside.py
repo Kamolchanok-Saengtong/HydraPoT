@@ -85,10 +85,15 @@ app.clientside_callback(
             const proto = (location.protocol === "https:") ? "wss:" : "ws:";
             function connect() {
                 const ws = new WebSocket(proto + "//" + location.host + "/ws/events");
-                ws.onmessage = function() {
-                    window.dash_clientside.set_props(
-                        "ws-feed-store", {data: (window.__hpWsTick || 0) + 1});
-                    window.__hpWsTick = (window.__hpWsTick || 0) + 1;
+                ws.onmessage = function(e) {
+                    let msg = {};
+                    try { msg = JSON.parse(e.data); } catch (_) {}
+                    // status: a component went online/offline -> redraw the sidebar panel.
+                    // anything else is a new event -> redraw the live feed.
+                    const key = (msg.type === "status") ? "ws-status-store" : "ws-feed-store";
+                    const slot = (msg.type === "status") ? "__hpStTick" : "__hpWsTick";
+                    window[slot] = (window[slot] || 0) + 1;
+                    window.dash_clientside.set_props(key, {data: window[slot]});
                 };
                 // Server restart / network blip -- reconnect rather than
                 // silently falling back to the interval poll forever.
@@ -100,5 +105,18 @@ app.clientside_callback(
     }
     """,
     Output("ws-setup-sink", "children"),
+    Input("interval", "n_intervals"),
+)
+
+# Sidebar "Last updated" clock: runs in the browser, so it costs no server round trip.
+app.clientside_callback(
+    """
+    function(_n) {
+        const d = new Date();
+        const p = (x) => String(x).padStart(2, "0");
+        return "Last updated: " + p(d.getHours()) + ":" + p(d.getMinutes()) + ":" + p(d.getSeconds());
+    }
+    """,
+    Output("sidebar-updated", "children"),
     Input("interval", "n_intervals"),
 )

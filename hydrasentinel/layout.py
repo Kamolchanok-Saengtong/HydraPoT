@@ -4,7 +4,6 @@ page router. Imports every page module's build_*_page() to route to it, so
 this is deliberately the LAST console module imported (see hydrasentinel/__init__.py) --
 everything it depends on must already exist.
 """
-from datetime import datetime
 
 from dash import html, dcc, Input, Output, State, ctx, ALL
 from dash.exceptions import PreventUpdate
@@ -106,10 +105,10 @@ def _pick_range(_clicks):
 
 @app.callback(
     Output("hp-status-panel", "children"),
-    Output("sidebar-updated", "children"),
-    Input("interval", "n_intervals"),
+    Input("ws-status-store", "data"),
 )
 def _render_status(_n):
+    # Runs once on page load, then only when /ws/events pushes a status change.
     rows = agent_health()
     online = sum(1 for _, ok, _ in rows if ok)
     panel = html.Div(className="hp-status", children=[
@@ -127,7 +126,7 @@ def _render_status(_n):
             html.Div("COMPONENTS ONLINE", className="hp-tally-l"),
         ]),
     ])
-    return panel, f"Last updated: {datetime.now().strftime('%H:%M:%S')}"
+    return panel
 app.layout = html.Div(className="app-shell", children=[
     # NOTE: order matters. The toggle sits AFTER the sidebar so CSS can react to
     # the collapse with a sibling selector (`.sidebar.collapsed ~ .sidebar-toggle`)
@@ -154,6 +153,7 @@ app.layout = html.Div(className="app-shell", children=[
     # build_live_feed(), so this only changes WHEN that runs (push, not just
     # a fixed poll), so there is exactly one place that formats a feed row.
     dcc.Store(id="ws-feed-store", data=0),
+    dcc.Store(id="ws-status-store", data=0),
     # Floating AI analyst. Lives in the SHELL, not on a page, so it stays put
     # while you navigate and its conversation survives the move -- an assistant
     # you must re-open and re-explain yourself to is one nobody uses.
