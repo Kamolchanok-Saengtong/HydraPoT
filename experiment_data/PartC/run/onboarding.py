@@ -100,6 +100,31 @@ def fit_identity(model, E: torch.Tensor, y: torch.Tensor, init: torch.Tensor,
     return I.detach().reshape(-1)
 
 
+BETAS = (0.02, 0.1, 0.3, 1.0, 3.0, 10.0)
+
+
+def fit_identity_cv(model, E, y, init, betas=BETAS, folds=5, seed=0):
+    """fit_identity with the pull toward `init` chosen by cross-validation on the
+    fit prompts themselves (never on held-out data). With ~50 prompts the default
+    beta=1/n lets the vector drift far enough to memorise them; the fold that
+    predicts its own held-out prompts best picks how hard to hold it back.
+    Returns (vector, chosen beta)."""
+    n = len(y)
+    order = np.random.default_rng(seed).permutation(n)
+    parts = np.array_split(order, min(folds, n))
+    best, best_beta = None, betas[0]
+    for b in betas:
+        loss = 0.0
+        for f in parts:
+            tr = np.setdiff1d(order, f)
+            I = fit_identity(model, E[tr], y[tr], init, beta=b, steps=100)
+            lg = model.logits(E[f], I.reshape(1, -1))[:, 0]
+            loss += float(F.binary_cross_entropy_with_logits(lg, y[f], reduction="sum"))
+        if best is None or loss < best:
+            best, best_beta = loss, b
+    return fit_identity(model, E, y, init, beta=best_beta), best_beta
+
+
 def _auc(score: np.ndarray, y: np.ndarray) -> float:
     pos, neg = score[y == 1], score[y == 0]
     if len(pos) == 0 or len(neg) == 0:

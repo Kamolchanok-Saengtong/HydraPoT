@@ -9,6 +9,10 @@ held-out sessions against the new model's own true labels.
 
     exp A  benchmark_score/   start from [benchmark score, 2 small random numbers]
     exp B  no_benchmark/      start from the mean of the existing identities + noise
+    exp C  old_vector/        start from the OLD model's own vector (old benchmark score)
+
+Each experiment is compared with a full retrain under the SAME condition (the
+ruler), and the summary prints how much of the gap 50 prompts close.
 
     python experiment_data/PartC/run/onboard_new_model.py \
         --true-dir experiment_data/results/partC_onboarding/glm-5.3_true_run --bench-score 0.917
@@ -35,7 +39,7 @@ from honeyrouter.sessions import load_sessions               # noqa: E402
 import eval_onboarding as EO                                 # noqa: E402
 
 BASE = os.path.join(ROOT, "experiment_data", "results", "partC_onboarding")
-BUDGETS = (10, 20, 30)          # 50 is the saved set itself
+BUDGETS = (5, 10, 15, 20, 25, 30, 40, 60, 80, 100)   # 50 is the saved set itself
 
 
 def load_true_scores(true_dir):
@@ -58,6 +62,8 @@ def main():
     ap.add_argument("--bench-score", type=float, required=True)
     ap.add_argument("--slot", default="cloud", choices=list(AGENTS))
     ap.add_argument("--seeds", type=int, default=5)
+    ap.add_argument("--run-name", default="budget_sweep",
+                    help="sub folder of partC_onboarding/ the results go into")
     args = ap.parse_args()
     k = list(AGENTS).index(args.slot)
 
@@ -98,6 +104,9 @@ def main():
     psi = OB.discrimination(model, Et[pool], torch.tensor(Y_old)[pool])
 
     bench = P.benchmark_identity()[0].clone()
+    bench_old = bench.clone()                     # the old model's benchmark score
+    bench_none = bench.clone()
+    bench_none[:, 0] = bench[:, 0].mean()         # same number for every arm: no benchmark info
     bench[k, 0] = args.bench_score
     mean_existing = model.mu.detach().mean(0)
 
@@ -105,6 +114,8 @@ def main():
         g = torch.Generator().manual_seed(1000 + seed)
         if tag == "A":
             return torch.cat([bench[k], 0.5 * torch.randn(EO.EXTRA, generator=g)])
+        if tag == "C":
+            return model.mu[k].detach().clone()
         return mean_existing + 0.1 * torch.randn(mean_existing.shape[0], generator=g)
 
     def grade(I):
@@ -119,15 +130,18 @@ def main():
 
     trn = np.flatnonzero(tr & valid)
     Rt = torch.tensor(np.nan_to_num(raw, nan=3.0))
-    full = []
-    for seed in range(args.seeds):
-        torch.manual_seed(100 + seed)
-        net = EO.train_stage1(Et[trn], Yt[trn], Rt[trn], bench, list(range(len(AGENTS))), seed)
-        full.append(OB.evaluate_identity(net, net.mu[k], ev, yv))
-    base["full retrain with true labels (ruler)"] = EO.summarise(full)
+    rulers = {}
+    for tag, b in (("A", bench), ("B", bench_none), ("C", bench_old)):
+        full = []
+        for seed in range(args.seeds):
+            torch.manual_seed(100 + seed)
+            net = EO.train_stage1(Et[trn], Yt[trn], Rt[trn], b, list(range(len(AGENTS))), seed)
+            full.append(OB.evaluate_identity(net, net.mu[k], ev, yv))
+        rulers[tag] = EO.summarise(full)
 
-    for tag, folder in (("A", "benchmark_score"), ("B", "no_benchmark")):
-        out = os.path.join(BASE, folder)
+    for tag, folder in (("A", "benchmark_score"), ("B", "no_benchmark"), ("C", "old_vector")):
+        base["full retrain with true labels (ruler)"] = rulers[tag]
+        out = os.path.join(BASE, args.run_name, folder)
         os.makedirs(out, exist_ok=True)
         shutil.copy(os.path.join(BASE, "selected_prompts.json"), os.path.join(out, "selected_prompts.json"))
         with open(os.path.join(out, "fit_labels.json"), "w", encoding="utf-8") as fh:
@@ -136,11 +150,16 @@ def main():
         rows, vectors = {}, {}
         for seed in range(args.seeds):
             s0 = start(tag, seed)
-            sets = {f"{n:>2} prompts": OB.stratified_select(psi, n, seed=seed, groups=texts[pool])
+            sets = {f"{n:>3} prompts": OB.stratified_select(psi, n, seed=seed, groups=texts[pool])
                     for n in BUDGETS}
             for name, idx in {**{n: pool[v] for n, v in sets.items()}, "50 prompts": fit_ok}.items():
-                I = OB.fit_identity(model, Et[idx], yk[idx], s0)
+                I, beta = OB.fit_identity_cv(model, Et[idx], yk[idx], s0, seed=seed)
                 rows.setdefault(name, []).append(grade(I))
+                if name == "50 prompts":
+                    rows.setdefault("50 prompts, default prior (before the fix)", []).append(
+                        grade(OB.fit_identity(model, Et[idx], yk[idx], s0)))
+                    rows.setdefault("pull toward start chosen by CV (beta)", []).append(
+                        {"bce": beta, "acc": beta, "auc": beta})
                 vectors.setdefault(name, []).append([round(float(x), 5) for x in I])
                 if name == "50 prompts":
                     ok = OB.worth_trusting(OB.evaluate_identity(model, I, Et[chk_ok], yk[chk_ok]),
@@ -155,18 +174,27 @@ def main():
         with open(os.path.join(out, "results.json"), "w", encoding="utf-8") as fh:
             json.dump({"table": table, "vectors": vectors, "bench_score": args.bench_score if tag == "A" else None,
                        "seeds": args.seeds, "eta": float(eta), "n_heldout_rows": int(len(held_ok))}, fh, indent=1)
-        start_txt = (f"[{args.bench_score}, 2 small random numbers]" if tag == "A"
-                     else "mean of the existing identities + noise")
+        start_txt = {"A": f"[{args.bench_score}, 2 small random numbers]",
+                     "B": "mean of the existing identities + noise",
+                     "C": "the old model's own vector (old benchmark score)"}[tag]
         lines = [f"New model onboarding, exp {tag} ({folder}); start = {start_txt}",
                  f"slot={args.slot}, true labels from {os.path.basename(args.true_dir)}, "
                  f"{len(fit_ok)} fit prompts, {len(chk_ok)} check prompts, "
                  f"{len(held_ok)} held-out rows, {args.seeds} seeds (mean +- sd). Lower BCE, higher acc/AUC is better.\n",
                  f"  {'method':<52} {'BCE':>13} {'acc':>13} {'AUC':>13}"]
         for name, m in table.items():
-            if name.startswith("check"):
+            if name.startswith("pull"):
+                lines.append(f"  {name:<52} mean beta {m['bce'][0]:g} over seeds")
+            elif name.startswith("check"):
                 lines.append(f"  {name:<52} passed in {100 * m['bce'][0]:.0f}% of seeds")
             else:
                 lines.append(f"  {name:<52} " + " ".join(f"{m[c][0]:6.3f}+-{m[c][1]:5.3f}" for c in ("bce", "acc", "auc")))
+        const, ruler, fifty = (table[n]["bce"][0] for n in (
+            "constant guess", "full retrain with true labels (ruler)", "50 prompts"))
+        closed = 100 * (const - fifty) / (const - ruler)
+        lines += ["", f"  trade-off: 50 labelled prompts close {closed:.0f}% of the BCE gap between a "
+                      f"constant guess and a full retrain on {len(trn)} labelled commands "
+                      f"({len(fit_ok) / len(trn):.0%} of the labels)"]
         text = "\n".join(lines) + "\n"
         with open(os.path.join(out, "summary.txt"), "w", encoding="utf-8") as fh:
             fh.write(text)
