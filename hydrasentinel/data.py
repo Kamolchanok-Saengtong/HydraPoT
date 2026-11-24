@@ -9,6 +9,7 @@ pages that need them.
 """
 import functools
 import ipaddress
+import threading
 import time
 
 import pandas as pd
@@ -81,11 +82,35 @@ def _cached_page(key, build):
     now = time.time()
     ver = _db_version()
     hit = _page_cache.get(key)
-    if hit is not None and (now - hit[1]) < PAGE_TTL and hit[2] == ver:
+    if hit is not None and hit[2] == ver:
+        if (now - hit[1]) < PAGE_TTL:
+            return hit[0]
+        # Same data, just older than the TTL: show it now and rebuild behind
+        # it. Waiting for the rebuild made the first click after a pause cost ~3s.
+        with _rebuild_lock:
+            start = key not in _rebuilding
+            _rebuilding.add(key)
+        if start:
+            threading.Thread(target=_rebuild_page, args=(key, build, ver),
+                             daemon=True).start()
         return hit[0]
     page = build()
     _page_cache[key] = (page, now, ver)
     return page
+
+
+_rebuilding = set()
+_rebuild_lock = threading.Lock()
+
+
+def _rebuild_page(key, build, ver):
+    try:
+        _page_cache[key] = (build(), time.time(), ver)
+    except Exception as e:
+        print(f"[dashboard] background rebuild of {key!r} failed: {type(e).__name__}: {e}")
+    finally:
+        with _rebuild_lock:
+            _rebuilding.discard(key)
 
 
 def load_feed_rows(instance=None, limit=None):
