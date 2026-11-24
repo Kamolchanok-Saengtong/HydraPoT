@@ -428,7 +428,7 @@ async def invite_form(request: Request, token: str):
 @api.post(dash_auth.INVITE_PATH + "{token}", include_in_schema=False)
 async def invite_submit(request: Request, token: str,
                         password: str = Form(""), again: str = Form(""),
-                        csrf_token: str = Form("")):
+                        username: str = Form(""), csrf_token: str = Form("")):
     ip = _client_ip(request)
     if dash_auth.locked_out(ip):
         return HTMLResponse(login_page.locked(int(dash_auth.cfg().lockout_minutes)),
@@ -454,7 +454,9 @@ async def invite_submit(request: Request, token: str,
     if password != again:
         return again_page("The two passwords do not match.")
     try:
-        username = dash_auth.redeem_invite(token, password)
+        username = dash_auth.redeem_invite(token, password, username)
+    except FileExistsError:
+        return again_page("That name is already taken.")
     except ValueError as exc:
         return again_page(str(exc).capitalize() + ".")
     except LookupError:

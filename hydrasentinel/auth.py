@@ -264,66 +264,93 @@ def _signing_secret() -> bytes:
 
 USERNAME_RE = re.compile(r"^[A-Za-z0-9._-]{3,32}$")
 INVITE_PATH = "/_hp/invite/"
+OPEN_INVITE = "anyone"        # `hp --dashboard-invite anyone`: the visitor picks their name
+RESERVED = {OPEN_INVITE}
+MAX_OPEN_USES = 100
 
 
-def create_invite(username: str, hours: float = 24.0) -> str:
-    """Make a one-time invite for `username` and return its token (shown once).
-
-    Refuses an invalid name or one that already has an account. A second invite
-    for the same name replaces the first, so only the newest link works.
-    """
-    if not USERNAME_RE.match(username or ""):
+def _check_name(username: str):
+    if not USERNAME_RE.match(username or "") or username in RESERVED:
         raise ValueError("username must be 3-32 characters: letters, digits, . _ -")
     if user_exists(username):
         raise FileExistsError(f"operator '{username}' already exists")
+
+
+def create_invite(username, hours: float = 24.0, uses: int = None) -> str:
+    """Make an invite and return its token (shown once).
+
+    A name makes a link for that person, good once. `username=None` makes an
+    OPEN link: whoever opens it picks their own name, up to `uses` times
+    (default 10, at most 100). An open link lets anyone who receives it create
+    an operator account, so it is capped in both uses and time.
+
+    A new invite for the same name replaces the old one; there is one open
+    link at a time, and a new one replaces it.
+    """
+    open_link = username is None
+    if open_link:
+        uses = max(1, min(int(uses or 10), MAX_OPEN_USES))
+    else:
+        _check_name(username)
+        uses = 1
     token = secrets.token_urlsafe(32)
     now = time.time()
     with _store() as conn:
-        conn.execute("DELETE FROM invites WHERE username=? OR expires<?",
-                     (username, now))
-        conn.execute("INSERT INTO invites (token_hash, username, created, expires) "
-                     "VALUES (?,?,?,?)",
-                     (_token_hash(token), username, now, now + float(hours) * 3600))
+        conn.execute("DELETE FROM invites WHERE username=? OR expires<? OR uses_left<=0",
+                     ("" if open_link else username, now))
+        conn.execute("INSERT INTO invites (token_hash, username, created, expires, "
+                     "uses_left) VALUES (?,?,?,?,?)",
+                     (_token_hash(token), "" if open_link else username, now,
+                      now + float(hours) * 3600, uses))
     return token
 
 
 def get_invite(token: str) -> dict:
-    """The invite row if the token is real, unused and unexpired, else {}.
-    Unknown, used and expired are indistinguishable to the caller."""
+    """The invite row if the token is real, has uses left and is unexpired, else
+    {}. Unknown, used up and expired are indistinguishable to the caller."""
     if not token:
         return {}
     with _store() as conn:
         row = conn.execute(
-            "SELECT * FROM invites WHERE token_hash=? AND used_at IS NULL "
+            "SELECT * FROM invites WHERE token_hash=? AND uses_left>0 "
             "AND expires>?", (_token_hash(token), time.time())).fetchone()
     return dict(row) if row else {}
 
 
-def redeem_invite(token: str, password: str) -> str:
-    """Spend the invite and create the account. Returns the username.
+def redeem_invite(token: str, password: str, username: str = None) -> str:
+    """Spend one use of the invite and create the account. Returns the username.
 
-    The invite is claimed with one conditional UPDATE, so two people opening
-    the same link cannot both succeed. Raises LookupError for a bad link and
-    ValueError for a password that is too short.
+    For a named invite the name comes from the invite and `username` is ignored;
+    for an open one the visitor supplies it. The use is claimed with one
+    conditional UPDATE, so a single-use link cannot be won by two people.
+    Raises LookupError for a bad link, ValueError for a bad name or short
+    password, FileExistsError for a name already taken -- the last two before
+    anything is spent, so the visitor can correct and retry.
     """
     minimum = int(cfg().min_password_length)
     if len(password or "") < minimum:
         raise ValueError(f"password must be at least {minimum} characters")
-    th = _token_hash(token or "")
+    row = get_invite(token)
+    if not row:
+        raise LookupError("invite is not valid")
+    name = row["username"] or (username or "").strip()
+    _check_name(name)
+    th = _token_hash(token)
     now = time.time()
     with _store() as conn:
         cur = conn.execute(
-            "UPDATE invites SET used_at=? WHERE token_hash=? AND used_at IS NULL "
-            "AND expires>?", (now, th, now))
+            "UPDATE invites SET uses_left=uses_left-1, used_at=? WHERE token_hash=? "
+            "AND uses_left>0 AND expires>?", (now, th, now))
         if cur.rowcount != 1:
             raise LookupError("invite is not valid")
-        username = conn.execute("SELECT username FROM invites WHERE token_hash=?",
-                                (th,)).fetchone()[0]
     try:
-        write_credential(username, password)
+        write_credential(name, password)
     except FileExistsError:
-        raise LookupError("invite is not valid")
-    return username
+        with _store() as conn:                    # someone took the name a moment ago
+            conn.execute("UPDATE invites SET uses_left=uses_left+1 WHERE token_hash=?",
+                         (th,))
+        raise
+    return name
 
 
 # ─── Session + throttle store ────────────────────────────────────────────────
@@ -351,7 +378,8 @@ CREATE TABLE IF NOT EXISTS invites (
     username   TEXT NOT NULL,
     created    REAL NOT NULL,
     expires    REAL NOT NULL,
-    used_at    REAL
+    used_at    REAL,
+    uses_left  INTEGER NOT NULL DEFAULT 1
 );
 CREATE TABLE IF NOT EXISTS login_attempts (
     id     INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -385,6 +413,13 @@ def _connect() -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
     conn.executescript(_SCHEMA)
+    # An `invites` table made before open links existed has no uses_left. Add it,
+    # and keep links that were already spent spent.
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(invites)")}
+    if "uses_left" not in cols:
+        conn.execute("ALTER TABLE invites ADD COLUMN uses_left INTEGER NOT NULL DEFAULT 1")
+        conn.execute("UPDATE invites SET uses_left=0 WHERE used_at IS NOT NULL")
+        conn.commit()
     return conn
 
 

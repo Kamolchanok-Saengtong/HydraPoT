@@ -380,6 +380,11 @@ def invite(csrf: str, token: str, username: str, *, error: str = "") -> str:
     """The page a colleague lands on from an invite link: the name is fixed by
     the invite, they choose only their own password."""
     err = f"<div class=err>{escape(str(error))}</div>" if error else ""
+    # A named invite fixes the name; an open one (username "") lets the visitor choose.
+    name_field = (f"<input id=username type=text value='{_attr(username)}' readonly>"
+                  if username else
+                  "<input id=username name=username type=text autocomplete=off "
+                  "placeholder='3-32 letters, digits, . _ -' autofocus required>")
     return _page("Accept invite", f"""
       {_BRAND}
       <p class=sub>You have been invited to the operator console</p>
@@ -387,10 +392,10 @@ def invite(csrf: str, token: str, username: str, *, error: str = "") -> str:
       <form method=post action='/_hp/invite/{_attr(token)}' autocomplete=off>
         <input type=hidden name=csrf_token value='{_attr(csrf)}'>
         <label for=username>Operator</label>
-        <input id=username type=text value='{_attr(username)}' readonly>
+        {name_field}
         <label for=password>Choose a password</label>
         <input id=password name=password type=password
-               autocomplete=new-password autofocus required>
+               autocomplete=new-password required>
         <label for=again>Password again</label>
         <input id=again name=again type=password
                autocomplete=new-password required>
