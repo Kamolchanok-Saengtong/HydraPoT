@@ -487,6 +487,30 @@ app.index_string = """
     .mx-bar-row.mx-first .mx-bar-fill { opacity:1; }
     .mx-bar-row.mx-first .mx-bar-val { color:var(--ink); font-size:0.95rem; font-weight:700; }
     .mx-bar-more { font-size:0.72rem; color:var(--ink-3); margin-top:2px; }
+    /* Users view (Database > Dashboard access > users) */
+    .ppl { margin-bottom:18px; }
+    .ppl-head { font-size:1.1rem; font-weight:600; color:var(--ink-2); margin-bottom:12px; }
+    .ppl-count { font-size:2rem; font-weight:700; color:var(--ink); margin-right:4px; }
+    .ppl-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:12px; }
+    .ppl-card { display:flex; align-items:center; gap:12px; background:#fff; border:1px solid var(--line-strong);
+                border-radius:10px; padding:12px 14px; }
+    .ppl-avatar { flex:0 0 40px; height:40px; border-radius:50%; background:var(--y-400); color:var(--ink);
+                  font-weight:700; font-size:1.1rem; display:flex; align-items:center; justify-content:center; }
+    .ppl-main { flex:1; min-width:0; }
+    .ppl-name { font-size:1.05rem; font-weight:700; color:var(--ink); }
+    .ppl-role { font-size:0.66rem; font-weight:600; text-transform:uppercase; letter-spacing:0.05em; color:var(--ink-3);
+                border:1px solid var(--line-strong); border-radius:20px; padding:1px 8px; margin-left:8px; vertical-align:middle; }
+    .ppl-sub { font-size:0.78rem; color:var(--ink-3); }
+    .ppl-state { font-size:0.78rem; color:var(--ink-3); display:flex; align-items:center; gap:6px; white-space:nowrap; }
+    .ppl-dot { width:8px; height:8px; border-radius:50%; background:var(--line-strong); }
+    .ppl-on { color:var(--ink); font-weight:600; }
+    .ppl-on .ppl-dot { background:#1c9a4a; }
+    .ppl-sec { margin-top:16px; display:flex; flex-direction:column; gap:6px; }
+    .ppl-title { font-size:0.74rem; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:var(--ink-3); }
+    .ppl-raw { margin-top:18px; }
+    .ppl-invite { display:flex; justify-content:space-between; gap:12px; background:var(--y-50); border:1px dashed var(--line-strong);
+                  border-radius:8px; padding:8px 12px; }
+    .ppl-inv-who { font-size:0.9rem; font-weight:600; color:var(--ink); }
     .mx-kpis-tight .mx-kpi { padding:10px 14px; }
     .mx-kpis-tight .mx-kpi-l { text-transform:uppercase; letter-spacing:0.05em; font-size:0.66rem; }
     .stage-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));

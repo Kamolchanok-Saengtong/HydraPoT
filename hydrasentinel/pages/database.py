@@ -140,6 +140,77 @@ def _is_num_type(t):
     return any(k in t for k in ("INT", "REAL", "FLOA", "DOUB", "NUM", "DEC"))
 
 
+def _span(sec):
+    sec = max(sec, 0)
+    for unit, n in (("d", 86400), ("h", 3600), ("min", 60)):
+        if sec >= n:
+            return f"{int(sec // n)} {unit}"
+    return "under 1 min"
+
+
+def _people_view(path):
+    """Who can sign in, in words: one card per account plus the open invite links.
+
+    Read-only, and never shows a password hash or a token. The raw table stays
+    underneath for anyone who wants the columns."""
+    import sqlite3
+    import time
+    now = time.time()
+    try:
+        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        users = conn.execute("SELECT username, created, role FROM users "
+                             "ORDER BY created").fetchall()
+        seen = dict(conn.execute("SELECT username, MAX(last_seen) FROM operator_sessions "
+                                 "GROUP BY username").fetchall())
+        invites = conn.execute(
+            "SELECT username, expires, uses_left FROM invites "
+            "WHERE uses_left > 0 AND expires > ? ORDER BY expires", (now,)).fetchall()
+        conn.close()
+    except Exception:
+        return None
+
+    def card(name, created, role):
+        last = seen.get(name)
+        online = last is not None and now - last < 900
+        return html.Div(className="ppl-card", children=[
+            html.Div(className="ppl-avatar", children=name[:1].upper()),
+            html.Div(className="ppl-main", children=[
+                html.Div(className="ppl-name", children=[
+                    name, html.Span(role, className="ppl-role")]),
+                html.Div(f"Joined {datetime.fromtimestamp(created):%Y-%m-%d}",
+                         className="ppl-sub"),
+            ]),
+            html.Div(className="ppl-state" + (" ppl-on" if online else ""), children=[
+                html.Span(className="ppl-dot"),
+                "Active now" if online
+                else (f"Last seen {_span(now - last)} ago" if last else "Never signed in"),
+            ]),
+        ])
+
+    def invite(name, expires, uses):
+        who = "Anyone with the link" if name == "anyone" else f"For {name}"
+        left = f"{uses} use{'s' if uses != 1 else ''} left"
+        return html.Div(className="ppl-invite", children=[
+            html.Span(who, className="ppl-inv-who"),
+            html.Span(f"{left} · expires in {_span(expires - now)}",
+                      className="ppl-sub"),
+        ])
+
+    return html.Div(className="ppl", children=[
+        html.Div(className="ppl-head", children=[
+            html.Span(f"{len(users)}", className="ppl-count"),
+            f" account{'s' if len(users) != 1 else ''} can sign in",
+        ]),
+        html.Div(className="ppl-grid", children=[card(*u) for u in users]),
+        html.Div(className="ppl-sec", children=[
+            html.Div(f"Open invite links ({len(invites)})", className="ppl-title"),
+            *([invite(*i) for i in invites] if invites else
+              [html.Div("None. Create one with hp --dashboard-invite NAME.", className="ppl-sub")]),
+        ]),
+        html.Div("Raw table", className="ppl-title ppl-raw"),
+    ])
+
+
 def _fmt_time(v):
     try:
         f = float(v)
@@ -666,6 +737,10 @@ def _render(db_key, table, tab, page, search, sort, density, visible, sqlres):
     start = page * PAGE_SIZE + 1 if total else 0
     end = min((page + 1) * PAGE_SIZE, total)
     rng = f"{start:,}–{end:,} of {total:,}" if total else "0 of 0"
+    if db_key == "login" and table == "users":
+        people = _people_view(db["file"])
+        if people is not None:
+            grid = html.Div([people, grid])
     return (grid, table, meta, rng, page <= 0, end >= total, rows)
 
 
