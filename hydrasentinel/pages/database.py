@@ -47,13 +47,26 @@ _DEFAULT_SQL = ("SELECT agent, COUNT(*) AS n FROM sessions "
 
 # ─── databases ───────────────────────────────────────────────────────────────
 
-def _databases():
+def _me():
+    """The signed-in account for this request, or "" (no cookie, or no request)."""
+    from flask import has_request_context, request
     from hydrasentinel import auth
-    return [
-        {"key": "capture", "label": "Capture data", "file": storage.DB_PATH},
-        {"key": "login", "label": "Dashboard access",
-         "file": auth.session_db_path()},
-    ]
+    if not has_request_context():
+        return ""
+    return auth.read_session(request.cookies.get(auth.COOKIE, "")).get("username", "")
+
+
+def _databases():
+    """The databases this viewer may open. The account database (names, roles,
+    invite links) is for admins only; an operator never sees it listed, and
+    every callback resolves a database through here, so naming it by hand gets
+    the capture database instead."""
+    from hydrasentinel import auth
+    dbs = [{"key": "capture", "label": "Capture data", "file": storage.DB_PATH}]
+    if auth.is_admin(_me()):
+        dbs.append({"key": "login", "label": "Dashboard access",
+                    "file": auth.session_db_path()})
+    return dbs
 
 
 def _db_by_key(key):
@@ -61,6 +74,11 @@ def _db_by_key(key):
         if db["key"] == key:
             return db
     return _databases()[0]
+
+
+def _key(db_key):
+    """The key of the database this viewer actually gets for `db_key`."""
+    return _db_by_key(db_key or "capture")["key"]
 
 
 def _basename(path):
@@ -529,7 +547,7 @@ def build_database_page():
     Input("dbx-db", "data"), Input("dbx-table", "data"),
 )
 def _render_pick(db_key, table):
-    return _pick(db_key or "capture", table)
+    return _pick(_key(db_key), table)
 
 
 @app.callback(
@@ -548,14 +566,14 @@ def _select(_dbclicks, _tblclicks, cur_db, cur_table):
     trig = ctx.triggered_id or {}
     if trig.get("type") == "dbx-pickdb":
         db_key = trig.get("db")
-        if db_key == cur_db:
+        if db_key == cur_db or _key(db_key) != db_key:
             raise PreventUpdate
         tabs = _tables(db_key)
         table = tabs[0]["name"] if tabs else None
     else:
         db_key = trig.get("db")
         table = trig.get("table")
-        if db_key == cur_db and table == cur_table:
+        if _key(db_key) != db_key or (db_key == cur_db and table == cur_table):
             raise PreventUpdate
     # a new selection drops any SQL result so the browsed table shows
     return db_key, table, 0, {"col": None, "desc": False}, None
@@ -681,7 +699,7 @@ def _run_sql(_n, _s, sql, db_key):
     q = (sql or "").strip()
     if not q:
         raise PreventUpdate
-    db_key = db_key or "capture"
+    db_key = _key(db_key)
     res = storage.run_readonly_query(q, path=_db_by_key(db_key)["file"])
     if res["error"]:
         # on error keep the browsed table and show the message inline
@@ -705,7 +723,7 @@ def _run_sql(_n, _s, sql, db_key):
     Input("dbx-cols", "value"), Input("dbx-sqlres", "data"),
 )
 def _render(db_key, table, tab, page, search, sort, density, visible, sqlres):
-    db_key = db_key or "capture"
+    db_key = _key(db_key)
 
     # a SQL result takes over the grid until a table chip is clicked
     if sqlres and tab != "schema":
