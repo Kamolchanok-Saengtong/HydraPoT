@@ -508,6 +508,13 @@ app.index_string = """
     .ppl-sec { margin-top:16px; display:flex; flex-direction:column; gap:6px; }
     .ppl-title { font-size:0.74rem; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:var(--ink-3); }
     .ppl-raw { margin-top:18px; }
+    .ppl-del { border:1px solid #c0392b; color:#c0392b; background:#fff; border-radius:8px; padding:4px 10px;
+               font-size:0.76rem; font-weight:600; cursor:pointer; }
+    .ppl-del:hover { background:#c0392b; color:#fff; }
+    .ppl-you { font-size:0.7rem; color:var(--ink-3); font-weight:600; text-transform:uppercase; letter-spacing:0.05em; }
+    .ppl-msg-ok, .ppl-msg-err { margin:0 0 10px; padding:8px 12px; border-radius:8px; font-size:0.86rem; font-weight:600; }
+    .ppl-msg-ok { background:#e8f6ed; color:#16793a; }
+    .ppl-msg-err { background:#fdecea; color:#a93226; }
     .ppl-invite { display:flex; justify-content:space-between; gap:12px; background:var(--y-50); border:1px dashed var(--line-strong);
                   border-radius:8px; padding:8px 12px; }
     .ppl-inv-who { font-size:0.9rem; font-weight:600; color:var(--ink); }

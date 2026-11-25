@@ -166,7 +166,7 @@ def _span(sec):
     return "under 1 min"
 
 
-def _people_view(path):
+def _people_view(path, me=""):
     """Who can sign in, in words: one card per account plus the open invite links.
 
     Read-only, and never shows a password hash or a token. The raw table stays
@@ -203,6 +203,8 @@ def _people_view(path):
                 "Active now" if online
                 else (f"Last seen {_span(now - last)} ago" if last else "Never signed in"),
             ]),
+            html.Button("Delete", id={"type": "ppl-del", "u": name}, n_clicks=0,
+                        className="ppl-del") if name != me else html.Span("you", className="ppl-you"),
         ])
 
     def invite(name, expires, uses):
@@ -487,11 +489,15 @@ def build_database_page():
         dcc.Store(id="dbx-rows", data=[]),
         dcc.Store(id="dbx-detail", data=None),
         dcc.Store(id="dbx-sqlres", data=None),
+        dcc.Store(id="dbx-bump", data=0),
+        dcc.Store(id="ppl-target", data=None),
+        dcc.ConfirmDialog(id="ppl-confirm", message=""),
 
         html.Div(className="dbx-full", children=[
             html.Div(id="dbx-pick", className="dbx-pick"),
 
             html.Div(className="dbx-main", children=[
+                html.Div(id="ppl-msg", className="ppl-msg"),
                 html.H2(id="dbx-title", className="dbx-title"),
                 html.Div(id="dbx-meta", className="dbx-meta"),
                 html.Div(className="dbx-tabs", children=[
@@ -544,9 +550,9 @@ def build_database_page():
 
 @app.callback(
     Output("dbx-pick", "children"),
-    Input("dbx-db", "data"), Input("dbx-table", "data"),
+    Input("dbx-db", "data"), Input("dbx-table", "data"), Input("dbx-bump", "data"),
 )
-def _render_pick(db_key, table):
+def _render_pick(db_key, table, _bump):
     return _pick(_key(db_key), table)
 
 
@@ -720,9 +726,9 @@ def _run_sql(_n, _s, sql, db_key):
     Input("dbx-db", "data"), Input("dbx-table", "data"), Input("dbx-tab", "data"),
     Input("dbx-page", "data"), Input("dbx-search", "value"),
     Input("dbx-sort", "data"), Input("dbx-density", "data"),
-    Input("dbx-cols", "value"), Input("dbx-sqlres", "data"),
+    Input("dbx-cols", "value"), Input("dbx-sqlres", "data"), Input("dbx-bump", "data"),
 )
-def _render(db_key, table, tab, page, search, sort, density, visible, sqlres):
+def _render(db_key, table, tab, page, search, sort, density, visible, sqlres, _bump):
     db_key = _key(db_key)
 
     # a SQL result takes over the grid until a table chip is clicked
@@ -756,10 +762,43 @@ def _render(db_key, table, tab, page, search, sort, density, visible, sqlres):
     end = min((page + 1) * PAGE_SIZE, total)
     rng = f"{start:,}–{end:,} of {total:,}" if total else "0 of 0"
     if db_key == "login" and table == "users":
-        people = _people_view(db["file"])
+        people = _people_view(db["file"], _me())
         if people is not None:
             grid = html.Div([people, grid])
     return (grid, table, meta, rng, page <= 0, end >= total, rows)
+
+
+@app.callback(
+    Output("ppl-target", "data"), Output("ppl-confirm", "displayed"),
+    Output("ppl-confirm", "message"),
+    Input({"type": "ppl-del", "u": ALL}, "n_clicks"),
+    prevent_initial_call=True,
+)
+def _ask_delete(_clicks):
+    # the n_clicks=0 a freshly drawn card reports is not a click
+    if not (ctx.triggered and ctx.triggered[0].get("value")):
+        raise PreventUpdate
+    who = (ctx.triggered_id or {}).get("u")
+    from hydrasentinel import auth
+    if not who or not auth.is_admin(_me()):
+        raise PreventUpdate
+    return who, True, (f"Delete the account '{who}'? They are signed out at once and "
+                       f"cannot sign back in. This cannot be undone.")
+
+
+@app.callback(
+    Output("dbx-bump", "data"), Output("ppl-msg", "children"),
+    Input("ppl-confirm", "submit_n_clicks"),
+    State("ppl-target", "data"), State("dbx-bump", "data"),
+    prevent_initial_call=True,
+)
+def _do_delete(_n, who, bump):
+    if not who:
+        raise PreventUpdate
+    from hydrasentinel import auth
+    # checked here, not by hiding the button: the caller must be an admin
+    ok, msg = auth.delete_account(_me(), who)
+    return (bump or 0) + 1, html.Div(msg, className="ppl-msg-" + ("ok" if ok else "err"))
 
 
 @app.callback(
