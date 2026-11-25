@@ -1712,8 +1712,9 @@ app.index_string = """
     .kpi-mini { border:2px solid var(--ink); border-radius:16px; padding:12px 14px; }
     .kpi-mini-l { font-size:0.82rem; text-transform:none; letter-spacing:0; color:var(--ink); font-weight:600; }
     .kpi-mini-v { font-size:1.6rem; }
-    .alert-card { background:var(--rose); border:2px solid var(--ink); border-radius:22px; padding:20px 22px; }
+    .alert-card { background:var(--sun); border:2px solid var(--ink); border-radius:22px; padding:20px 22px; }
     .alert-row { border-radius:14px; }
+    .alert-card .alert-row:hover { background:rgba(255,255,255,0.55); }
     .hp-range { border:2px solid var(--ink); border-radius:999px; background:#fff; padding:3px; }
     .hp-range button { font-family:'Inter',sans-serif; font-size:0.9rem; padding:7px 14px; border-radius:999px; }
     .hp-range button.active { background:var(--lav); border:2px solid var(--ink); padding:5px 12px; }
