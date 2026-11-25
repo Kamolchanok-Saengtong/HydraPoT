@@ -68,7 +68,7 @@ def load_sessions(path):
 
 
 RESULTS_DIR = os.path.join(_HERE, "..", "results", "partC")
-ARMS = ("cowrie", "on_device", "cloud", "honeyrouter", "irt_router")
+ARMS = ("cowrie", "on_device", "cloud", "honeyrouter", "irt_router", "onboard")
 
 
 # ─── logger — mirrors every message to stdout AND a run.log file ───────────────
@@ -146,7 +146,7 @@ def _expected_route(config, fi):
 
 
 def _run_session_for_arm(base, session, arm, trial, run_id, write, arm_stats, log,
-                         irt_router=None):
+                         irt_router=None, onboard=None):
     """
     Fresh handle for this (session, arm) pair — fresh SYSTEM_STATE, same as
     ground truth collection's reset-between-sessions behavior. Commands
@@ -159,7 +159,7 @@ def _run_session_for_arm(base, session, arm, trial, run_id, write, arm_stats, lo
     # irt_router:  the TRAINED neural policy names the agent per command and
     #              it is forced, so the pick is the network's, not the regex's.
     # anything else: that single agent, forced.
-    force_agent = None if arm in ("honeyrouter", "irt_router") else arm
+    force_agent = None if arm in ("honeyrouter", "irt_router", "onboard") else arm
 
     handle = hydrapot_main.make_command_handler(
         base.cowrie,
@@ -181,6 +181,14 @@ def _run_session_for_arm(base, session, arm, trial, run_id, write, arm_stats, lo
         per_cmd_force = force_agent
         if arm == "irt_router":
             per_cmd_force = irt_router.pick(cmd)
+        picked = True
+        if arm == "onboard":
+            # Cowrie answers the rest of the session so the state is what an attacker
+            # would have built; the model being onboarded answers only the picked prompts.
+            if pos > onboard["last"].get(str(session_id), -1):
+                break
+            picked = (str(session_id), pos) in onboard["picks"]
+            per_cmd_force = onboard["slot"] if picked else "cowrie"
 
         response, fields, routed_to, usage, state_size, state_snapshot, ok = _run_arm(
             handle, cmd, per_cmd_force, log=log
@@ -223,6 +231,8 @@ def _run_session_for_arm(base, session, arm, trial, run_id, write, arm_stats, lo
             # config-defined correct tier for this FI — gold label for routing accuracy
             "expected_route":     _expected_route(base.config, fi_score),
         }
+        if not picked:
+            continue
         write(arm, rec)
 
         s = arm_stats[arm]
@@ -272,6 +282,14 @@ def main():
     ap.add_argument("--cloud-model", type=str, default="deepseek/deepseek-v4.1-flash",
                      help="model the cloud arm calls (default: the Part C model); "
                           "a different one is how a replacement model is measured")
+    ap.add_argument("--onboard-file", type=str, default=None,
+                     help="for --arms onboard: JSON {slot, picks:[[session_id, position],..]}; "
+                          "the model in that slot answers only those prompts")
+    ap.add_argument("--ondevice-model", type=str, default=None,
+                     help="on-device model to measure (with --ondevice-mode, --ondevice-gguf)")
+    ap.add_argument("--ondevice-mode", type=str, default=None, help="local | ollama | remote")
+    ap.add_argument("--ondevice-gguf", type=str, default=None)
+    ap.add_argument("--ondevice-base-url", type=str, default=None)
     ap.add_argument("--out-dir", type=str, default=None,
                      help="write the arm files here instead of results/partC/fidelity[_tag]")
     args = ap.parse_args()
@@ -295,6 +313,17 @@ def main():
     log(f"[partC] run_id={run_id}  sessions_file={args.sessions}  trials={args.trials}  arms={selected_arms}")
 
     sessions, breakdown = load_sessions(args.sessions)
+    onboard = None
+    if "onboard" in selected_arms:
+        if not args.onboard_file:
+            raise SystemExit("--arms onboard needs --onboard-file")
+        spec = json.load(open(args.onboard_file, encoding="utf-8"))
+        picks = {(str(a), int(b)) for a, b in spec["picks"]}
+        last = {}
+        for sid, pos in picks:
+            last[sid] = max(last.get(sid, -1), pos)
+        onboard = {"slot": spec["slot"], "picks": picks, "last": last}
+        sessions = [x for x in sessions if str(x["session_id"]) in last]
     total_cmds = sum(len(s["commands"]) for s in sessions)
     log(f"[partC] workload: {len(sessions)} sessions, {total_cmds} commands  breakdown={breakdown}")
 
@@ -303,14 +332,19 @@ def main():
     # is actually being run. honeyrouter (regex) AND irt_router (trained policy)
     # both route to cowrie per command, so each needs the container connected --
     # without it the forced cowrie pick returns an empty response.
-    _ROUTER_ARMS = ("honeyrouter", "irt_router")
+    _ROUTER_ARMS = ("honeyrouter", "irt_router", "onboard")
     needs_cowrie    = "cowrie" in selected_arms or any(a in selected_arms for a in _ROUTER_ARMS)
     # on_device (GPU) only loads when an arm actually routes there: the forced
     # on_device arm, or a router (honeyrouter FI1/FI2, or irt_router's policy)
     # that can pick it. A cloud-only run then needs no GPU and won't fail if the
     # GPU is busy.
-    needs_on_device = "on_device" in selected_arms or any(a in selected_arms for a in _ROUTER_ARMS)
-    base = build_agents(connect_cowrie=needs_cowrie, load_on_device=needs_on_device)
+    needs_on_device = "on_device" in selected_arms or any(a in selected_arms for a in _ROUTER_ARMS if a != "onboard") \
+        or (onboard is not None and onboard["slot"] == "on_device")
+    od_override = {k: v for k, v in (("model", args.ondevice_model), ("mode", args.ondevice_mode),
+                                      ("gguf_file", args.ondevice_gguf), ("base_url", args.ondevice_base_url))
+                   if v}
+    base = build_agents(connect_cowrie=needs_cowrie, load_on_device=needs_on_device,
+                        on_device_override=od_override or None)
 
     # Part C cloud arm: deepseek-v4.1-flash via PARTC_BASE_URL (pooled API_KEY_*
     # keys). On a clean 50-command sample at max_tokens=2048 this beat every
@@ -362,7 +396,7 @@ def main():
             for arm in selected_arms:
                 cloud_cost_total += _run_session_for_arm(
                     base, session, arm, trial, run_id, write, arm_stats, log,
-                    irt_router=irt_router
+                    irt_router=irt_router, onboard=onboard
                 )
 
             if (s_idx + 1) % 10 == 0:

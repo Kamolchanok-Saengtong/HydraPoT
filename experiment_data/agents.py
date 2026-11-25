@@ -138,7 +138,8 @@ def pick_model() -> str | None:
 
 
 def build_agents(connect_cowrie: bool = True, model_override: str | None = None,
-                 sync_state: bool = True, load_on_device: bool = True) -> Agents:
+                 sync_state: bool = True, load_on_device: bool = True,
+                 on_device_override: dict | None = None) -> Agents:
     # config_loader reads config.yaml by RELATIVE path, so we must run from the
     # project root (where config.yaml lives), not from experiment_data/. Otherwise it falls
     # back to built-in defaults (wrong creds, wrong model).
@@ -147,6 +148,9 @@ def build_agents(connect_cowrie: bool = True, model_override: str | None = None,
         print(f"[build_agents] chdir -> {_ROOT} (so config.yaml is found)")
 
     config = load_config()
+    # a model being onboarded: its model/mode/gguf_file/base_url replace the configured ones
+    for key, value in (on_device_override or {}).items():
+        setattr(config.agents.on_device, key, value)
 
     od_model = model_override or config.agents.on_device.model
     if model_override:
@@ -171,6 +175,8 @@ def build_agents(connect_cowrie: bool = True, model_override: str | None = None,
                 temperature  = config.agents.on_device.temperature,
                 max_tokens   = config.agents.on_device.max_tokens,
                 do_sample    = config.agents.on_device.do_sample,
+                mode         = getattr(config.agents.on_device, "mode", "local"),
+                base_url     = getattr(config.agents.on_device, "base_url", None),
             )
         except (Exception, SystemExit) as e:
             # The GGUF loader calls sys.exit(1) on failure (SystemExit is NOT an
