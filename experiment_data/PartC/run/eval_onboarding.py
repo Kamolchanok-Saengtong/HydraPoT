@@ -23,7 +23,7 @@ import torch.nn as nn
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 sys.path.insert(0, ROOT)
 
-import onboarding as OB                     # noqa: E402
+from honeyrouter import onboarding as OB       # noqa: E402
 from honeyrouter import predictor as P                       # noqa: E402
 from honeyrouter.action import AGENTS                        # noqa: E402
 from honeyrouter.sessions import load_sessions               # noqa: E402

@@ -36,7 +36,7 @@ key = lambda r: (str(r["session_id"]), int(r["position_in_session"]))
 
 def fit_full_vector(path):
     import onboard_new_model as ONM
-    import onboarding as OB
+    from honeyrouter import onboarding as OB
     from honeyrouter import predictor as P
     from honeyrouter.action import AGENTS
     from honeyrouter.sessions import load_sessions
