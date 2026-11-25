@@ -42,6 +42,7 @@ _TIME_COLS = {"timestamp", "ts", "created", "last_seen", "first_seen",
               "updated_at", "created_at", "closed_at", "acknowledged_at",
               "routed_at", "datetime"}
 
+_LOGIN_SQL = "SELECT username, role, created FROM users ORDER BY created"
 _DEFAULT_SQL = ("SELECT agent, COUNT(*) AS n FROM sessions "
                 "GROUP BY agent ORDER BY n DESC")
 
@@ -476,9 +477,8 @@ def _sql_terminal(db_key):
             html.Div(className="dbx-sql-promptrow", children=[
                 html.Span(">", className="dbx-sql-caret"),
                 dcc.Input(id="dbx-sql-input", className="dbx-sql-line",
-                          type="text", value=_DEFAULT_SQL, debounce=False,
-                          spellCheck=False, persistence=True,
-                          persistence_type="local",
+                          type="text", debounce=False, spellCheck=False,
+                          value=(_LOGIN_SQL if db_key == "login" else _DEFAULT_SQL),
                           placeholder="SELECT …   (Enter to run)"),
                 html.Button("Run", id="dbx-sql-run", className="dbx-run",
                             n_clicks=0),
@@ -494,19 +494,23 @@ def _sql_terminal(db_key):
 
 def build_database_page():
     dbs = _databases()
-    default_db = dbs[0]["key"]
-    tabs0 = storage.list_tables(path=dbs[0]["file"])
+    # An admin opens on who can sign in (login DB, users table, Accounts tab);
+    # everyone else opens on the capture data.
+    first = next((d for d in dbs if d["key"] == "login"), dbs[0])
+    default_db = first["key"]
+    tabs0 = storage.list_tables(path=first["file"])
     if not tabs0:
         return [html.Div(className="dbx", children=[html.Div(
             "No database yet — it is created the first time the honeypot "
             "records a session.", className="dbx-empty")])]
-    default_table = tabs0[0]["name"]
+    default_table = next((t["name"] for t in tabs0 if t["name"] == "users"), tabs0[0]["name"])
+    default_tab = "accounts" if (default_db == "login" and default_table == "users") else "data"
 
     return [html.Div(className="dbx", children=[
         # persisted selection (localStorage): comes back on the next visit
-        dcc.Store(id="dbx-db", storage_type="local", data=default_db),
-        dcc.Store(id="dbx-table", storage_type="local", data=default_table),
-        dcc.Store(id="dbx-tab", storage_type="local", data="accounts"),
+        dcc.Store(id="dbx-db", data=default_db),
+        dcc.Store(id="dbx-table", data=default_table),
+        dcc.Store(id="dbx-tab", data=default_tab),
         dcc.Store(id="dbx-density", storage_type="local", data="comfortable"),
         dcc.Store(id="dbx-page", data=0),
         dcc.Store(id="dbx-sort", data={"col": None, "desc": False}),
