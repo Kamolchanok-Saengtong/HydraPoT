@@ -108,6 +108,27 @@ def rows_kept(verbose: bool = True):
     return rows, raw
 
 
+def _apply_new_model(E, score, cost):
+    """A model added with the router menu replaces one slot. The replay holds the
+    OLD model's answers for that slot, so its columns are swapped: cost becomes the
+    price measured on the onboarding prompts, and the per-command score becomes
+    the router's own prediction from the fitted vector. That is an estimate, not a
+    judged answer, and it is replaced as soon as the model is run on real sessions."""
+    path = os.path.join(P._OUT_DIR, "slot_override.json")
+    if not os.path.isfile(path):
+        return score, cost
+    import json
+    spec = json.load(open(path, encoding="utf-8"))
+    k = AGENTS.index(spec["slot"])
+    model, _ = P.load()
+    with torch.no_grad():
+        p_hat = torch.sigmoid(model.logits(torch.tensor(E), model.mu))[:, k].numpy()
+    score, cost = score.copy(), cost.copy()
+    score[:, k] = p_hat
+    cost[:, k] = float(spec.get("cost_usd_per_command", 0.0))
+    return score, cost
+
+
 def build_pairwise_dataset(seed: int = 0):
     """Build V from the replay.
 
@@ -146,6 +167,7 @@ def build_pairwise_dataset(seed: int = 0):
     cost = np.array([[c["agents"][a]["cost_usd"] for a in AGENTS]
                      for _, c in rows], dtype=np.float32)
     sids = np.array([sid for sid, _ in rows])
+    score, cost = _apply_new_model(E, score, cost)
 
     K = len(AGENTS)
     pairs = []
