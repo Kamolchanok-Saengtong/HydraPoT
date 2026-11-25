@@ -154,6 +154,8 @@ def _hero(n_mapped, n_all, by_tactic, top_tech, top_ip, days):
             html.Span(f"{n_mapped:,}", className="mx-hero-num"),
             f" command{'s' if n_mapped != 1 else ''} mapped to ATT&CK",
         ]),
+        html.Div(className="mx-hero-bar", children=[
+            html.Div(style={"width": f"{n_mapped / max(n_all, 1) * 100:.1f}%"})]),
         html.Div(f"{n_mapped / max(n_all, 1) * 100:.0f}% of {n_all:,} commands in {window}",
                  className="mx-hero-sub"),
         html.Div(facts, className="mx-hero-facts"),
@@ -569,12 +571,6 @@ def _attack_chain_section(days):
             dcc.Store(id="chain-days-store", data=days),
             html.Div(id="chain-timeline-body"),
         ]), "mx-wide"),
-        dcc.Store(id="kc-detail-store"),
-        html.Div(id="kc-sheet", className="kc-sheet", children=[
-            html.Button("\u2715", id="kc-close", n_clicks=0, className="kc-close",
-                        **{"aria-label": "Close detail"}),
-            html.Div(id="kc-sheet-body", className="kc-sheet-body"),
-        ]),
     ]
 
 
@@ -674,7 +670,15 @@ def _killchain_flow(days):
     seen = {c["tactic"].lower() for c in cols}
     quiet = [t for t in TACTIC_ORDER if t.lower() not in seen]
     return html.Div([
-        html.Div(className="kc-rail", children=[_kc_column(c, peak) for c in cols]),
+        dcc.Store(id="kc-detail-store"),
+        html.Div(className="kc-split", children=[
+            html.Div(className="kc-rail", children=[_kc_column(c, peak) for c in cols]),
+            html.Div(id="kc-sheet", className="kc-sheet", children=[
+                html.Button("\u2715", id="kc-close", n_clicks=0, className="kc-close",
+                            **{"aria-label": "Close detail"}),
+                html.Div(id="kc-sheet-body", className="kc-sheet-body"),
+            ]),
+        ]),
         html.Div(className="mx-quiet", children=[
             html.Span("No activity observed:", className="mx-quiet-l"),
             *[html.Span(t, className="mx-chip") for t in quiet]]) if quiet else None,

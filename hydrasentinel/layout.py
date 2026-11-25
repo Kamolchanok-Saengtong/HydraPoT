@@ -38,27 +38,20 @@ sidebar = html.Div(className="sidebar", id="sidebar", children=[
                  className="brand-mark", alt="HydraPoT"),
         html.Span("HydraPoT"),
     ]),
-    html.Div(className="sidebar-caption",
-             children="An Intelligent Honeypot Framework Using Large Language Models (LLM) for Interactive Attack Analysis"),
-    html.Div(className="sidebar-divider"),
     html.Button("Summary", id="nav-summary", className="nav-pill active", n_clicks=0),
     html.Button("Investigation", id="nav-investigate", className="nav-pill", n_clicks=0),
     html.Button("Live", id="nav-live", className="nav-pill", n_clicks=0),
     html.Button("Threat Intel", id="nav-intel", className="nav-pill", n_clicks=0),
     html.Button("MITRE ATT&CK", id="nav-mitre", className="nav-pill", n_clicks=0),
     html.Button("Database", id="nav-db", className="nav-pill", n_clicks=0),
-    html.Div(className="sidebar-divider"),
+    html.Div(className="sidebar-spacer"),
     html.Div(className="toggle-row", children=[
-        "Auto-refresh",
         dcc.Checklist(id="auto-refresh-toggle",
-                      options=[{"label": "", "value": "on"}],
+                      options=[{"label": " Auto-refresh", "value": "on"}],
                       value=["on"], inline=True),
     ]),
-    html.Div(className="source-cap", children=f"Source: {storage.DB_PATH.split('/')[-1]}"),
     html.Div(id="sidebar-updated", className="source-cap"),
-    # stays .refresh-btn: this one lives on the DARK sidebar, where .btn's
-    # light fill would be wrong
-    html.Button("🔄 Refresh", id="manual-refresh", className="refresh-btn", n_clicks=0),
+    html.Button("Refresh", id="manual-refresh", className="refresh-btn", n_clicks=0),
     html.Div(id="geo-status"),
     # Live component health. Filled by a callback rather than at import time so
     # a probe result can never be baked into the served page.
@@ -111,20 +104,14 @@ def _render_status(_n):
     # Runs once on page load, then only when /ws/events pushes a status change.
     rows = agent_health()
     online = sum(1 for _, ok, _ in rows if ok)
+    down = [name for name, ok, _ in rows if not ok]
     panel = html.Div(className="hp-status", children=[
-        html.Div("HYDRAPOT STATUS", className="hp-status-h"),
-        *[html.Div(className="hp-status-row", title=detail, children=[
-            html.Span([html.Span(className="hp-dot",
-                                 style={"background": SUCCESS if ok else CRITICAL}), name]),
-            html.Span("Online" if ok else "Offline",
-                      style={"color": SUCCESS if ok else CRITICAL, "fontWeight": 700}),
-        ]) for name, ok, detail in rows],
-        html.Div(className="hp-tally", children=[
-            # colour follows reality: all-green only when everything really is up
-            html.Div(f"{online} / {len(rows)}", className="hp-tally-n",
-                     style={"color": SUCCESS if online == len(rows) else Y_400}),
-            html.Div("COMPONENTS ONLINE", className="hp-tally-l"),
-        ]),
+        html.Div(className="hp-status-row", children=[
+            html.Span(className="hp-dot", style={"background": SUCCESS if not down else CRITICAL}),
+            f"{online} of {len(rows)} components online"]),
+        *[html.Div(className="hp-status-row hp-down", title=detail, children=[
+            html.Span(className="hp-dot", style={"background": CRITICAL}), f"{name} offline"])
+          for name, ok, detail in rows if not ok],
     ])
     return panel
 app.layout = html.Div(className="app-shell", children=[

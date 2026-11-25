@@ -297,12 +297,15 @@ def _pick(db_key, table):
                 t["name"],
                 html.Span(f"{t['rows']:,}", className="dbx-pick-n"),
             ]))
-    return [
-        html.Div(className="dbx-pick-row",
-                 children=[html.Span("Database", className="dbx-pick-l")] + db_chips),
-        html.Div(className="dbx-pick-row",
-                 children=[html.Span("Table", className="dbx-pick-l")] + tbl_chips),
-    ]
+    cur = f"{_basename(_db_by_key(db_key)['file'])} > {table}"
+    return [html.Details(className="dbx-sel", children=[
+        html.Summary(cur + "  \u2304", className="dbx-sel-pill"),
+        html.Div(className="dbx-sel-pop", children=[
+            html.Div(className="dbx-pick-row",
+                     children=[html.Span("Database", className="dbx-pick-l")] + db_chips),
+            html.Div(className="dbx-pick-row",
+                     children=[html.Span("Table", className="dbx-pick-l")] + tbl_chips),
+        ])])]
 
 
 # ─── data grid ───────────────────────────────────────────────────────────────
