@@ -249,6 +249,15 @@ def _invite_host(cfg) -> str:
         return socket.gethostname()
 
 
+def _dashboard_promote(name):
+    """Make an existing account an admin."""
+    from hydrasentinel import auth
+    if not auth.set_role(name, auth.ADMIN):
+        click.echo(click.style(f"\n  No dashboard account named '{name}'.\n", fg="red"))
+        raise SystemExit(1)
+    click.echo(click.style(f"\n  ✓ '{name}' is now an admin.\n", fg="green"))
+
+
 def _dashboard_invite(name, hours, uses):
     """Print an invite link. `name` for one person (works once), or `anyone` for
     a shared link where each visitor chooses their own name, up to `uses` people.
@@ -560,6 +569,8 @@ def _config():
 @click.option("--dashboard-invite", "invite_name", default=None, metavar="NAME",
               help="Make an invite link: NAME for one person, or 'anyone' for a shared link "
                    "where each visitor picks their own name")
+@click.option("--dashboard-promote", "promote_name", default=None, metavar="NAME",
+              help="Make an existing dashboard account an admin (can see and delete accounts)")
 @click.option("--invite-hours", default=None, type=float,
               help="--dashboard-invite: hours the link stays valid (default 24; 8 for 'anyone')")
 @click.option("--invite-uses", default=None, type=int,
@@ -580,7 +591,7 @@ def _config():
               help="--dashboard: run in this terminal (blocking) instead of the background")
 @click.pass_context
 def main(ctx, do_init, do_run, do_dashboard, do_dashboard_stop,
-         do_dashboard_passwd, invite_name, invite_hours, invite_uses, do_router, do_config, do_version, host, port, debug,
+         do_dashboard_passwd, invite_name, invite_hours, invite_uses, promote_name, do_router, do_config, do_version, host, port, debug,
          foreground):
     """HydraPoT: Multi Agent Honeypot System
 
@@ -593,6 +604,7 @@ def main(ctx, do_init, do_run, do_dashboard, do_dashboard_stop,
         ("--dashboard-stop", do_dashboard_stop),
         ("--dashboard-passwd", do_dashboard_passwd),
         ("--dashboard-invite", invite_name is not None),
+        ("--dashboard-promote", promote_name is not None),
         ("--router", do_router),
         ("--config", do_config),
         ("--version", do_version),
@@ -627,6 +639,8 @@ def main(ctx, do_init, do_run, do_dashboard, do_dashboard_stop,
         _dashboard_passwd()
     elif action == "--dashboard-invite":
         _dashboard_invite(invite_name, invite_hours, invite_uses)
+    elif action == "--dashboard-promote":
+        _dashboard_promote(promote_name)
     elif action == "--router":
         _router()
     elif action == "--config":

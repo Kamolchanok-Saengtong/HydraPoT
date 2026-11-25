@@ -230,10 +230,50 @@ def write_credential(username: str, password: str, *, rotate: bool = False) -> s
             conn.execute("DELETE FROM operator_sessions WHERE username=?",
                          (username,))
         else:
+            # The first account is the admin; everyone after joins as an operator.
+            first = conn.execute("SELECT 1 FROM users LIMIT 1").fetchone() is None
             conn.execute(
                 "INSERT INTO users (username, password_hash, created, role) "
-                "VALUES (?,?,?, 'operator')", (username, ph, now))
+                "VALUES (?,?,?,?)", (username, ph, now, ADMIN if first else "operator"))
     return session_db_path()
+
+
+ADMIN = "admin"
+
+
+def role_of(username: str) -> str:
+    return get_user(username).get("role") or "operator"
+
+
+def is_admin(username: str) -> bool:
+    return bool(username) and role_of(username) == ADMIN
+
+
+def set_role(username: str, role: str) -> bool:
+    """Change an account's role. False if there is no such account."""
+    if role not in (ADMIN, "operator"):
+        raise ValueError("role must be 'admin' or 'operator'")
+    with _store() as conn:
+        return conn.execute("UPDATE users SET role=? WHERE username=?",
+                            (role, username)).rowcount > 0
+
+
+def delete_account(actor: str, target: str):
+    """An admin removes another account. Returns (ok, message).
+
+    Refused for a non-admin and for the admin's own account, so the dashboard
+    can never be left without anyone able to manage it. The target's open
+    sessions and any invite still waiting under their name go with them."""
+    if not is_admin(actor):
+        return False, "Only an admin can delete accounts"
+    if target == actor:
+        return False, "You cannot delete your own account"
+    if not user_exists(target):
+        return False, f"No account named {target}"
+    delete_user(target)
+    with _store() as conn:
+        conn.execute("DELETE FROM invites WHERE username=?", (target,))
+    return True, f"Deleted {target}"
 
 
 def delete_user(username: str) -> bool:
@@ -434,6 +474,11 @@ def _connect() -> sqlite3.Connection:
     if "uses_left" not in cols:
         conn.execute("ALTER TABLE invites ADD COLUMN uses_left INTEGER NOT NULL DEFAULT 1")
         conn.execute("UPDATE invites SET uses_left=0 WHERE used_at IS NOT NULL")
+        conn.commit()
+    # Accounts made before roles mattered are all 'operator': the oldest is the admin.
+    if conn.execute("SELECT 1 FROM users WHERE role='admin' LIMIT 1").fetchone() is None:
+        conn.execute("UPDATE users SET role='admin' WHERE username="
+                     "(SELECT username FROM users ORDER BY created LIMIT 1)")
         conn.commit()
     return conn
 
