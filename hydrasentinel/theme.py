@@ -1616,9 +1616,7 @@ app.index_string = """
     .nav-pill:hover { background:rgba(255,255,255,0.07); }
     .nav-pill.active { background:#F6C84C; color:#1A1410; font-weight:800; box-shadow:none; }
     .nav-pill.active::before { background:#1A1410; }
-    .hp-status { border:1px solid rgba(255,255,255,0.14); border-radius:14px; padding:12px 14px; background:transparent; display:flex; flex-direction:column; gap:6px; }
-    .hp-status-row { display:flex; align-items:center; gap:10px; font-size:0.86rem; color:#F3EBDC; }
-    .hp-status-row.hp-down { color:#FF9DB0; }
+    .hp-status { border:1px solid rgba(255,255,255,0.14); border-radius:14px; padding:12px 14px; background:transparent; }
     .sidebar .toggle-row { text-transform:none; letter-spacing:0; font-size:0.9rem; color:#F3EBDC; }
     .refresh-btn { border-radius:14px; padding:11px; font-weight:600; font-size:0.9rem; }
     /* cards and panels */
@@ -1667,8 +1665,6 @@ app.index_string = """
     #chain-session-dd .Select-control { background:var(--mint) !important; }
     .sidebar .toggle-row, .sidebar .toggle-row label, .sidebar .toggle-row span { color:#F3EBDC !important; }
     #geo-status { display:none; }
-    .hp-status-row { font-size:0.84rem; line-height:1.3; }
-    .hp-status-row .hp-dot { flex:0 0 8px; }
     .kpi, .pcard { border:2px solid var(--ink) !important; border-radius:20px !important; box-shadow:none !important; }
     .kpi:nth-child(6n+1) { background:var(--blue) !important; } .kpi:nth-child(6n+2) { background:var(--lav) !important; }
     .kpi:nth-child(6n+3) { background:var(--mint) !important; } .kpi:nth-child(6n+4) { background:var(--sun) !important; }

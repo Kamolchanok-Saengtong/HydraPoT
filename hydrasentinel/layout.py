@@ -104,14 +104,20 @@ def _render_status(_n):
     # Runs once on page load, then only when /ws/events pushes a status change.
     rows = agent_health()
     online = sum(1 for _, ok, _ in rows if ok)
-    down = [name for name, ok, _ in rows if not ok]
     panel = html.Div(className="hp-status", children=[
-        html.Div(className="hp-status-row", children=[
-            html.Span(className="hp-dot", style={"background": SUCCESS if not down else CRITICAL}),
-            f"{online} of {len(rows)} components online"]),
-        *[html.Div(className="hp-status-row hp-down", title=detail, children=[
-            html.Span(className="hp-dot", style={"background": CRITICAL}), f"{name} offline"])
-          for name, ok, detail in rows if not ok],
+        html.Div("HYDRAPOT STATUS", className="hp-status-h"),
+        *[html.Div(className="hp-status-row", title=detail, children=[
+            html.Span([html.Span(className="hp-dot",
+                                 style={"background": SUCCESS if ok else CRITICAL}), name]),
+            html.Span("Online" if ok else "Offline",
+                      style={"color": SUCCESS if ok else CRITICAL, "fontWeight": 700}),
+        ]) for name, ok, detail in rows],
+        html.Div(className="hp-tally", children=[
+            # colour follows reality: all-green only when everything really is up
+            html.Div(f"{online} / {len(rows)}", className="hp-tally-n",
+                     style={"color": SUCCESS if online == len(rows) else Y_400}),
+            html.Div("COMPONENTS ONLINE", className="hp-tally-l"),
+        ]),
     ])
     return panel
 app.layout = html.Div(className="app-shell", children=[
