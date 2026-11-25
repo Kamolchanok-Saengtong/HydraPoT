@@ -262,3 +262,11 @@ a.dbx-link, .dbx a { color: var(--y-700); font-weight: 600; }
   .dbx-detail { width: 100vw; }
   .dbx-pick-l { width: 100%; }
 }
+
+/* ── pill tabs and a single blue picker chip (soft, minimal look) ─────── */
+.dbx-tabs { border-bottom: 0; gap: 8px; }
+.dbx-tab { padding: 10px 22px; border-radius: 999px; border: 2px solid transparent;
+  margin-bottom: 0; font-size: 15px; }
+.dbx-tab.sel { background: #E4DCF8; border: 2px solid var(--ink); color: var(--ink); }
+.dbx-pick-db.sel, .dbx-pick-table.sel { background: #DDEBFB; border-color: var(--ink); }
+.dbx-tabs { margin-bottom: 22px; }

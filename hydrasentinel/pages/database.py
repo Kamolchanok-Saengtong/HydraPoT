@@ -167,11 +167,13 @@ def _span(sec):
     return "under 1 min"
 
 
-def _people_view(path, me=""):
-    """Who can sign in, in words: one card per account plus the open invite links.
+_PASTEL = ("ppl-c0", "ppl-c1", "ppl-c2")
 
-    Read-only, and never shows a password hash or a token. The raw table stays
-    underneath for anyone who wants the columns."""
+
+def _people_view(path, me=""):
+    """Who can sign in: a header with real counts, one card per account, the
+    open invite links. Read-only apart from the admin buttons, and never shows
+    a password hash or a token."""
     import sqlite3
     import time
     now = time.time()
@@ -182,53 +184,71 @@ def _people_view(path, me=""):
         seen = dict(conn.execute("SELECT username, MAX(last_seen) FROM operator_sessions "
                                  "GROUP BY username").fetchall())
         invites = conn.execute(
-            "SELECT username, expires, uses_left FROM invites "
+            "SELECT username, expires, uses_left, created FROM invites "
             "WHERE uses_left > 0 AND expires > ? ORDER BY expires", (now,)).fetchall()
         conn.close()
     except Exception:
         return None
+    from hydrasentinel import auth
+    admin = auth.is_admin(me)
 
-    def card(name, created, role):
+    def card(i, name, created, role):
         last = seen.get(name)
         online = last is not None and now - last < 900
-        return html.Div(className="ppl-card", children=[
-            html.Div(className="ppl-avatar", children=name[:1].upper()),
-            html.Div(className="ppl-main", children=[
-                html.Div(className="ppl-name", children=[
-                    name, html.Span(role, className="ppl-role")]),
-                html.Div(f"Joined {datetime.fromtimestamp(created):%Y-%m-%d}",
-                         className="ppl-sub"),
-            ]),
-            html.Div(className="ppl-state" + (" ppl-on" if online else ""), children=[
-                html.Span(className="ppl-dot"),
-                "Active now" if online
-                else (f"Last seen {_span(now - last)} ago" if last else "Never signed in"),
-            ]),
-            html.Button("Delete", id={"type": "ppl-del", "u": name}, n_clicks=0,
-                        className="ppl-del") if name != me else html.Span("you", className="ppl-you"),
+        state = ("Active now" if online
+                 else (f"Last seen {_span(now - last)} ago" if last else "Never signed in"))
+        if name == me:
+            corner = html.Span("You", className="ppl-you")
+        elif admin:
+            corner = html.Details(className="ppl-menu", children=[
+                html.Summary("\u22ef", className="ppl-dots"),
+                html.Button("Delete account", id={"type": "ppl-del", "u": name},
+                            n_clicks=0, className="ppl-del")])
+        else:
+            corner = None
+        return html.Div(className="ppl-card " + _PASTEL[i % 3], children=[
+            html.Div(className="ppl-top", children=[
+                html.Div(name[:1].upper(), className="ppl-avatar"),
+                html.Span(name, className="ppl-name"),
+                html.Span(role.capitalize(),
+                          className="ppl-role" + (" admin" if role == auth.ADMIN else "")),
+                corner]),
+            html.Div(className="ppl-state" + (" on" if online else ""), children=[
+                html.Span(className="ppl-dot"), state]),
+            html.Div(f"Joined {datetime.fromtimestamp(created):%b} "
+                     f"{datetime.fromtimestamp(created).day}", className="ppl-joined"),
         ])
 
-    def invite(name, expires, uses):
-        who = "Anyone with the link" if name == "anyone" else f"For {name}"
+    def invite(name, expires, uses, created):
+        who = "No label" if name in ("anyone", "") else f"For {name}"
         left = f"{uses} use{'s' if uses != 1 else ''} left"
         return html.Div(className="ppl-invite", children=[
-            html.Span(who, className="ppl-inv-who"),
-            html.Span(f"{left} · expires in {_span(expires - now)}",
-                      className="ppl-sub"),
+            html.Div([html.Div(who, className="ppl-inv-who"),
+                      html.Div(f"{left}, expires in {_span(expires - now)}",
+                               className="ppl-inv-sub")]),
+            html.Button("Revoke", id={"type": "inv-del", "c": created}, n_clicks=0,
+                        className="ppl-revoke") if admin else None,
         ])
 
+    active = sum(1 for u in users if seen.get(u[0]) and now - seen[u[0]] < 900)
+    plural = lambda n, w: f"{n} {w}{'' if n == 1 else 's'}"
     return html.Div(className="ppl", children=[
-        html.Div(className="ppl-head", children=[
-            html.Span(f"{len(users)}", className="ppl-count"),
-            f" account{'s' if len(users) != 1 else ''} can sign in",
+        html.Div(className="ppl-header", children=[
+            html.Div([
+                html.H2("Dashboard access", className="ppl-h"),
+                html.Div(className="ppl-chips", children=[
+                    html.Span(plural(len(users), "account"), className="ppl-chip y"),
+                    html.Span(f"{active} active now", className="ppl-chip g"),
+                    html.Span(plural(len(invites), "open invite"), className="ppl-chip p"),
+                ])]),
+            html.Button("+ Invite operator", id="inv-new", n_clicks=0,
+                        className="ppl-primary") if admin else None,
         ]),
-        html.Div(className="ppl-grid", children=[card(*u) for u in users]),
-        html.Div(className="ppl-sec", children=[
-            html.Div(f"Open invite links ({len(invites)})", className="ppl-title"),
-            *([invite(*i) for i in invites] if invites else
-              [html.Div("None. Create one with hp --dashboard-invite NAME.", className="ppl-sub")]),
-        ]),
-        html.Div("Raw table", className="ppl-title ppl-raw"),
+        html.Div(id="inv-made"),
+        html.Div(className="ppl-grid", children=[card(i, *u) for i, u in enumerate(users)]),
+        html.Div("Open invite links", className="ppl-sec-h"),
+        *([invite(*i) for i in invites] if invites else
+          [html.Div("No open invites.", className="ppl-inv-sub")]),
     ])
 
 
@@ -440,16 +460,16 @@ def _detail_panel(row, table):
 
 def _sql_terminal(db_key):
     title = f"sql · {_basename(_db_by_key(db_key)['file'])} · read-only"
-    return html.Div(id="dbx-sql", className="dbx-sql", children=[
+    return html.Div(id="dbx-sql", className="dbx-sql open", children=[
         html.Button(id="dbx-sql-toggle", className="dbx-sql-chrome", n_clicks=0,
                     children=[
             html.Span(className="dbx-dot r"), html.Span(className="dbx-dot y"),
             html.Span(className="dbx-dot g"),
             html.Span(title, id="dbx-sql-title", className="dbx-sql-title"),
-            html.Span("run a query ▸", id="dbx-sql-toggletext",
+            html.Span("collapse ▾", id="dbx-sql-toggletext",
                       className="dbx-sql-toggle"),
         ]),
-        html.Div(id="dbx-sql-body", style={"display": "none"}, children=[
+        html.Div(id="dbx-sql-body", style={"display": "block"}, children=[
             html.Div(className="dbx-sql-promptrow", children=[
                 html.Span(">", className="dbx-sql-caret"),
                 dcc.Input(id="dbx-sql-input", className="dbx-sql-line",
@@ -483,7 +503,7 @@ def build_database_page():
         # persisted selection (localStorage): comes back on the next visit
         dcc.Store(id="dbx-db", storage_type="local", data=default_db),
         dcc.Store(id="dbx-table", storage_type="local", data=default_table),
-        dcc.Store(id="dbx-tab", storage_type="local", data="data"),
+        dcc.Store(id="dbx-tab", storage_type="local", data="accounts"),
         dcc.Store(id="dbx-density", storage_type="local", data="comfortable"),
         dcc.Store(id="dbx-page", data=0),
         dcc.Store(id="dbx-sort", data={"col": None, "desc": False}),
@@ -502,7 +522,9 @@ def build_database_page():
                 html.H2(id="dbx-title", className="dbx-title"),
                 html.Div(id="dbx-meta", className="dbx-meta"),
                 html.Div(className="dbx-tabs", children=[
-                    html.Button("Data", id="dbx-tab-data", className="dbx-tab sel",
+                    html.Button("Accounts", id="dbx-tab-acc", className="dbx-tab",
+                                n_clicks=0, style={"display": "none"}),
+                    html.Button("Raw table", id="dbx-tab-data", className="dbx-tab sel",
                                 n_clicks=0),
                     html.Button("Schema", id="dbx-tab-schema", className="dbx-tab",
                                 n_clicks=0),
@@ -580,21 +602,35 @@ def _select(_dbclicks, _tblclicks, cur_db, cur_table):
     return db_key, table, 0, {"col": None, "desc": False}, None
 
 
+def _is_people(db_key, table):
+    return _key(db_key) == "login" and table == "users"
+
+
 @app.callback(
     Output("dbx-tab", "data"),
-    Output("dbx-tab-data", "className"), Output("dbx-tab-schema", "className"),
-    Output("dbx-toolbar", "style"),
-    Input("dbx-tab-data", "n_clicks"), Input("dbx-tab-schema", "n_clicks"),
-    State("dbx-tab", "data"),
+    Input("dbx-tab-acc", "n_clicks"), Input("dbx-tab-data", "n_clicks"),
+    Input("dbx-tab-schema", "n_clicks"),
     prevent_initial_call=True,
 )
-def _switch_tab(_d, _s, cur):
-    trig = ctx.triggered_id
-    tab = "schema" if trig == "dbx-tab-schema" else "data"
-    return (tab,
-            "dbx-tab" + (" sel" if tab == "data" else ""),
-            "dbx-tab" + (" sel" if tab == "schema" else ""),
-            {"display": "none"} if tab == "schema" else {})
+def _switch_tab(_a, _d, _s):
+    return {"dbx-tab-schema": "schema", "dbx-tab-acc": "accounts"}.get(
+        ctx.triggered_id, "data")
+
+
+@app.callback(
+    Output("dbx-tab-acc", "className"), Output("dbx-tab-acc", "style"),
+    Output("dbx-tab-data", "className"), Output("dbx-tab-schema", "className"),
+    Output("dbx-toolbar", "style"),
+    Input("dbx-tab", "data"), Input("dbx-db", "data"), Input("dbx-table", "data"),
+)
+def _tabs_ui(tab, db_key, table):
+    people = _is_people(db_key, table)
+    if tab == "accounts" and not people:
+        tab = "data"
+    cls = lambda t: "dbx-tab" + (" sel" if tab == t else "")
+    return (cls("accounts"), {} if people else {"display": "none"},
+            cls("data"), cls("schema"),
+            {"display": "none"} if tab in ("schema", "accounts") else {})
 
 
 @app.callback(
@@ -748,6 +784,10 @@ def _render(db_key, table, tab, page, search, sort, density, visible, sqlres, _b
 
     if tab == "schema":
         return (_schema_view(db_key, table), table, meta, "", True, True, [])
+    if tab == "accounts" and _is_people(db_key, table):
+        people = _people_view(db["file"], _me())
+        if people is not None:
+            return people, "", "", "", True, True, []
 
     page = int(page or 0)
     grid, rows, res, _show = _data_grid(db_key, table, page, search, sort,
@@ -756,10 +796,6 @@ def _render(db_key, table, tab, page, search, sort, density, visible, sqlres, _b
     start = page * PAGE_SIZE + 1 if total else 0
     end = min((page + 1) * PAGE_SIZE, total)
     rng = f"{start:,}–{end:,} of {total:,}" if total else "0 of 0"
-    if db_key == "login" and table == "users":
-        people = _people_view(db["file"], _me())
-        if people is not None:
-            grid = html.Div([people, grid])
     return (grid, table, meta, rng, page <= 0, end >= total, rows)
 
 
@@ -794,6 +830,40 @@ def _do_delete(_n, who, bump):
     # checked here, not by hiding the button: the caller must be an admin
     ok, msg = auth.delete_account(_me(), who)
     return (bump or 0) + 1, html.Div(msg, className="ppl-msg-" + ("ok" if ok else "err"))
+
+
+@app.callback(
+    Output("dbx-bump", "data", allow_duplicate=True),
+    Output("ppl-msg", "children", allow_duplicate=True),
+    Input({"type": "inv-del", "c": ALL}, "n_clicks"),
+    State("dbx-bump", "data"),
+    prevent_initial_call=True,
+)
+def _revoke(_clicks, bump):
+    if not (ctx.triggered and ctx.triggered[0].get("value")):
+        raise PreventUpdate
+    from hydrasentinel import auth
+    ok, msg = auth.revoke_invite(_me(), (ctx.triggered_id or {}).get("c"))
+    return (bump or 0) + 1, html.Div(msg, className="ppl-msg-" + ("ok" if ok else "err"))
+
+
+@app.callback(
+    Output("dbx-bump", "data", allow_duplicate=True),
+    Output("ppl-msg", "children", allow_duplicate=True),
+    Input("inv-new", "n_clicks"), State("dbx-bump", "data"),
+    prevent_initial_call=True,
+)
+def _new_invite(n, bump):
+    if not n:
+        raise PreventUpdate
+    import flask
+    from hydrasentinel import auth
+    if not auth.is_admin(_me()):
+        raise PreventUpdate
+    link = flask.request.host_url.rstrip("/") + auth.INVITE_PATH + auth.create_invite(None)
+    return (bump or 0) + 1, html.Div(className="ppl-msg-ok", children=[
+        "New invite link (shown once, open to anyone with it): ",
+        html.Code(link, className="ppl-link")])
 
 
 @app.callback(
