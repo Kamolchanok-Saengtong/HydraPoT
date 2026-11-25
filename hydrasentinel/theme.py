@@ -1736,6 +1736,8 @@ app.index_string = """
     .ppl-copy { background:#fff; border:2px solid var(--ink); border-radius:14px; padding:10px 18px; cursor:pointer; font-weight:700; font-size:1rem; }
     .ppl-copy svg, .ppl-copy i { display:none; }
     .ppl-copy::after { content:"Copy link"; }
+    .ppl-copy.copied { background:#D7F4E3; }
+    .ppl-copy.copied::after { content:"Copied \\2713"; }
     .ppl-addlabel { background:none; border:0; text-decoration:underline; font-weight:600; font-size:1rem; cursor:pointer; margin-left:12px; color:var(--ink); }
     /* Database picker: one blue pill with a menu */
     .dbx-pick { margin-bottom:6px; }
