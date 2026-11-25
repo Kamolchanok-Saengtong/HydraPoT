@@ -1732,6 +1732,11 @@ app.index_string = """
     .pcard div[style*="repeat(4,1fr)"] { grid-template-columns:repeat(2,minmax(0,1fr)) !important; }
     .hp-tbl th { font-size:0.8rem; letter-spacing:0.02em; text-transform:none; }
     .hp-tbl td { word-break:break-word; }
+    .ppl-inv-btns { display:flex; align-items:center; gap:18px; }
+    .ppl-copy { background:#fff; border:2px solid var(--ink); border-radius:14px; padding:10px 18px; cursor:pointer; font-weight:700; font-size:1rem; }
+    .ppl-copy svg, .ppl-copy i { display:none; }
+    .ppl-copy::after { content:"Copy link"; }
+    .ppl-addlabel { background:none; border:0; text-decoration:underline; font-weight:600; font-size:1rem; cursor:pointer; margin-left:12px; color:var(--ink); }
     /* Database picker: one blue pill with a menu */
     .dbx-pick { margin-bottom:6px; }
     .dbx-sel { position:relative; display:inline-block; align-self:flex-start; width:fit-content; }

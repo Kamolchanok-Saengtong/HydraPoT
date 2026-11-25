@@ -34,7 +34,7 @@ from hydrasentinel.theme import loading
 PAGE_SIZE = 50
 
 # Secret material -- masked in the access DB, everywhere, before leaving Python.
-_MASK_COLS = {"password_hash", "token_hash", "value", "session_secret"}
+_MASK_COLS = {"password_hash", "token_hash", "link_token", "value", "session_secret"}
 _MASK = "•" * 8
 
 # Columns whose values are epoch seconds and read better as a date.
@@ -185,7 +185,7 @@ def _people_view(path, me=""):
         seen = dict(conn.execute("SELECT username, MAX(last_seen) FROM operator_sessions "
                                  "GROUP BY username").fetchall())
         invites = conn.execute(
-            "SELECT username, expires, uses_left, created FROM invites "
+            "SELECT username, expires, uses_left, created, link_token, label FROM invites "
             "WHERE uses_left > 0 AND expires > ? ORDER BY expires", (now,)).fetchall()
         conn.close()
     except Exception:
@@ -220,15 +220,27 @@ def _people_view(path, me=""):
                      f"{datetime.fromtimestamp(created).day}", className="ppl-joined"),
         ])
 
-    def invite(name, expires, uses, created):
-        who = "No label" if name in ("anyone", "") else f"For {name}"
+    import flask
+    base = flask.request.host_url.rstrip("/") + auth.INVITE_PATH
+
+    def invite(name, expires, uses, created, token, label):
+        who = label or ("No label" if name in ("anyone", "") else f"For {name}")
         left = f"{uses} use{'s' if uses != 1 else ''} left"
         return html.Div(className="ppl-invite", children=[
-            html.Div([html.Div(who, className="ppl-inv-who"),
-                      html.Div(f"{left}, expires in {_span(expires - now)}",
-                               className="ppl-inv-sub")]),
-            html.Button("Revoke", id={"type": "inv-del", "c": created}, n_clicks=0,
-                        className="ppl-revoke") if admin else None,
+            html.Div([
+                html.Div([html.Span(who, className="ppl-inv-who"),
+                          html.Button("Add label" if not label else "Rename",
+                                      id={"type": "inv-label", "c": created}, n_clicks=0,
+                                      className="ppl-addlabel") if admin else None]),
+                html.Div(f"{left}, expires in {_span(expires - now)}", className="ppl-inv-sub"),
+            ]),
+            html.Div(className="ppl-inv-btns", children=[
+                dcc.Clipboard(content=base + token, className="ppl-copy", title="Copy link")
+                if token else html.Span("Link not saved; revoke and make a new one",
+                                        className="ppl-inv-sub"),
+                html.Button("Revoke", id={"type": "inv-del", "c": created}, n_clicks=0,
+                            className="ppl-revoke") if admin else None,
+            ]),
         ])
 
     active = sum(1 for u in users if seen.get(u[0]) and now - seen[u[0]] < 900)
@@ -519,6 +531,8 @@ def build_database_page():
         dcc.Store(id="dbx-sqlres", data=None),
         dcc.Store(id="dbx-bump", data=0),
         dcc.Store(id="ppl-target", data=None),
+        dcc.Store(id="inv-label-req", data=None),
+        dcc.Store(id="dbx-q-sink", data=None),
         dcc.ConfirmDialog(id="ppl-confirm", message=""),
 
         html.Div(className="dbx-full", children=[
@@ -534,6 +548,8 @@ def build_database_page():
                     html.Button("Raw table", id="dbx-tab-data", className="dbx-tab sel",
                                 n_clicks=0),
                     html.Button("Schema", id="dbx-tab-schema", className="dbx-tab",
+                                n_clicks=0),
+                    html.Button(">_ Query", id="dbx-tab-query", className="dbx-tab",
                                 n_clicks=0),
                 ]),
 
@@ -854,6 +870,48 @@ def _revoke(_clicks, bump):
     return (bump or 0) + 1, html.Div(msg, className="ppl-msg-" + ("ok" if ok else "err"))
 
 
+app.clientside_callback(
+    """function(n) {
+        if (!n || !n.some(x => x)) return window.dash_clientside.no_update;
+        const t = window.dash_clientside.callback_context.triggered_id;
+        const v = window.prompt("Label for this invite link:");
+        if (v === null) return window.dash_clientside.no_update;
+        return {c: t.c, label: v, t: Date.now()};
+    }""",
+    Output("inv-label-req", "data"),
+    Input({"type": "inv-label", "c": ALL}, "n_clicks"),
+    prevent_initial_call=True,
+)
+
+
+app.clientside_callback(
+    """function(n) {
+        if (!n) return window.dash_clientside.no_update;
+        const el = document.getElementById("dbx-sql");
+        if (el) { el.scrollIntoView({behavior: "smooth", block: "center"});
+                  const i = document.getElementById("dbx-sql-input"); if (i) i.focus(); }
+        return window.dash_clientside.no_update;
+    }""",
+    Output("dbx-q-sink", "data"),
+    Input("dbx-tab-query", "n_clicks"),
+    prevent_initial_call=True,
+)
+
+
+@app.callback(
+    Output("dbx-bump", "data", allow_duplicate=True),
+    Output("ppl-msg", "children", allow_duplicate=True),
+    Input("inv-label-req", "data"), State("dbx-bump", "data"),
+    prevent_initial_call=True,
+)
+def _save_label(req, bump):
+    if not req:
+        raise PreventUpdate
+    from hydrasentinel import auth
+    ok, msg = auth.set_invite_label(_me(), req["c"], req["label"])
+    return (bump or 0) + 1, html.Div(msg, className="ppl-msg-" + ("ok" if ok else "err"))
+
+
 @app.callback(
     Output("dbx-bump", "data", allow_duplicate=True),
     Output("ppl-msg", "children", allow_duplicate=True),
@@ -863,14 +921,11 @@ def _revoke(_clicks, bump):
 def _new_invite(n, bump):
     if not n:
         raise PreventUpdate
-    import flask
     from hydrasentinel import auth
     if not auth.is_admin(_me()):
         raise PreventUpdate
-    link = flask.request.host_url.rstrip("/") + auth.INVITE_PATH + auth.create_invite(None)
-    return (bump or 0) + 1, html.Div(className="ppl-msg-ok", children=[
-        "New invite link (shown once, open to anyone with it): ",
-        html.Code(link, className="ppl-link")])
+    auth.create_invite(None)
+    return (bump or 0) + 1, html.Div("New invite made. Copy it below.", className="ppl-msg-ok")
 
 
 @app.callback(

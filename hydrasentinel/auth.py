@@ -285,6 +285,16 @@ def revoke_invite(actor: str, created: float):
     return (cur.rowcount > 0), ("Invite revoked" if cur.rowcount else "That invite is already gone")
 
 
+def set_invite_label(actor: str, created: float, label: str):
+    """An admin names an invite so they can tell links apart. Returns (ok, message)."""
+    if not is_admin(actor):
+        return False, "Only an admin can label invites"
+    with _store() as conn:
+        cur = conn.execute("UPDATE invites SET label=? WHERE created=?",
+                           ((label or "").strip()[:60] or None, float(created)))
+    return cur.rowcount > 0, "Label saved"
+
+
 def delete_user(username: str) -> bool:
     """Remove an account and every session it holds. True if a row went."""
     with _store() as conn:
@@ -363,9 +373,9 @@ def create_invite(username, hours: float = 24.0, uses: int = None) -> str:
         conn.execute("DELETE FROM invites WHERE username=? OR expires<? OR uses_left<=0",
                      ("" if open_link else username, now))
         conn.execute("INSERT INTO invites (token_hash, username, created, expires, "
-                     "uses_left) VALUES (?,?,?,?,?)",
+                     "uses_left, link_token) VALUES (?,?,?,?,?,?)",
                      (_token_hash(token), "" if open_link else username, now,
-                      now + float(hours) * 3600, uses))
+                      now + float(hours) * 3600, uses, token))
     return token
 
 
@@ -480,6 +490,10 @@ def _connect() -> sqlite3.Connection:
     # An `invites` table made before open links existed has no uses_left. Add it,
     # and keep links that were already spent spent.
     cols = {r[1] for r in conn.execute("PRAGMA table_info(invites)")}
+    # The link itself and a label are kept so an admin can copy a link again.
+    for col in ("link_token", "label"):
+        if col not in cols:
+            conn.execute(f"ALTER TABLE invites ADD COLUMN {col} TEXT")
     if "uses_left" not in cols:
         conn.execute("ALTER TABLE invites ADD COLUMN uses_left INTEGER NOT NULL DEFAULT 1")
         conn.execute("UPDATE invites SET uses_left=0 WHERE used_at IS NOT NULL")
