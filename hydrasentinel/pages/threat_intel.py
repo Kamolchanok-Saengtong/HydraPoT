@@ -127,9 +127,10 @@ def _render_ioc_body(ioc_data):
     type_df = pd.DataFrame(sorted(by_type.items(), key=lambda kv: kv[1], reverse=True),
                             columns=["type", "count"])
     fig_type = px.bar(type_df, x="count", y="type", orientation="h",
-                       color="count", color_continuous_scale=AMBER_SCALE)
-    theme_layout(fig_type, height=max(220, 34 * len(type_df)))
-    fig_type.update_layout(coloraxis_showscale=False)
+                       color_discrete_sequence=["#F0768F"])
+    theme_layout(fig_type, height=max(240, 38 * len(type_df)))
+    fig_type.update_layout(font=dict(size=14), margin=dict(l=10, r=20, t=10, b=40))
+    fig_type.update_traces(marker_line_color="#1A1410", marker_line_width=2)
     fig_type.update_yaxes(title="", autorange="reversed")
     fig_type.update_xaxes(title="Indicators")
 
@@ -156,22 +157,25 @@ def _render_ioc_body(ioc_data):
         columns=[{"name": c, "id": c} for c in
                  ["Type", "Value", "Count", "Sessions", "Max FI", "First Seen", "Last Seen"]],
         style_data_conditional=[
-            {"if": {"row_index": "odd"}, "backgroundColor": Y_50},
             {"if": {"filter_query": "{Max FI} >= 3", "column_id": "Max FI"},
-             "color": "#dc3545", "fontWeight": "bold"},
+             "color": "#c0392b", "fontWeight": "bold"},
         ],
         page_size=15,
-        style_header=TABLE_STYLE["style_header"],
-        style_cell=TABLE_STYLE["style_cell"],
-        style_table=TABLE_STYLE["style_table"],
+        style_header={**TABLE_STYLE["style_header"], "backgroundColor": "#F9E4A5",
+                      "fontSize": "15px", "padding": "14px 16px", "borderBottom": "2px solid #1A1410"},
+        style_cell={**TABLE_STYLE["style_cell"], "backgroundColor": "#FFFFFF", "color": "#1A1410",
+                    "fontSize": "14.5px", "padding": "13px 16px", "textAlign": "left",
+                    "borderTop": "1px solid #EFE6D0"},
+        style_table={"overflowX": "auto", "border": "2px solid #1A1410", "borderRadius": "18px",
+                     "overflow": "hidden"},
     )
 
     return [
         metrics,
-        html.Hr(className="divider"),
-        html.Div("Indicators by Type", className="section-header"),
-        dcc.Graph(figure=fig_type, config=GRAPH_CONFIG),
-        html.Div("Top Indicators (by severity, then frequency)", className="section-header"),
+        html.Div("Indicators by type", className="ti-h"),
+        html.Div(dcc.Graph(figure=fig_type, config=GRAPH_CONFIG), className="ti-card"),
+        html.Div("Top indicators", className="ti-h"),
+        html.Div("By severity, then how often they were seen", className="ti-sub"),
         dcc.Store(id="ioc-cat-filter-store", data="all"),
         html.Div(cat_buttons, className="chip-row"),
         html.Div(f"{len(recs)} unique indicators — showing top {len(recs[:200])}",
@@ -205,7 +209,7 @@ def build_threat_intel_page(ioc_data=None):
                "alignItems": "center", "flexWrap": "wrap", "gap": "12px"},
         children=[
             html.Div([
-                html.H3("🛰 Threat Intel", style={"marginBottom": "4px"}),
+                html.H3("Threat Intel", style={"marginBottom": "4px"}),
                 html.Div(_ioc_status_text(ioc_data), id="ioc-last-updated", className="caption"),
             ]),
             html.Div([
@@ -213,19 +217,19 @@ def build_threat_intel_page(ioc_data=None):
                 scope_picker,
             ]),
             loading(html.Div(id="ioc-generate-status", children=[
-                html.Button("🔄 Generate Intelligence", id="generate-ioc-btn",
+                html.Button("Generate intelligence", id="generate-ioc-btn",
                             className="btn btn-primary", n_clicks=0),
             ]), id="ioc-loading"),
-            html.Button("⬇ Export STIX", id="export-stix-btn",
+            html.Button("Export STIX", id="export-stix-btn",
                         className="btn btn-secondary", n_clicks=0),
             dcc.Download(id="stix-download"),
         ],
     )
 
-    return [
+    return [html.Div(className="ti", children=[
         toolbar,
         html.Div(id="ioc-content", children=_render_ioc_body(ioc_data)),
-    ]
+    ])]
 
 
 # ── Threat Intel: generate-on-demand (heavy compute, button-triggered only) ────
@@ -246,7 +250,7 @@ def build_threat_intel_page(ioc_data=None):
 )
 def generate_intelligence(_n, scope):
     snapshot = build_ioc_snapshot(scope=scope or "all")
-    restored_button = [html.Button("🔄 Generate Intelligence", id="generate-ioc-btn",
+    restored_button = [html.Button("Generate intelligence", id="generate-ioc-btn",
                                    className="btn btn-primary", n_clicks=0)]
     return snapshot, restored_button, _ioc_status_text(snapshot)
 
