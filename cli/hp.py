@@ -234,21 +234,6 @@ def _dashboard_passwd():
     click.echo(f"\n  Start the dashboard with: hp --dashboard\n")
 
 
-def _invite_host(cfg) -> str:
-    """The name to put in an invite link: the first `tls_names` entry if the
-    operator set one, else this machine's LAN address."""
-    names = list(getattr(cfg, "tls_names", None) or [])
-    if names:
-        return str(names[0])
-    import socket
-    try:
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-            s.connect(("192.0.2.1", 9))      # no packet is sent; picks the LAN interface
-            return s.getsockname()[0]
-    except OSError:
-        return socket.gethostname()
-
-
 def _dashboard_promote(name):
     """Make an existing account an admin."""
     from hydrasentinel import auth
@@ -275,7 +260,7 @@ def _dashboard_invite(name, hours, uses):
         click.echo(click.style(f"\n  {exc}\n", fg="red"))
         raise SystemExit(1)
     cfg = load_config(os.path.join(_HP_DIR, "config.yaml")).dashboard
-    url = f"https://{_invite_host(cfg)}:{cfg.https_port}{auth.INVITE_PATH}{token}"
+    url = auth.invite_base() + token
     if shared:
         n = max(1, min(int(uses or 10), auth.MAX_OPEN_USES))
         click.echo(click.style(f"\n  ✓ Shared invite (valid {hours:g} h, up to {n} people)\n",

@@ -220,8 +220,7 @@ def _people_view(path, me=""):
                      f"{datetime.fromtimestamp(created).day}", className="ppl-joined"),
         ])
 
-    import flask
-    base = flask.request.host_url.rstrip("/") + auth.INVITE_PATH
+    base = auth.invite_base()
 
     def invite(name, expires, uses, created, token, label):
         who = label or ("No label" if name in ("anyone", "") else f"For {name}")

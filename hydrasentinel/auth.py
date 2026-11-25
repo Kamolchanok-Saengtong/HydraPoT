@@ -338,6 +338,27 @@ def _signing_secret() -> bytes:
 
 USERNAME_RE = re.compile(r"^[A-Za-z0-9._-]{3,32}$")
 INVITE_PATH = "/_hp/invite/"
+
+
+def invite_host() -> str:
+    """The name to put in an invite link: the first `tls_names` entry if the
+    operator set one, else this machine's LAN address (never "localhost")."""
+    dash = load_config(_CONFIG_PATH).dashboard
+    names = list(getattr(dash, "tls_names", None) or [])
+    if names:
+        return str(names[0])
+    import socket
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sk:
+            sk.connect(("192.0.2.1", 9))      # no packet is sent; picks the LAN interface
+            return sk.getsockname()[0]
+    except OSError:
+        return socket.gethostname()
+
+
+def invite_base() -> str:
+    return f"https://{invite_host()}:{load_config(_CONFIG_PATH).dashboard.https_port}{INVITE_PATH}"
+
 OPEN_INVITE = "anyone"        # `hp --dashboard-invite anyone`: the visitor picks their name
 RESERVED = {OPEN_INVITE}
 MAX_OPEN_USES = 100
