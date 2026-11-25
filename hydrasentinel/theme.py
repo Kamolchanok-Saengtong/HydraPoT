@@ -488,6 +488,7 @@ app.index_string = """
     .mx-bar-row.mx-first .mx-bar-val { color:var(--ink); font-size:0.95rem; font-weight:700; }
     .mx-bar-more { font-size:0.72rem; color:var(--ink-3); margin-top:2px; }
     /* Users view (Database > Dashboard access > users) */
+    .hp-loading { display:contents; }
     .ppl { margin-bottom:18px; }
     .ppl-head { font-size:1.1rem; font-weight:600; color:var(--ink-2); margin-bottom:12px; }
     .ppl-count { font-size:2rem; font-weight:700; color:var(--ink); margin-right:4px; }
@@ -1616,6 +1617,21 @@ TABLE_STYLE = dict(
 # `html` is imported locally to keep theme.py's top-level import list as it
 # was -- this module is otherwise pure constants + plotly chrome.
 from dash import html  # noqa: E402
+
+
+def loading(children, target=None, **kw):
+    """The one loading spinner every page uses, so they all look the same.
+
+    Centred in the window, in the brand yellow. delay_show keeps quick loads
+    from flashing it. `target` limits it to one component's property, such as
+    {"content-area": "children"}; without it any callback inside shows it."""
+    from dash import dcc
+    extra = {"target_components": target} if target else {}
+    return dcc.Loading(
+        type="circle", color=Y_400, delay_show=300, parent_className="hp-loading",
+        style={"position": "fixed", "top": "50%", "left": "50%",
+               "transform": "translate(-50%, -50%)", "zIndex": 1000},
+        children=children, **extra, **kw)
 
 
 def panel(title, body, right=None, cls=""):

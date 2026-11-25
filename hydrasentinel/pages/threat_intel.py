@@ -15,7 +15,7 @@ from core import storage
 from threat_intel.ioc_extractor import to_stix
 
 from hydrasentinel.server import app
-from hydrasentinel.theme import theme_layout, GRAPH_CONFIG, TABLE_STYLE, AMBER_SCALE, Y_50
+from hydrasentinel.theme import theme_layout, GRAPH_CONFIG, TABLE_STYLE, AMBER_SCALE, Y_50, loading
 from hydrasentinel.ioc import build_ioc_snapshot
 
 # Human labels for the IOC scope keys used by _scope_filter_rows(). This was
@@ -212,17 +212,10 @@ def build_threat_intel_page(ioc_data=None):
                 html.Div("Scope", className="metric-label", style={"marginBottom": "6px"}),
                 scope_picker,
             ]),
-            dcc.Loading(
-                id="ioc-loading", type="circle", color=Y_700,
-                # spinner centered in the viewport during the ~11s generate,
-                # not tucked into the toolbar over the button
-                style={"position": "fixed", "top": "50%", "left": "50%",
-                       "transform": "translate(-50%, -50%)", "zIndex": 1000},
-                children=html.Div(id="ioc-generate-status", children=[
-                    html.Button("🔄 Generate Intelligence", id="generate-ioc-btn",
-                                className="btn btn-primary", n_clicks=0),
-                ]),
-            ),
+            loading(html.Div(id="ioc-generate-status", children=[
+                html.Button("🔄 Generate Intelligence", id="generate-ioc-btn",
+                            className="btn btn-primary", n_clicks=0),
+            ]), id="ioc-loading"),
             html.Button("⬇ Export STIX", id="export-stix-btn",
                         className="btn btn-secondary", n_clicks=0),
             dcc.Download(id="stix-download"),

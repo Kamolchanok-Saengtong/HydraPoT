@@ -11,7 +11,7 @@ from dash.exceptions import PreventUpdate
 from core import storage
 
 from hydrasentinel.server import app
-from hydrasentinel.theme import SUCCESS, CRITICAL, Y_400
+from hydrasentinel.theme import SUCCESS, CRITICAL, Y_400, loading
 from hydrasentinel.data import clear_caches, agent_health, _cached_page
 from hydrasentinel.geo import MMDB_PATH
 from hydrasentinel.ioc import build_ioc_snapshot
@@ -135,7 +135,9 @@ app.layout = html.Div(className="app-shell", children=[
     # DOM order has no visual effect of its own.
     sidebar,
     toggle_btn,
-    html.Div(className="content", id="content-area"),
+    # same spinner on every page, shown only while the page itself is loading
+    loading(html.Div(className="content", id="content-area"),
+            target={"content-area": "children"}),
     dcc.Store(id="sidebar-collapsed-store", data=False),
     # Threat Intel snapshot — lives at the app level (not inside content-area)
     # so it survives navigating away from and back to the Threat Intel page;

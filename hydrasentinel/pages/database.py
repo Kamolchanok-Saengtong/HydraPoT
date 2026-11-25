@@ -29,6 +29,7 @@ from dash.exceptions import PreventUpdate
 from core import storage
 
 from hydrasentinel.server import app
+from hydrasentinel.theme import loading
 
 PAGE_SIZE = 50
 
@@ -530,13 +531,7 @@ def build_database_page():
                     ]),
                 ]),
 
-                dcc.Loading(
-                    type="default", color="#F5B21B",
-                    # spinner floats in the middle of the viewport, not wherever
-                    # the wrapped content happens to sit
-                    style={"position": "fixed", "top": "50%", "left": "50%",
-                           "transform": "translate(-50%, -50%)", "zIndex": 1000},
-                    children=html.Div(id="dbx-content", children=_skeleton())),
+                loading(html.Div(id="dbx-content", children=_skeleton())),
 
                 _sql_terminal(default_db),
             ]),
