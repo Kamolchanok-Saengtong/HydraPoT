@@ -276,6 +276,15 @@ def delete_account(actor: str, target: str):
     return True, f"Deleted {target}"
 
 
+def revoke_invite(actor: str, created: float):
+    """An admin withdraws one open invite (found by its creation time). Returns (ok, message)."""
+    if not is_admin(actor):
+        return False, "Only an admin can revoke invites"
+    with _store() as conn:
+        cur = conn.execute("DELETE FROM invites WHERE created=?", (float(created),))
+    return (cur.rowcount > 0), ("Invite revoked" if cur.rowcount else "That invite is already gone")
+
+
 def delete_user(username: str) -> bool:
     """Remove an account and every session it holds. True if a row went."""
     with _store() as conn:
